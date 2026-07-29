@@ -132,6 +132,8 @@ lists remain in browser local storage.
 The PWA refreshes same-origin application assets from the network after
 deployment and keeps the latest successful responses for offline use. Feedback
 controls remain navigable when browser progress storage is unavailable.
+The question-header back control returns to the dashboard without discarding
+the current session, which remains available through Resume Unfinished Session.
 
 ```sh
 bash check.sh

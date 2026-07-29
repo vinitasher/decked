@@ -20,6 +20,20 @@ test('post-answer tray contains confidence and next-card controls', () => {
   assert.doesNotMatch(html, /onclick="APP\.rateConfidence/);
 });
 
+test('question header provides accessible dashboard navigation', () => {
+  const sessionStart = html.indexOf('id="screen-session"');
+  const header = html.indexOf('class="card-header"', sessionStart);
+  const dashboard = html.indexOf('id="session-dashboard-btn"', header);
+  const scenario = html.indexOf('id="scenario"', header);
+
+  assert.ok(sessionStart >= 0);
+  assert.ok(header > sessionStart);
+  assert.ok(dashboard > header);
+  assert.ok(dashboard < scenario);
+  assert.match(html, /id="session-dashboard-btn"[^>]*aria-label="Back to dashboard"/);
+  assert.match(css, /\.session-dashboard-btn \{[^}]*width: 32px;[^}]*height: 32px;/);
+});
+
 test('mobile post-answer tray is sticky and hides keyboard-only guidance', () => {
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.post-answer-actions:not\(\.hidden\)[\s\S]*position: sticky/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.keyboard-hint \{ display: none; \}/);
@@ -42,6 +56,11 @@ test('difficulty controls bind explicit click listeners', () => {
   assert.match(app, /this\.rateConfidence\(Number\(button\.dataset\.confidence\)\)/);
 });
 
+test('dashboard control binds to session exit', () => {
+  assert.match(app, /getElementById\('session-dashboard-btn'\)/);
+  assert.match(app, /addEventListener\('click', \(\) => this\.exitSession\(\)\)/);
+});
+
 test('difficulty transition occurs before persistence work', () => {
   const transition = app.indexOf("confidenceButtons.classList.add('hidden')");
   const timer = app.indexOf('this._advanceTimer = setTimeout(() => this.nextCard(), 3000)', transition);
@@ -56,7 +75,7 @@ test('difficulty transition occurs before persistence work', () => {
 });
 
 test('service worker refreshes deployed assets and retains offline fallback', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v3'/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v4'/);
   assert.match(serviceWorker, /fetch\(e\.request\)/);
   assert.match(serviceWorker, /cache\.put\(e\.request, cachedResponse\)/);
   assert.match(serviceWorker, /\.catch\(\(\) => caches\.match\(e\.request\)/);

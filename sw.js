@@ -1,5 +1,5 @@
 /* Service worker — offline cache for PWA */
-const CACHE = 'sdf-v3';
+const CACHE = 'sdf-v4';
 const STATIC = ['/', '/index.html', '/css/style.css', '/js/app.js', '/js/srs.js', '/js/render.js', '/js/cards.js', '/manifest.json'];
 
 self.addEventListener('install', (e) => {

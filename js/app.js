@@ -52,6 +52,7 @@ const APP = {
     this.showScreen('welcome');
     this._setupKeyboard();
     this._setupConfidenceButtons();
+    this._setupSessionControls();
     this._checkServerHealth();
     this._initTheme();
     this._initSwipe();
@@ -100,6 +101,11 @@ const APP = {
         this.rateConfidence(Number(button.dataset.confidence));
       });
     });
+  },
+
+  _setupSessionControls() {
+    document.getElementById('session-dashboard-btn')
+      ?.addEventListener('click', () => this.exitSession());
   },
 
   async _checkServerHealth() {
@@ -720,6 +726,17 @@ const APP = {
     this.prefetchNext();
 
     this.showCard();
+  },
+
+  exitSession() {
+    if (this._advanceTimer) {
+      clearTimeout(this._advanceTimer);
+      this._advanceTimer = null;
+    }
+    this._quickReview = false;
+    this._stopTimer();
+    this.renderDeckStats();
+    this.showScreen('welcome');
   },
 
   endSession() {

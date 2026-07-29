@@ -72,6 +72,42 @@ test('difficulty button invokes feedback with its numeric value', () => {
   }
 });
 
+test('exiting a session stops timers and preserves resume state', () => {
+  const app = context.appForTest;
+  const originalClearTimeout = context.clearTimeout;
+  const originalStopTimer = app._stopTimer;
+  const originalRenderDeckStats = app.renderDeckStats;
+  const originalShowScreen = app.showScreen;
+  let clearedTimer;
+  let timerStopped = false;
+  let rendered = false;
+  let screen;
+
+  context.localStorage.setItem('sdf_resume', '{"index":0}');
+  context.clearTimeout = timer => { clearedTimer = timer; };
+  app._advanceTimer = 42;
+  app._quickReview = true;
+  app._stopTimer = () => { timerStopped = true; };
+  app.renderDeckStats = () => { rendered = true; };
+  app.showScreen = value => { screen = value; };
+
+  try {
+    app.exitSession();
+    assert.equal(clearedTimer, 42);
+    assert.equal(app._advanceTimer, null);
+    assert.equal(app._quickReview, false);
+    assert.equal(timerStopped, true);
+    assert.equal(rendered, true);
+    assert.equal(screen, 'welcome');
+    assert.equal(context.localStorage.getItem('sdf_resume'), '{"index":0}');
+  } finally {
+    context.clearTimeout = originalClearTimeout;
+    app._stopTimer = originalStopTimer;
+    app.renderDeckStats = originalRenderDeckStats;
+    app.showScreen = originalShowScreen;
+  }
+});
+
 test('topic review remains valid after profile serialization and reload', () => {
   const app = context.appForTest;
   app.profile = context.normalizeProfileDataForTest({
