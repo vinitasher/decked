@@ -47,7 +47,7 @@
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showHistory()">📜 Session History</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.enableNudges()">🔔 Enable Study Reminders</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showLearningPath()">🧭 Learning Path</button>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showLearningPath()">🧭 Topic Map</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
     <div style="display:flex;gap:8px;margin:12px 0;">
@@ -65,6 +65,10 @@
     <div style="display:flex;flex-direction:column;gap:10px;margin:16px 0;">
       <input id="create-topic" placeholder="Topic (e.g. caching, queues, databases)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
       <input id="create-difficulty" type="number" min="1" max="5" placeholder="Difficulty (1-5)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <fieldset class="prerequisite-fieldset">
+        <legend>Topics to know first</legend>
+        <div id="create-prerequisites" class="prerequisite-options"></div>
+      </fieldset>
       <textarea id="create-scenario" placeholder="Describe the scenario..." rows="4" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;font-family:inherit;"></textarea>
       <input id="create-nodes" placeholder="Nodes (comma-separated, e.g. Client, API Server, DB)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
       <input id="create-optionA" placeholder="Option A" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
@@ -94,6 +98,7 @@
         <span id="session-timer" style="color:var(--muted)"></span>
       </div>
     </div>
+    <div id="card-prerequisites" class="card-prerequisites"></div>
     <div id="scenario"></div>
     <div id="diagram-container"></div>
     <div id="options"></div>
@@ -153,6 +158,14 @@
     <h1>Bookmarked Cards</h1>
     <div id="bookmark-list" style="margin:12px 0;"></div>
     <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Dashboard</button>
+  </div>
+
+  <!-- Topic Map -->
+  <div id="screen-learning-path" class="screen hidden">
+    <h1>Topic Map</h1>
+    <p class="screen-intro">Choose any topic to practice. Prerequisites show the expected background, not locked content.</p>
+    <div id="topic-hierarchy"></div>
+    <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Dashboard</button>
   </div>
 
   <!-- Statistics Dashboard -->

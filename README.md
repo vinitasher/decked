@@ -33,6 +33,9 @@ decision-based practice with adaptive difficulty.
 - The user selects from 2-4 plausible wiring options (e.g. "sync resize in the
   API process" vs "async worker queue + object store callback")
 - After answering, the card shows WHY the better option wins (the trade-offs)
+- Each card lists the topics a learner is expected to know first
+- A navigable topic map shows prerequisites, dependent topics, mastery, and
+  focused practice actions without locking advanced content
 
 **User profile:**
 - Tracked per topic: load balancers, caching, databases, queues, consensus,
@@ -61,6 +64,7 @@ decision-based practice with adaptive difficulty.
     "correct": "A",
     "explanation": "Redis ... because ...",
     "topic": "caching",
+    "prerequisiteTopics": ["api-design"],
     "difficulty": 3
   },
   "profile": {
@@ -118,6 +122,9 @@ Generation retries transient Flash capacity failures and uses
 
 Generated cards are stored permanently in Cloudflare KV until explicitly
 replaced or deleted. Learner progress remains local to each browser.
+Legacy cached cards receive canonical prerequisite metadata when read and are
+rewritten permanently. Custom cards and their prerequisite lists remain in
+browser local storage.
 
 ```sh
 bash check.sh

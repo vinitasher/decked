@@ -1,4 +1,29 @@
-/* Cloudflare Pages Function — generate flash cards using Workers AI */
+/* Cloudflare Pages Function — generate flash cards using OpenCode Go */
+
+const TOPIC_PREREQUISITES = {
+  'api-design': [],
+  dns: [],
+  caching: ['api-design'],
+  queues: ['api-design'],
+  databases: ['api-design'],
+  security: ['api-design'],
+  loadbalancing: ['dns', 'api-design'],
+  storage: ['databases'],
+  messaging: ['queues'],
+  'rate-limiting': ['api-design', 'caching'],
+  observability: ['api-design'],
+  'real-time': ['api-design', 'messaging'],
+  consensus: ['databases', 'storage']
+};
+
+export function normalizeCard(card, topic, difficulty) {
+  return {
+    ...card,
+    topic,
+    difficulty,
+    prerequisiteTopics: [...(TOPIC_PREREQUISITES[topic] || [])]
+  };
+}
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -12,7 +37,12 @@ export async function onRequest(context) {
     const cached = await env.CARD_CACHE.get(cacheKey);
     if (cached) {
       try {
-        return new Response(JSON.stringify({ cached: true, card: JSON.parse(cached) }), {
+        const parsed = JSON.parse(cached);
+        const card = normalizeCard(parsed, topic, difficulty);
+        if (JSON.stringify(card) !== JSON.stringify(parsed)) {
+          await env.CARD_CACHE.put(cacheKey, JSON.stringify(card));
+        }
+        return new Response(JSON.stringify({ cached: true, card }), {
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
         });
       } catch (_) {}
@@ -26,6 +56,7 @@ Return a JSON object with these exact keys:
 - id: "${topic}-gen-${Date.now()}"
 - topic: "${topic}"
 - difficulty: ${difficulty}
+- prerequisiteTopics: ${JSON.stringify(TOPIC_PREREQUISITES[topic] || [])}
 - scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off.
 - nodes: array of 4-5 system components with real technology names.
 - options: array of 4 objects {id, label}. Option B is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
@@ -92,17 +123,20 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
     if (start === -1 || end === -1) {
       throw new Error('No JSON in response');
     }
-    const card = JSON.parse(cleaned.substring(start, end + 1));
+    const generatedCard = JSON.parse(cleaned.substring(start, end + 1));
 
     // Validate required fields
-    const required = ['id', 'topic', 'difficulty', 'scenario', 'nodes', 'options', 'correct', 'explanation'];
+    const required = ['id', 'topic', 'difficulty', 'prerequisiteTopics', 'scenario', 'nodes', 'options', 'correct', 'explanation'];
     for (const f of required) {
-      if (!card[f]) throw new Error(`Missing field: ${f}`);
+      if (generatedCard[f] === undefined || generatedCard[f] === null) {
+        throw new Error(`Missing field: ${f}`);
+      }
+    }
+    if (!Array.isArray(generatedCard.prerequisiteTopics)) {
+      throw new Error('Invalid field: prerequisiteTopics');
     }
 
-    // Normalize
-    card.topic = topic;
-    card.difficulty = difficulty;
+    const card = normalizeCard(generatedCard, topic, difficulty);
 
     // Cache in KV
     if (env.CARD_CACHE) {

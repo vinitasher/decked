@@ -1,8 +1,39 @@
-/* Minimal fallback seed deck — used when the AI generation server is unreachable */
+/* Canonical learning graph and fallback deck. */
+
+const TOPIC_CATALOG = {
+  "api-design": { label: "API Design", prerequisites: [] },
+  dns: { label: "DNS", prerequisites: [] },
+  caching: { label: "Caching", prerequisites: ["api-design"] },
+  queues: { label: "Queues", prerequisites: ["api-design"] },
+  databases: { label: "Databases", prerequisites: ["api-design"] },
+  security: { label: "Security", prerequisites: ["api-design"] },
+  loadbalancing: { label: "Load Balancing", prerequisites: ["dns", "api-design"] },
+  storage: { label: "Storage", prerequisites: ["databases"] },
+  messaging: { label: "Messaging", prerequisites: ["queues"] },
+  "rate-limiting": { label: "Rate Limiting", prerequisites: ["api-design", "caching"] },
+  observability: { label: "Observability", prerequisites: ["api-design"] },
+  "real-time": { label: "Real-Time", prerequisites: ["api-design", "messaging"] },
+  consensus: { label: "Consensus", prerequisites: ["databases", "storage"] }
+};
+
+function getTopicPrerequisites(topic) {
+  return [...(TOPIC_CATALOG[topic]?.prerequisites || [])];
+}
+
+function normalizeCardPrerequisites(card) {
+  if (!card || typeof card !== "object") return card;
+  if (!Array.isArray(card.prerequisiteTopics)) {
+    card.prerequisiteTopics = getTopicPrerequisites(card.topic);
+  }
+  card.prerequisiteTopics = [...new Set(card.prerequisiteTopics)]
+    .filter(topic => topic !== card.topic && TOPIC_CATALOG[topic]);
+  return card;
+}
 
 const SEED_CARDS = [
   {
     id: "fallback-cache-001", topic: "caching", difficulty: 2,
+    prerequisiteTopics: ["api-design"],
     scenario: "A news website serves articles to millions of daily readers. The most popular 100 articles generate 80% of traffic.",
     nodes: ["Web Client", "API Server", "Cache Layer", "Database"],
     options: [
@@ -16,6 +47,7 @@ const SEED_CARDS = [
   },
   {
     id: "fallback-queue-001", topic: "queues", difficulty: 2,
+    prerequisiteTopics: ["api-design"],
     scenario: "A payment service processes 500 charges per second. Each charge calls an external bank API that takes 1-5 seconds to respond.",
     nodes: ["Web App", "API Server", "Queue", "Worker Pool", "Bank API"],
     options: [
@@ -29,6 +61,7 @@ const SEED_CARDS = [
   },
   {
     id: "fallback-db-001", topic: "databases", difficulty: 3,
+    prerequisiteTopics: ["api-design"],
     scenario: "A social media app stores user posts. Users view their timeline (latest 50 posts) and a global trending feed. Writes spike 10x during events.",
     nodes: ["Mobile App", "API Server", "Primary DB", "Read Replica", "Cache"],
     options: [
@@ -42,6 +75,7 @@ const SEED_CARDS = [
   },
   {
     id: "fallback-consensus-001", topic: "consensus", difficulty: 4,
+    prerequisiteTopics: ["databases", "storage"],
     scenario: "A distributed config service stores cluster membership for 5 nodes. All nodes must agree on who is in the cluster.",
     nodes: ["Node A", "Node B", "Node C", "Node D", "Node E"],
     options: [
@@ -55,6 +89,7 @@ const SEED_CARDS = [
   },
   {
     id: "fallback-api-001", topic: "api-design", difficulty: 1,
+    prerequisiteTopics: [],
     scenario: "A ride-hailing API is used by third-party apps (airlines, hotels) to book rides on behalf of users.",
     nodes: ["Third-Party App", "API Gateway", "Booking Service", "Driver Dispatch"],
     options: [

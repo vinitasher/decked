@@ -18,7 +18,7 @@ for script in "${scripts[@]}"; do
   node --check "$script"
 done
 
-node --test tests/generate.test.mjs
+node --test tests/*.test.mjs
 bash -n build.sh
 bash -n deploy.sh
 

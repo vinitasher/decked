@@ -15,6 +15,8 @@ const APP = {
 
   init() {
     this.loadProfile();
+    this._loadCustomCards();
+    this.renderPrerequisiteOptions();
     this.renderDeckStats();
     this.showScreen('welcome');
     this._setupKeyboard();
@@ -97,7 +99,7 @@ const APP = {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k.startsWith('sdf_gen_')) {
-        try { keys.push(JSON.parse(localStorage.getItem(k))); } catch (_) {}
+        try { keys.push(normalizeCardPrerequisites(JSON.parse(localStorage.getItem(k)))); } catch (_) {}
       }
     }
     return keys;
@@ -113,7 +115,8 @@ const APP = {
       const stored = localStorage.getItem('sdf_gen_' + key);
       if (stored) {
         try {
-          const card = JSON.parse(stored);
+          const card = normalizeCardPrerequisites(JSON.parse(stored));
+          localStorage.setItem('sdf_gen_' + key, JSON.stringify(card));
           const dup = this._isDuplicateScenario(card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
           if (!dup) return card;
         } catch (_) {}
@@ -121,18 +124,19 @@ const APP = {
       // check in-memory cache
       if (this._cardCache[key]) {
         const dup = this._isDuplicateScenario(this._cardCache[key].scenario, [...avoidList, ...allCached, ...this.sessionCards]);
-        if (!dup) return this._cardCache[key];
+        if (!dup) return normalizeCardPrerequisites(this._cardCache[key]);
       }
       // try server
       try {
         const res = await fetch(`${SERVER_BASE}/api/generate?topic=${encodeURIComponent(topic)}&difficulty=${difficulty}`);
         if (!res.ok) throw new Error(`server returned ${res.status}`);
         const data = await res.json();
-        const dup = this._isDuplicateScenario(data.card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+        const card = normalizeCardPrerequisites(data.card);
+        const dup = this._isDuplicateScenario(card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
         if (!dup) {
-          this._cardCache[key] = data.card;
-          localStorage.setItem('sdf_gen_' + key, JSON.stringify(data.card));
-          return data.card;
+          this._cardCache[key] = card;
+          localStorage.setItem('sdf_gen_' + key, JSON.stringify(card));
+          return card;
         }
       } catch (err) {
         // server unavailable — continue to fallback
@@ -141,8 +145,10 @@ const APP = {
 
     // seed fallback
     const topicCards = SEED_CARDS.filter(c => c.topic === topic);
-    if (topicCards.length > 0) return topicCards[Math.floor(Math.random() * topicCards.length)];
-    return SEED_CARDS[Math.floor(Math.random() * SEED_CARDS.length)];
+    if (topicCards.length > 0) {
+      return normalizeCardPrerequisites(topicCards[Math.floor(Math.random() * topicCards.length)]);
+    }
+    return normalizeCardPrerequisites(SEED_CARDS[Math.floor(Math.random() * SEED_CARDS.length)]);
   },
 
   async prefetchNext() {
@@ -219,6 +225,15 @@ const APP = {
   },
 
   /* ——— Profile persistence ——— */
+  _loadCustomCards() {
+    let cards = [];
+    try { cards = JSON.parse(localStorage.getItem('sdf_custom_cards') || '[]'); } catch (_) {}
+    for (const card of cards.reverse()) {
+      normalizeCardPrerequisites(card);
+      if (!SEED_CARDS.some(existing => existing.id === card.id)) SEED_CARDS.unshift(card);
+    }
+  },
+
   loadProfile() {
     const raw = localStorage.getItem('sdf_profile');
     if (raw) {
@@ -316,6 +331,29 @@ const APP = {
     this.showScreen('session');
   },
 
+  async startTopicSession(topic) {
+    if (!TOPIC_CATALOG[topic]) return;
+    this.sessionCards = [];
+    for (let difficulty = 1; difficulty <= 5; difficulty++) {
+      const card = await this.fetchCard(topic, difficulty, this.sessionCards);
+      if (card && !this._isDuplicateScenario(card.scenario, this.sessionCards)) {
+        this.sessionCards.push(card);
+      }
+    }
+    if (this.sessionCards.length === 0) {
+      alert('No cards available for this topic.');
+      return;
+    }
+    this.sessionIndex = 0;
+    this.sessionStart = Date.now();
+    this._nextCard = null;
+    this.profile.totalSessions++;
+    this._startTimer();
+    this.saveProfile();
+    this.showCard();
+    this.showScreen('session');
+  },
+
   async _generateSessionCards(count) {
     const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
     const scored = topics.map(t => {
@@ -385,18 +423,18 @@ const APP = {
     document.getElementById('card-counter').textContent =
       `${this.sessionIndex + 1} / ${this.sessionCards.length}`;
 
-    const topicLabels = {
-      caching: 'Caching', queues: 'Queues & Async', databases: 'Databases',
-      consensus: 'Consensus', 'api-design': 'API Design', loadbalancing: 'Load Balancing',
-      storage: 'Storage', observability: 'Observability', security: 'Security',
-      'real-time': 'Real-Time'
-    };
-    document.getElementById('card-topic').textContent = topicLabels[card.topic] || card.topic;
+    document.getElementById('card-topic').textContent =
+      TOPIC_CATALOG[card.topic]?.label || card.topic;
 
     const diffStars = '★'.repeat(card.difficulty) + '☆'.repeat(5 - card.difficulty);
     document.getElementById('card-difficulty').textContent = diffStars;
 
     document.getElementById('scenario').textContent = card.scenario;
+    const prerequisites = normalizeCardPrerequisites(card).prerequisiteTopics;
+    const prerequisiteEl = document.getElementById('card-prerequisites');
+    prerequisiteEl.textContent = prerequisites.length
+      ? `Know first: ${prerequisites.map(topic => TOPIC_CATALOG[topic]?.label || topic).join(', ')}`
+      : 'Foundational topic';
 
     // retrieval practice: hide diagram until answered (user can toggle to peek)
     if (!this._diagramPeeking) this._diagramPeeking = {};
@@ -715,6 +753,14 @@ const APP = {
     this.showScreen('create');
   },
 
+  renderPrerequisiteOptions() {
+    const el = document.getElementById('create-prerequisites');
+    if (!el) return;
+    el.innerHTML = Object.entries(TOPIC_CATALOG).map(([topic, details]) =>
+      `<label class="prerequisite-option"><input type="checkbox" value="${topic}"> <span>${details.label}</span></label>`
+    ).join('');
+  },
+
   saveCreatedCard() {
     const topic = document.getElementById('create-topic').value.trim().toLowerCase().replace(/\s+/g, '-');
     const difficulty = parseInt(document.getElementById('create-difficulty').value) || 2;
@@ -728,6 +774,9 @@ const APP = {
     const optD = document.getElementById('create-optionD').value.trim();
     if (optD) options.push({ id: 'D', label: optD });
     const explanation = document.getElementById('create-explanation').value.trim();
+    const prerequisiteTopics = [...document.querySelectorAll('#create-prerequisites input:checked')]
+      .map(input => input.value)
+      .filter(prerequisite => prerequisite !== topic);
 
     if (!topic || !scenario || nodes.length < 2 || !options[0].label || !options[1].label || !explanation) {
       document.getElementById('create-result').innerHTML = '<p style="color:#e53935">Please fill in all required fields (topic, scenario, nodes, options A, B, C, explanation).</p>';
@@ -738,6 +787,7 @@ const APP = {
       id: 'custom-' + Date.now().toString(36),
       topic,
       difficulty: Math.max(1, Math.min(5, difficulty)),
+      prerequisiteTopics,
       scenario,
       nodes,
       options,
@@ -766,6 +816,7 @@ const APP = {
     document.getElementById('create-optionC').value = '';
     document.getElementById('create-optionD').value = '';
     document.getElementById('create-explanation').value = '';
+    document.querySelectorAll('#create-prerequisites input').forEach(input => { input.checked = false; });
     this.renderDeckStats();
   },
 
@@ -985,22 +1036,45 @@ const APP = {
   /* ——— Learning Path ——— */
 
   showLearningPath() {
-    const topicOrder = ['api-design', 'caching', 'loadbalancing', 'queues', 'databases', 'storage', 'consensus', 'real-time', 'observability', 'security', 'rate-limiting', 'dns', 'messaging'];
-    const topicLabels = { 'api-design': 'API Design', caching: 'Caching', loadbalancing: 'Load Balancing', queues: 'Queues', databases: 'Databases', storage: 'Storage', consensus: 'Consensus', 'real-time': 'Real-Time', observability: 'Observability', security: 'Security', 'rate-limiting': 'Rate Limiting', dns: 'DNS', messaging: 'Messaging' };
-    const el = document.getElementById('stats-global');
-    el.innerHTML = '<strong>Suggested Learning Path</strong><br><br>' + topicOrder.map(t => {
-      const score = this.getTopicScore(t);
-      const pct = Math.round(score * 100);
-      const mastered = this.isTopicMastered(t);
-      return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:0.85rem;opacity:${mastered ? '0.5' : '1'}">
-        <span style="font-size:1rem;">${mastered ? '✅' : '📖'}</span>
-        <span style="width:100px;">${topicLabels[t] || t}</span>
-        <div style="flex:1;height:8px;background:var(--topic-bar-bg);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${mastered ? 'var(--success)' : 'var(--primary)'};border-radius:4px;"></div></div>
-        <span style="width:40px;text-align:right;font-size:0.75rem;color:var(--muted)">${pct}%</span>
-      </div>`;
-    }).join('');
-    setTimeout(() => APP.drawRadarChart(), 100);
-    this.showScreen('stats');
+    const depthCache = {};
+    const depthOf = (topic, visiting = new Set()) => {
+      if (depthCache[topic] !== undefined) return depthCache[topic];
+      if (visiting.has(topic)) return 0;
+      const prerequisites = TOPIC_CATALOG[topic].prerequisites;
+      if (!prerequisites.length) return (depthCache[topic] = 0);
+      const nextVisiting = new Set(visiting).add(topic);
+      return (depthCache[topic] = 1 + Math.max(...prerequisites.map(item => depthOf(item, nextVisiting))));
+    };
+    const dependents = {};
+    for (const topic of Object.keys(TOPIC_CATALOG)) dependents[topic] = [];
+    for (const [topic, details] of Object.entries(TOPIC_CATALOG)) {
+      for (const prerequisite of details.prerequisites) dependents[prerequisite].push(topic);
+    }
+    const levels = {};
+    for (const topic of Object.keys(TOPIC_CATALOG)) {
+      const depth = depthOf(topic);
+      (levels[depth] ||= []).push(topic);
+    }
+    const el = document.getElementById('topic-hierarchy');
+    el.innerHTML = Object.entries(levels).map(([depth, topics]) => `
+      <section class="topic-level">
+        <h2>${Number(depth) === 0 ? 'Foundations' : `Level ${Number(depth) + 1}`}</h2>
+        <div class="topic-grid">${topics.map(topic => {
+          const details = TOPIC_CATALOG[topic];
+          const prerequisites = details.prerequisites.map(item => TOPIC_CATALOG[item].label);
+          const unlocks = dependents[topic].map(item => TOPIC_CATALOG[item].label);
+          const mastery = Math.round(this.getTopicScore(topic) * 100);
+          return `<article class="topic-node">
+            <div class="topic-node-heading"><strong>${details.label}</strong><span>${mastery}%</span></div>
+            <div class="topic-node-progress"><span style="width:${mastery}%"></span></div>
+            <p>${prerequisites.length ? `Know first: ${prerequisites.join(', ')}` : 'Start here'}</p>
+            <p>${unlocks.length ? `Leads to: ${unlocks.join(', ')}` : 'Advanced endpoint'}</p>
+            <button class="btn btn-sm btn-outline" onclick="APP.startTopicSession('${topic}')">Practice ${details.label}</button>
+          </article>`;
+        }).join('')}</div>
+      </section>
+    `).join('');
+    this.showScreen('learning-path');
   },
 
   /* ——— Radar Chart (Canvas) ——— */
