@@ -345,6 +345,7 @@ const APP = {
     Render.diagram(card, 'diagram-container', correct);
 
     document.getElementById('next-btn').classList.remove('hidden');
+    document.getElementById('regenerate-btn').classList.remove('hidden');
     this.renderDeckStats();
 
     // reveal diagram
@@ -352,6 +353,27 @@ const APP = {
 
     // start pre-generating the next card for zero-latency transitions
     this.prefetchNext();
+  },
+
+  async regenerateCard() {
+    const oldId = this.currentCard?.id;
+    document.getElementById('regenerate-btn').disabled = true;
+    document.getElementById('regenerate-btn').textContent = '⏳ Generating...';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const newCard = await this.fetchCard(this.currentCard.topic, this.currentCard.difficulty);
+      if (newCard && newCard.id !== oldId && newCard.scenario !== this.currentCard.scenario) {
+        // replace current card in session
+        if (this.sessionIndex < this.sessionCards.length) {
+          this.sessionCards[this.sessionIndex] = newCard;
+        }
+        this.currentCard = newCard;
+        this.showCard();
+        this._regenerated = true;
+        break;
+      }
+    }
+    document.getElementById('regenerate-btn').disabled = false;
+    document.getElementById('regenerate-btn').textContent = '🔄 Regenerate';
   },
 
   peekDiagram() {

@@ -67,7 +67,10 @@
     <div id="diagram-container"></div>
     <div id="options"></div>
     <div id="feedback"></div>
-    <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card →</button>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()" style="flex:1">Next Card →</button>
+      <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" style="flex:0;font-size:0.85rem">🔄 Regenerate</button>
+    </div>
   </div>
 
   <!-- Session End -->
