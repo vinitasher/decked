@@ -140,8 +140,13 @@ const APP = {
 
     document.getElementById('scenario').textContent = card.scenario;
 
-    // render diagram
-    Render.diagram(card, 'diagram-container');
+    // retrieval practice: hide diagram until answered (user can toggle to peek)
+    if (!this._diagramPeeking) this._diagramPeeking = {};
+    const canPeek = this._diagramPeeking[card.id] || false;
+    document.getElementById('diagram-container').innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;font-size:0.85rem">📐 Diagram hidden for retrieval practice<br>Answer first, then the diagram reveals<br><button class="btn btn-sm btn-outline" onclick="APP.peekDiagram()">Peek at Diagram</button></p>';
+    if (canPeek) {
+      this.peekDiagram();
+    }
 
     // render options
     const optionsEl = document.getElementById('options');
@@ -206,6 +211,15 @@ const APP = {
 
     document.getElementById('next-btn').classList.remove('hidden');
     this.renderDeckStats();
+
+    // reveal diagram
+    Render.diagram(card, 'diagram-container', true);
+  },
+
+  peekDiagram() {
+    const card = this.currentCard;
+    this._diagramPeeking[card.id] = true;
+    Render.diagram(card, 'diagram-container', false);
   },
 
   nextCard() {

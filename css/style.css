@@ -12,6 +12,7 @@ p { margin-bottom: 12px; line-height: 1.5; }
 .btn-primary:hover { background: #303f9f; }
 .btn-success { background: #43a047; color: #fff; }
 .btn-outline { background: transparent; border: 2px solid #3949ab; color: #3949ab; }
+.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
 
 /* Welcome screen */
 .welcome-header { text-align: center; padding: 40px 0 24px; }
