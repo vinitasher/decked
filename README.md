@@ -104,3 +104,27 @@ decision-based practice with adaptive difficulty.
   explanations" for each card
 - **Force for good:** democratises system design education; transparent about
   the model (users can see why a card was chosen)
+
+## Deploy
+
+The production site runs on Cloudflare Pages with OpenCode Go
+`deepseek-v4-flash` generation and a KV-backed generated-card cache. The
+`OPENCODE_API_KEY` credential is stored as a Cloudflare Pages secret. Node.js
+22 or newer and an authenticated Wrangler session are required. Deploy from
+this directory:
+
+Generation retries transient Flash capacity failures and uses
+`deepseek-v4-pro` as the final OpenCode Go fallback.
+
+```sh
+bash check.sh
+bash deploy.sh
+```
+
+The script verifies Cloudflare authentication and configured resource IDs,
+stages only public PWA assets, bundles the functions under `functions/`, and
+publishes the production branch to `https://decked.pages.dev`.
+
+Cloudflare Git integration uses `bash check.sh && bash build.sh`, watches
+`system-design-flashcards/**`, and deploys `.pages-dist` from the `main`
+branch. Pull requests receive preview deployments.

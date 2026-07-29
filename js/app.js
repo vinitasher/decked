@@ -219,6 +219,7 @@ const APP = {
   },
 
   /* ——— Profile persistence ——— */
+  loadProfile() {
     const raw = localStorage.getItem('sdf_profile');
     if (raw) {
       this.profile = JSON.parse(raw);
@@ -528,15 +529,14 @@ const APP = {
     const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
     for (let attempt = 0; attempt < 5; attempt++) {
       const newCard = await this.fetchCard(this.currentCard.topic, this.currentCard.difficulty, [this.currentCard, ...avoidList]);
-        // replace current card in session
-        if (this.sessionIndex < this.sessionCards.length) {
-          this.sessionCards[this.sessionIndex] = newCard;
-        }
-        this.currentCard = newCard;
-        this.showCard();
-        this._regenerated = true;
-        break;
+      // replace current card in session
+      if (this.sessionIndex < this.sessionCards.length) {
+        this.sessionCards[this.sessionIndex] = newCard;
       }
+      this.currentCard = newCard;
+      this.showCard();
+      this._regenerated = true;
+      break;
     }
     document.getElementById('regenerate-btn').disabled = false;
     document.getElementById('regenerate-btn').textContent = '🔄 Regenerate';
@@ -612,6 +612,7 @@ const APP = {
       <p>Topics covered: <strong>${new Set(this.sessionCards.map(c => c.topic)).size}</strong></p>
       <p>Current streak: <strong>${this.profile.streaks.current} days</strong> (best: ${this.profile.streaks.best})</p>
       <p>Average difficulty of session: <strong>${(this.sessionCards.reduce((s,c) => s + c.difficulty, 0) / this.sessionCards.length).toFixed(1)} / 5</strong> — ${this.sessionCards.length > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
+    `;
     this.showSessionReview();
     this._stopTimer();
     this._saveSession(this.sessionCards.length, this.profile.totalCorrect);
@@ -888,6 +889,8 @@ const APP = {
       return `<div class="topic-row"><span>${topicLabels[t] || t} ${mastered}</span><div class="topic-bar"><div class="topic-fill" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
       }).join('');
     }
+  },
+
   /* ——— Session Timer ——— */
 
   _sessionTimer: false,

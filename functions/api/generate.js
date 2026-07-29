@@ -35,13 +35,56 @@ Return a JSON object with these exact keys:
 CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
 
   try {
-    const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1024,
-      temperature: 0.7
-    });
+    if (!env.OPENCODE_API_KEY) {
+      throw new Error('Card generation is not configured');
+    }
 
-    let text = aiResponse?.response || aiResponse?.choices?.[0]?.message?.content || '';
+    const models = [
+      'deepseek-v4-flash',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash',
+      'deepseek-v4-pro'
+    ];
+    let completion;
+    let providerError = '';
+
+    for (let attempt = 0; attempt < models.length; attempt++) {
+      const aiResponse = await fetch('https://opencode.ai/zen/go/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'opencode/1.18.9'
+        },
+        body: JSON.stringify({
+          model: models[attempt],
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 4096,
+          temperature: 0.7
+        })
+      });
+
+      if (aiResponse.ok) {
+        completion = await aiResponse.json();
+        break;
+      }
+
+      providerError = await aiResponse.text();
+      console.error(
+        'OpenCode card generation failed',
+        models[attempt],
+        aiResponse.status,
+        providerError.slice(0, 500)
+      );
+      if (aiResponse.status !== 503) break;
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+
+    if (!completion) {
+      throw new Error('Card generation provider is temporarily unavailable');
+    }
+
+    let text = completion?.choices?.[0]?.message?.content || '';
     // Extract JSON from response
     const cleaned = text.replace(/```json?/gi, '').replace(/```/g, '').trim();
     const start = cleaned.indexOf('{');

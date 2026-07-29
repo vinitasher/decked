@@ -1,14 +1,9 @@
-name = "deckd"
+name = "decked"
 pages_build_output_dir = "."
 compatibility_date = "2025-06-01"
 
-# Run once: npx wrangler kv:namespace create CARD_CACHE
-# then paste the returned id below
+# Dedicated production and preview generated-card caches.
 [[kv_namespaces]]
 binding = "CARD_CACHE"
-id = "__FILL_ME_IN__"
-preview_id = "__FILL_ME_IN__"
-
-# Workers AI binding
-[ai]
-binding = "AI"
+id = "8a88d82378dc4d9483c154ac5a358063"
+preview_id = "d4cc1b79a6cd406dae2010f5636bf4c0"
