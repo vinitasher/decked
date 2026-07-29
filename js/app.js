@@ -3,6 +3,26 @@
 const SERVER_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:3456' : '';
 
+function normalizeProfileData(profile) {
+  const normalized = profile && typeof profile === 'object' ? profile : {};
+  normalized.topicScores = normalized.topicScores && typeof normalized.topicScores === 'object'
+    ? normalized.topicScores : {};
+  normalized.cardHistory = normalized.cardHistory && typeof normalized.cardHistory === 'object'
+    ? normalized.cardHistory : {};
+  normalized.streaks = normalized.streaks && typeof normalized.streaks === 'object'
+    ? normalized.streaks : { current: 0, best: 0, lastDate: null };
+  normalized._topicCardSeen = normalized._topicCardSeen && typeof normalized._topicCardSeen === 'object'
+    ? normalized._topicCardSeen : {};
+
+  for (const score of Object.values(normalized.topicScores)) {
+    score.daysSpanned = Array.isArray(score.daysSpanned) ? [...new Set(score.daysSpanned)] : [];
+  }
+  for (const [topic, cardIds] of Object.entries(normalized._topicCardSeen)) {
+    normalized._topicCardSeen[topic] = Array.isArray(cardIds) ? [...new Set(cardIds)] : [];
+  }
+  return normalized;
+}
+
 const APP = {
   profile: null,
   currentCard: null,
@@ -237,9 +257,15 @@ const APP = {
   loadProfile() {
     const raw = localStorage.getItem('sdf_profile');
     if (raw) {
-      this.profile = JSON.parse(raw);
+      try {
+        this.profile = normalizeProfileData(JSON.parse(raw));
+        this.saveProfile();
+      } catch (_) {
+        localStorage.removeItem('sdf_profile');
+        this.profile = normalizeProfileData({});
+      }
     } else {
-      this.profile = {
+      this.profile = normalizeProfileData({
         userId: localStorage.getItem('sdf_profile_id') || 'local-' + Date.now().toString(36),
         topicScores: {},
         cardHistory: {},
@@ -247,7 +273,7 @@ const APP = {
         totalSessions: 0,
         totalAnswered: 0,
         totalCorrect: 0
-      };
+      });
       this.saveProfile();
     }
   },
@@ -267,7 +293,7 @@ const APP = {
     if (!t) return false;
     if (t.raw < 0.7) return false;
     if (t.cardsReviewed < 3) return false;
-    if (t.daysSpanned < 2) return false;
+    if ((t.daysSpanned || []).length < 2) return false;
     return true;
   },
 
@@ -275,7 +301,7 @@ const APP = {
     const old = this.getTopicScore(topic);
     const delta = (correct ? 1 : 0) - old;
     const raw = Math.max(0, Math.min(1, old + delta * 0.15 * weight));
-    const t = this.profile.topicScores[topic] || { raw: 0.5, cardsReviewed: 0, daysSpanned: new Set() };
+    const t = this.profile.topicScores[topic] || { raw: 0.5, cardsReviewed: 0, daysSpanned: [] };
     t.raw = raw;
     if (!correct) t.raw = Math.max(0, t.raw - 0.08); // harder penalty for wrong answers
     this.profile.topicScores[topic] = t;
@@ -283,16 +309,16 @@ const APP = {
   },
 
   _recordTopicReview(topic, cardId, correct) {
-    const t = this.profile.topicScores[topic] || { raw: 0.5, cardsReviewed: 0, daysSpanned: new Set() };
+    const t = this.profile.topicScores[topic] || { raw: 0.5, cardsReviewed: 0, daysSpanned: [] };
     const today = new Date().toISOString().split('T')[0];
-    t.daysSpanned = t.daysSpanned || new Set();
-    t.daysSpanned.add(today);
+    t.daysSpanned = Array.isArray(t.daysSpanned) ? t.daysSpanned : [];
+    if (!t.daysSpanned.includes(today)) t.daysSpanned.push(today);
     // count unique cards within this topic (not total reviews)
     const seen = this.profile._topicCardSeen || {};
-    if (!seen[topic]) seen[topic] = new Set();
-    if (!seen[topic].has(cardId)) {
-      seen[topic].add(cardId);
-      t.cardsReviewed = seen[topic].size;
+    if (!Array.isArray(seen[topic])) seen[topic] = [];
+    if (!seen[topic].includes(cardId)) {
+      seen[topic].push(cardId);
+      t.cardsReviewed = seen[topic].length;
     }
     this.profile._topicCardSeen = seen;
     this.profile.topicScores[topic] = t;

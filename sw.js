@@ -1,5 +1,5 @@
 /* Service worker — offline cache for PWA */
-const CACHE = 'sdf-v1';
+const CACHE = 'sdf-v2';
 const STATIC = ['/', '/index.html', '/css/style.css', '/js/app.js', '/js/srs.js', '/js/render.js', '/js/cards.js', '/manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -8,7 +8,11 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(clients.claim());
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (e) => {
