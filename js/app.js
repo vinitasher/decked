@@ -18,6 +18,39 @@ const APP = {
     this.showScreen('welcome');
     this._setupKeyboard();
     this._checkServerHealth();
+    this._initTheme();
+    this._initSwipe();
+  },
+
+  _initTheme() {
+    const saved = localStorage.getItem('sdf_theme');
+    if (saved === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.getElementById('theme-toggle').textContent = '☀️';
+    }
+  },
+
+  toggleTheme() {
+    const el = document.documentElement;
+    const isDark = el.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      el.removeAttribute('data-theme');
+      localStorage.setItem('sdf_theme', 'light');
+      document.getElementById('theme-toggle').textContent = '🌙';
+    } else {
+      el.setAttribute('data-theme', 'dark');
+      localStorage.setItem('sdf_theme', 'dark');
+      document.getElementById('theme-toggle').textContent = '☀️';
+    }
+  },
+
+  _initSwipe() {
+    let xStart = 0;
+    document.addEventListener('touchstart', (e) => { xStart = e.touches[0].clientX; });
+    document.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - xStart;
+      if (dx < -80 && !document.getElementById('next-btn').classList.contains('hidden')) this.nextCard();
+    });
   },
 
   async _checkServerHealth() {
@@ -209,6 +242,7 @@ const APP = {
     this.sessionStart = Date.now();
     this._nextCard = null;
     this.profile.totalSessions++;
+    this._startTimer();
     this.saveProfile();
     if (this.sessionCards.length === 0) {
       alert('No cards available! Check back later.');
@@ -319,6 +353,8 @@ const APP = {
       btn.className = 'option-btn';
       const keyNum = idx + 1;
       btn.innerHTML = `<span class="option-letter">${opt.id}<span style="display:block;font-size:0.55rem;opacity:0.5;">[${keyNum}]</span></span><span class="option-text">${opt.label}</span>`;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-label', `Option ${opt.id}: ${opt.label}`);
       btn.onclick = () => this.answer(opt.id, idx);
       optionsEl.appendChild(btn);
     });
@@ -365,6 +401,10 @@ const APP = {
     }
     this.profile.streaks.best = Math.max(this.profile.streaks.best, this.profile.streaks.current);
     localStorage.setItem('sdf_last_study_date', today);
+    // show consecutive correct streak
+    const streakEl = document.getElementById('consecutive-correct');
+    if (streakEl) streakEl.textContent = this._consecutiveCorrect > 1 ? `🔥×${this._consecutiveCorrect}` : '';
+
     // track consecutive correct for achievements
     if (correct) {
       this._consecutiveCorrect = (this._consecutiveCorrect || 0) + 1;
@@ -410,6 +450,7 @@ const APP = {
     // dual coding: diagram highlights correct path
     Render.diagram(card, 'diagram-container', correct);
 
+    document.getElementById('next-btn').setAttribute('aria-label', 'Next card');
     document.getElementById('next-btn').classList.remove('hidden');
     document.getElementById('regenerate-btn').classList.remove('hidden');
     document.getElementById('quality-rating').classList.remove('hidden');
@@ -512,6 +553,8 @@ const APP = {
       <p>Current streak: <strong>${this.profile.streaks.current} days</strong> (best: ${this.profile.streaks.best})</p>
       <p>Average difficulty of session: <strong>${(this.sessionCards.reduce((s,c) => s + c.difficulty, 0) / this.sessionCards.length).toFixed(1)} / 5</strong> — ${this.sessionCards.length > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
     `;
+    this._stopTimer();
+    this._saveSession(this.sessionCards.length, this.profile.totalCorrect);
     this.renderDeckStats();
   },
 
@@ -588,6 +631,20 @@ const APP = {
       const label = topicLabels[t] || t;
       return `<div class="topic-row"><span>${label}</span><div class="topic-bar"><div class="topic-fill${mastered ? ' mastered-fill' : ''}" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
     }).join('');
+
+    // topic coverage heatmap
+    const heatEl = document.createElement('div');
+    heatEl.innerHTML = '<h2>Coverage Heatmap</h2><div class="heatmap">';
+    for (const t of topics) {
+      const cardsInTopic = SEED_CARDS.filter(c => c.topic === t).length;
+      const level = cardsInTopic <= 2 ? 'low' : cardsInTopic <= 4 ? 'med' : 'high';
+      const colors = { low: '#ffcdd2', med: '#fff9c4', high: '#c8e6c9', mastered: '#a5d6a7' };
+      const mastered = this.isTopicMastered(t);
+      const color = mastered ? colors.mastered : colors[level];
+      heatEl.innerHTML += `<div class="heatmap-cell" style="background:${color}" title="${t}: ${cardsInTopic} cards${mastered ? ' ✓mastered' : ''}">${t.substring(0, 3)}</div>`;
+    }
+    heatEl.innerHTML += '<div class="heatmap-label">Topic coverage by seed card count & mastery</div></div>';
+    el.parentNode.insertBefore(heatEl, el.nextSibling);
   },
 
   /* ——— Card Authoring ——— */
@@ -736,6 +793,71 @@ const APP = {
       return `<div class="topic-row"><span>${topicLabels[t] || t} ${mastered}</span><div class="topic-bar"><div class="topic-fill" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
       }).join('');
     }
+  /* ——— Session Timer ——— */
+
+  _sessionTimer: false,
+
+  _startTimer() {
+    this._sessionStartMs = Date.now();
+    this._sessionTimer = true;
+    this._tickTimer();
+  },
+
+  _tickTimer() {
+    if (!this._sessionTimer) return;
+    const elapsed = Math.floor((Date.now() - this._sessionStartMs) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    const el = document.getElementById('session-timer');
+    if (el) el.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    setTimeout(() => this._tickTimer(), 1000);
+  },
+
+  _stopTimer() { this._sessionTimer = false; },
+
+  /* ——— Session History ——— */
+
+  _saveSession(cardCount, correct) {
+    const sessions = JSON.parse(localStorage.getItem('sdf_sessions') || '[]');
+    sessions.unshift({ date: new Date().toISOString(), cards: cardCount, correct, topics: [...new Set(this.sessionCards.map(c => c.topic))] });
+    if (sessions.length > 50) sessions.length = 50;
+    localStorage.setItem('sdf_sessions', JSON.stringify(sessions));
+  },
+
+  showHistory() {
+    const sessions = JSON.parse(localStorage.getItem('sdf_sessions') || '[]');
+    const el = document.getElementById('history-list');
+    if (sessions.length === 0) {
+      el.innerHTML = '<p style="color:var(--muted)">No sessions yet.</p>';
+    } else {
+      el.innerHTML = sessions.map((s, i) => {
+        const d = new Date(s.date);
+        const pct = s.cards > 0 ? Math.round(100 * s.correct / s.cards) : 0;
+        return `<div style="background:var(--card-bg);border-radius:8px;padding:10px 14px;margin:6px 0;box-shadow:0 1px 3px var(--stat-shadow);display:flex;justify-content:space-between;"><span>${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><span>${s.cards} cards · ${pct}% · ${s.topics.length} topics</span></div>`;
+      }).join('');
+    }
+    this.showScreen('history');
+  },
+
+  exportSession() {
+    const cards = this.sessionCards.length;
+    const correct = this.profile.totalCorrect;
+    const topics = [...new Set(this.sessionCards.map(c => c.topic))];
+    const lines = [
+      `System Design Flashcards — Session Results`,
+      `Date: ${new Date().toLocaleString()}`,
+      `Cards: ${cards}`,
+      `Correct: ${correct} (${cards > 0 ? Math.round(100 * correct / cards) : 0}%)`,
+      `Topics: ${topics.join(', ')}`,
+      `Streak: ${this.profile.streaks.current} days`,
+      ``,
+      `Cards in this session:`,
+      ...this.sessionCards.map(c => `  • ${c.topic}: ${c.scenario.substring(0, 60)}... [${c.correct}]`)
+    ].join('\n');
+    navigator.clipboard.writeText(lines).then(() => {
+      const toast = document.getElementById('achievement-toast');
+      if (toast) { toast.textContent = '📋 Results copied to clipboard!'; toast.className = 'toast show'; setTimeout(() => toast.className = 'toast', 3000); }
+    }).catch(() => alert('Could not copy to clipboard.\n\n' + lines));
   }
 };
 

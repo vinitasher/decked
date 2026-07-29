@@ -14,7 +14,10 @@
     <div class="welcome-header">
       <p id="study-reminder" class="hidden" style="background:#fff3e0;padding:8px 16px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;">⏰ You haven't studied yet today. A quick session?</p>
       <p id="server-status" style="font-size:0.75rem;margin-bottom:8px;">Checking server...</p>
-      <h1>System Design Flashcards</h1>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h1 style="margin:0">System Design Flashcards</h1>
+        <button id="theme-toggle" class="btn btn-sm btn-outline" onclick="APP.toggleTheme()" style="font-size:0.8rem;padding:4px 10px;">🌙</button>
+      </div>
       <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
     </div>
     <div id="achievement-toast" class="toast"></div>
@@ -31,6 +34,7 @@
     <div id="topic-breakdown"></div>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showHistory()">📜 Session History</button>
   </div>
 
   <!-- Create Card -->
@@ -62,12 +66,14 @@
       <div class="card-meta">
         <span id="card-topic">Topic</span>
         <span id="card-difficulty">★★★</span>
+        <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
+        <span id="session-timer" style="color:var(--muted)"></span>
       </div>
     </div>
     <div id="scenario"></div>
     <div id="diagram-container"></div>
     <div id="options"></div>
-    <div id="feedback"></div>
+    <div id="feedback" aria-live="polite"></div>
     <div id="quality-rating" class="hidden" style="display:flex;gap:8px;justify-content:center;margin:8px 0;">
       <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935">👎</button>
       <span style="font-size:0.8rem;color:#888;align-self:center;">Rate this card</span>
@@ -85,8 +91,16 @@
     <div id="session-summary"></div>
     <div class="actions">
       <button class="btn btn-primary" onclick="APP.startSession()">Another Session</button>
+      <button class="btn btn-outline" onclick="APP.exportSession()">📋 Export Results</button>
       <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Dashboard</button>
     </div>
+  </div>
+
+  <!-- Session History -->
+  <div id="screen-history" class="screen hidden">
+    <h1>Session History</h1>
+    <div id="history-list" style="margin:12px 0;"></div>
+    <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Dashboard</button>
   </div>
 
   <!-- Statistics Dashboard -->
