@@ -13,6 +13,7 @@
   <div id="screen-welcome" class="screen">
     <div class="welcome-header">
       <p id="study-reminder" class="hidden" style="background:#fff3e0;padding:8px 16px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;">⏰ You haven't studied yet today. A quick session?</p>
+      <p id="server-status" style="font-size:0.75rem;margin-bottom:8px;">Checking server...</p>
       <h1>System Design Flashcards</h1>
       <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
     </div>
@@ -67,6 +68,11 @@
     <div id="diagram-container"></div>
     <div id="options"></div>
     <div id="feedback"></div>
+    <div id="quality-rating" class="hidden" style="display:flex;gap:8px;justify-content:center;margin:8px 0;">
+      <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935">👎</button>
+      <span style="font-size:0.8rem;color:#888;align-self:center;">Rate this card</span>
+      <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047">👍</button>
+    </div>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()" style="flex:1">Next Card <span style="font-size:0.7rem;opacity:0.6">[N]</span> →</button>
       <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" style="flex:0;font-size:0.85rem">🔄 Regenerate</button>

@@ -17,6 +17,23 @@ const APP = {
     this.renderDeckStats();
     this.showScreen('welcome');
     this._setupKeyboard();
+    this._checkServerHealth();
+  },
+
+  async _checkServerHealth() {
+    const el = document.getElementById('server-status');
+    if (!el) return;
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/cache-stats`);
+      if (res.ok) {
+        const stats = await res.json();
+        el.innerHTML = `🟢 Server online (${stats.total} cached cards)`;
+        el.style.color = '#43a047';
+      } else throw new Error();
+    } catch {
+      el.innerHTML = '🔴 Server offline — using seed cards';
+      el.style.color = '#e53935';
+    }
   },
 
   /* ——— AI Card Generation (with localStorage cache & seed fallback) ——— */
@@ -206,10 +223,11 @@ const APP = {
 
   async _generateSessionCards(count) {
     const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
-    const scored = topics.map(t => ({
-      topic: t,
-      score: this._difficultyWeight({ topic: t, difficulty: 3 }) + Math.random() * 0.1
-    }));
+    const scored = topics.map(t => {
+      const mastery = this.getTopicScore(t);
+      const targetDifficulty = Math.min(5, 1 + Math.round(mastery * 4)); // higher mastery → harder cards
+      return { topic: t, difficulty: targetDifficulty, score: this._difficultyWeight({ topic: t, difficulty: targetDifficulty }) + Math.random() * 0.1 };
+    });
     scored.sort((a, b) => b.score - a.score);
 
     const cards = [];
@@ -217,7 +235,7 @@ const APP = {
     while (cards.length < count) {
       const t = scored[idx % scored.length];
       if (t) {
-        const card = await this.fetchCard(t.topic, Math.min(5, 1 + Math.floor(Math.random() * 5)), cards);
+        const card = await this.fetchCard(t.topic, t.difficulty, cards);
         if (card) {
           // approximate dedup by checking first 40 chars of scenario
           const dup = cards.find(c => c.scenario.substring(0, 40) === card.scenario.substring(0, 40));
@@ -374,7 +392,10 @@ const APP = {
       feedbackEl.innerHTML += `<br><br><em>The correct answer was <strong>${card.correct}</strong>.</em>`;
     }
 
-    // elaborative interrogation: force reflection
+    // reset quality rating for new card
+  document.getElementById('quality-rating').querySelectorAll('button').forEach(b => b.disabled = false);
+
+  // elaborative interrogation: force reflection
     const whyWrong = card.options.map(o => {
       if (o.id === card.correct) return '';
       const flaws = {
@@ -391,6 +412,7 @@ const APP = {
 
     document.getElementById('next-btn').classList.remove('hidden');
     document.getElementById('regenerate-btn').classList.remove('hidden');
+    document.getElementById('quality-rating').classList.remove('hidden');
     this.renderDeckStats();
 
     // reveal diagram
@@ -439,6 +461,17 @@ const APP = {
         this.regenerateCard();
       }
     });
+  },
+
+  rateCard(quality) {
+    // quality: 'good' or 'bad' — adjusts topic score accordingly
+    const card = this.currentCard;
+    if (quality === 'good') {
+      this.updateTopicScore(card.topic, true, 0.3);
+    } else {
+      this.updateTopicScore(card.topic, false, 0.3);
+    }
+    document.getElementById('quality-rating').querySelectorAll('button').forEach(b => b.disabled = true);
   },
 
   peekDiagram() {
