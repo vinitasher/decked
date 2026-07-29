@@ -127,23 +127,23 @@ const APP = {
 
   async fetchCard(topic, difficulty, avoidList = []) {
     const key = this._cacheKey(topic, difficulty);
-    const allCached = [...this._loadCachedKeys(), ...Object.values(this._cardCache)];
+    const excludedCards = [...avoidList, ...this.sessionCards];
 
-    // try server, checking diversity against avoidList + cached cards
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // A topic/difficulty cache entry is reusable unless it is already in this session.
+    for (let attempt = 0; attempt < 1; attempt++) {
       // check localStorage cache first
       const stored = localStorage.getItem('sdf_gen_' + key);
       if (stored) {
         try {
           const card = normalizeCardPrerequisites(JSON.parse(stored));
           localStorage.setItem('sdf_gen_' + key, JSON.stringify(card));
-          const dup = this._isDuplicateScenario(card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+          const dup = this._isDuplicateScenario(card.scenario, excludedCards);
           if (!dup) return card;
         } catch (_) {}
       }
       // check in-memory cache
       if (this._cardCache[key]) {
-        const dup = this._isDuplicateScenario(this._cardCache[key].scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+        const dup = this._isDuplicateScenario(this._cardCache[key].scenario, excludedCards);
         if (!dup) return normalizeCardPrerequisites(this._cardCache[key]);
       }
       // try server
@@ -152,7 +152,7 @@ const APP = {
         if (!res.ok) throw new Error(`server returned ${res.status}`);
         const data = await res.json();
         const card = normalizeCardPrerequisites(data.card);
-        const dup = this._isDuplicateScenario(card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+        const dup = this._isDuplicateScenario(card.scenario, excludedCards);
         if (!dup) {
           this._cardCache[key] = card;
           localStorage.setItem('sdf_gen_' + key, JSON.stringify(card));
@@ -339,33 +339,40 @@ const APP = {
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
-    this.sessionCards = await this._generateSessionCards(count);
-    this.sessionIndex = 0;
-    this.sessionStart = Date.now();
-    this._nextCard = null;
-    this.profile.totalSessions++;
-    this._startTimer();
-    this.saveProfile();
-    if (this.sessionCards.length === 0) {
-      alert('No cards available! Check back later.');
-      return;
+    const startButton = document.getElementById('start-session-btn');
+    startButton.disabled = true;
+    startButton.textContent = 'Preparing session...';
+    try {
+      this.sessionCards = await this._generateSessionCards(count);
+      this.sessionIndex = 0;
+      this.sessionStart = Date.now();
+      this._nextCard = null;
+      this.profile.totalSessions++;
+      this._startTimer();
+      this.saveProfile();
+      if (this.sessionCards.length === 0) {
+        alert('No cards available! Check back later.');
+        return;
+      }
+      // pre-generate the next card + pre-warm cache for other likely topics
+      this.prefetchNext();
+      this._warmCache();
+      this.showCard();
+      this.showScreen('session');
+    } finally {
+      startButton.disabled = false;
+      startButton.textContent = 'Start Session';
     }
-    // pre-generate the next card + pre-warm cache for other likely topics
-    this.prefetchNext();
-    this._warmCache();
-    this.showCard();
-    this.showScreen('session');
   },
 
   async startTopicSession(topic) {
     if (!TOPIC_CATALOG[topic]) return;
-    this.sessionCards = [];
-    for (let difficulty = 1; difficulty <= 5; difficulty++) {
-      const card = await this.fetchCard(topic, difficulty, this.sessionCards);
-      if (card && !this._isDuplicateScenario(card.scenario, this.sessionCards)) {
-        this.sessionCards.push(card);
-      }
-    }
+    const candidates = await Promise.all(
+      [1, 2, 3, 4, 5].map(difficulty => this.fetchCard(topic, difficulty))
+    );
+    this.sessionCards = candidates.filter((card, index) =>
+      card && !this._isDuplicateScenario(card.scenario, candidates.slice(0, index))
+    );
     if (this.sessionCards.length === 0) {
       alert('No cards available for this topic.');
       return;
@@ -389,22 +396,12 @@ const APP = {
     });
     scored.sort((a, b) => b.score - a.score);
 
-    const cards = [];
-    let idx = 0;
-    while (cards.length < count) {
-      const t = scored[idx % scored.length];
-      if (t) {
-        const card = await this.fetchCard(t.topic, t.difficulty, cards);
-        if (card) {
-          // approximate dedup by checking first 40 chars of scenario
-          const dup = cards.find(c => c.scenario.substring(0, 40) === card.scenario.substring(0, 40));
-          if (!dup) cards.push(card);
-        }
-      }
-      idx++;
-      if (idx > count * 5) break;
-    }
-    return cards.slice(0, count);
+    const candidates = await Promise.all(
+      scored.slice(0, count).map(item => this.fetchCard(item.topic, item.difficulty))
+    );
+    return candidates.filter((card, index) =>
+      card && !this._isDuplicateScenario(card.scenario, candidates.slice(0, index))
+    ).slice(0, count);
   },
 
   _yesterday() {

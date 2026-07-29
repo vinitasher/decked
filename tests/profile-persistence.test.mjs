@@ -9,10 +9,18 @@ const context = {
   document: { addEventListener() {} },
   localStorage: {
     values: new Map(),
+    get length() { return this.values.size; },
+    key(index) { return [...this.values.keys()][index] ?? null; },
     getItem(key) { return this.values.get(key) ?? null; },
     setItem(key, value) { this.values.set(key, value); },
     removeItem(key) { this.values.delete(key); }
-  }
+  },
+  normalizeCardPrerequisites(card) {
+    if (!Array.isArray(card.prerequisiteTopics)) card.prerequisiteTopics = [];
+    return card;
+  },
+  SEED_CARDS: [],
+  fetch() { throw new Error('network should not be called'); }
 };
 vm.createContext(context);
 vm.runInContext(`${source}
@@ -47,4 +55,21 @@ test('topic review remains valid after profile serialization and reload', () => 
   assert.equal(app.profile.topicScores.caching.cardsReviewed, 2);
   assert.deepEqual([...app.profile._topicCardSeen.caching], ['card-1', 'card-2']);
   assert.equal(app.profile.topicScores.caching.daysSpanned.length, 1);
+});
+
+test('fetchCard reuses its own local cache entry without a network request', async () => {
+  const app = context.appForTest;
+  const card = {
+    id: 'cached-card',
+    topic: 'caching',
+    difficulty: 3,
+    prerequisiteTopics: ['api-design'],
+    scenario: 'A cached scenario'
+  };
+  context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify(card));
+  app.sessionCards = [];
+
+  const result = await app.fetchCard('caching', 3);
+
+  assert.equal(result.id, 'cached-card');
 });
