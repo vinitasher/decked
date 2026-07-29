@@ -32,3 +32,7 @@ test('confidence feedback advances automatically after three seconds', () => {
   assert.match(app, /this\._advanceTimer = setTimeout\(\(\) => this\.nextCard\(\), 3000\)/);
   assert.match(app, /clearTimeout\(this\._advanceTimer\)/);
 });
+
+test('session startup supports the previous cached dashboard markup', () => {
+  assert.match(app, /document\.getElementById\('start-session-btn'\)\s*\|\|\s*document\.querySelector/);
+});

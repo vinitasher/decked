@@ -339,7 +339,8 @@ const APP = {
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
-    const startButton = document.getElementById('start-session-btn');
+    const startButton = document.getElementById('start-session-btn')
+      || document.querySelector('button[onclick="APP.startSession()"]');
     startButton.disabled = true;
     startButton.textContent = 'Preparing session...';
     try {
