@@ -116,6 +116,9 @@ this directory:
 Generation retries transient Flash capacity failures and uses
 `deepseek-v4-pro` as the final OpenCode Go fallback.
 
+Generated cards are stored permanently in Cloudflare KV until explicitly
+replaced or deleted. Learner progress remains local to each browser.
+
 ```sh
 bash check.sh
 bash deploy.sh

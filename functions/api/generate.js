@@ -106,7 +106,7 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
 
     // Cache in KV
     if (env.CARD_CACHE) {
-      await env.CARD_CACHE.put(cacheKey, JSON.stringify(card), { expirationTtl: 86400 * 30 });
+      await env.CARD_CACHE.put(cacheKey, JSON.stringify(card));
     }
 
     return new Response(JSON.stringify({ cached: false, card }), {

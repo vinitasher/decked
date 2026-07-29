@@ -43,8 +43,8 @@ test('generation retries a temporary provider failure and caches the card', asyn
         OPENCODE_API_KEY: 'test-key',
         CARD_CACHE: {
           get: async () => null,
-          put: async (key, value) => {
-            cached = { key, value };
+          put: async (key, value, options) => {
+            cached = { key, value, options };
           }
         }
       }
@@ -57,6 +57,7 @@ test('generation retries a temporary provider failure and caches the card', asyn
     assert.deepEqual(models, ['deepseek-v4-flash', 'deepseek-v4-flash']);
     assert.equal(cached.key, 'queues:2');
     assert.equal(JSON.parse(cached.value).id, card.id);
+    assert.equal(cached.options, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
