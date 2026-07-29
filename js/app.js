@@ -40,13 +40,43 @@ const APP = {
   /* ——— Topic scores ——— */
 
   getTopicScore(topic) {
-    return this.profile.topicScores[topic] || 0.5;
+    return this.profile.topicScores[topic]?.raw ?? 0.5;
+  },
+
+  isTopicMastered(topic) {
+    const t = this.profile.topicScores[topic];
+    if (!t) return false;
+    if (t.raw < 0.7) return false;
+    if (t.cardsReviewed < 3) return false;
+    if (t.daysSpanned < 2) return false;
+    return true;
   },
 
   updateTopicScore(topic, correct, weight = 1) {
     const old = this.getTopicScore(topic);
     const delta = (correct ? 1 : 0) - old;
-    this.profile.topicScores[topic] = Math.max(0, Math.min(1, old + delta * 0.15 * weight));
+    const raw = Math.max(0, Math.min(1, old + delta * 0.15 * weight));
+    const t = this.profile.topicScores[topic] || { raw: 0.5, cardsReviewed: 0, daysSpanned: new Set() };
+    t.raw = raw;
+    if (!correct) t.raw = Math.max(0, t.raw - 0.08); // harder penalty for wrong answers
+    this.profile.topicScores[topic] = t;
+    this.saveProfile();
+  },
+
+  _recordTopicReview(topic, cardId, correct) {
+    const t = this.profile.topicScores[topic] || { raw: 0.5, cardsReviewed: 0, daysSpanned: new Set() };
+    const today = new Date().toISOString().split('T')[0];
+    t.daysSpanned = t.daysSpanned || new Set();
+    t.daysSpanned.add(today);
+    // count unique cards within this topic (not total reviews)
+    const seen = this.profile._topicCardSeen || {};
+    if (!seen[topic]) seen[topic] = new Set();
+    if (!seen[topic].has(cardId)) {
+      seen[topic].add(cardId);
+      t.cardsReviewed = seen[topic].size;
+    }
+    this.profile._topicCardSeen = seen;
+    this.profile.topicScores[topic] = t;
     this.saveProfile();
   },
 
@@ -193,8 +223,9 @@ const APP = {
     review.nextReviewAt = Date.now() + review.interval * 86400000;
     this.saveCardReview(card.id, review);
 
-    // update topic score
+    // update topic score + mastery tracking
     this.updateTopicScore(card.topic, correct, 1);
+    this._recordTopicReview(card.topic, card.id, correct);
 
     // update global stats + streak
     this.profile.totalAnswered++;
@@ -312,7 +343,8 @@ const APP = {
           storage: 'Storage', observability: 'Observability', security: 'Security',
           'real-time': 'Real-Time'
         };
-        return `<div class="topic-row"><span>${topicLabels[t] || t}</span><div class="topic-bar"><div class="topic-fill" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%</span></div>`;
+        const mastered = this.isTopicMastered(t) ? '★' : '';
+      return `<div class="topic-row"><span>${topicLabels[t] || t} ${mastered}</span><div class="topic-bar"><div class="topic-fill" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
       }).join('');
     }
   }
