@@ -14,6 +14,7 @@ scripts=(
   functions/api/cache-stats.js
   server/generate-card.js
   server/server.js
+  scripts/migrate-option-prerequisites.mjs
 )
 
 for script in "${scripts[@]}"; do

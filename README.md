@@ -125,9 +125,10 @@ Generated cards are stored permanently in Cloudflare KV until explicitly
 replaced or deleted. Learner progress remains local to each browser.
 Each generated option declares prerequisite topics, and the question-level
 Know First list is their deduplicated aggregate. Legacy cached options receive
-empty prerequisite arrays while existing card prerequisites are preserved;
-normalized cards are rewritten permanently. Custom cards and their prerequisite
-lists remain in browser local storage.
+reviewed prerequisite metadata for the seven repository-held historical cards;
+their question aggregates are rebuilt and normalized cards are rewritten
+permanently. Unknown browser-only custom cards retain their authored metadata
+and remain in local storage.
 
 The PWA refreshes same-origin application assets from the network after
 deployment and keeps the latest successful responses for offline use. Feedback
