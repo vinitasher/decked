@@ -198,7 +198,7 @@ const APP = {
       else if (opt.id === selectedId && !correct) btn.classList.add('incorrect');
     });
 
-    // show feedback
+    // show feedback with elaborative interrogation
     const feedbackEl = document.getElementById('feedback');
     feedbackEl.className = correct ? 'feedback correct' : 'feedback incorrect';
     feedbackEl.innerHTML = `<strong>${correct ? '✓ Correct!' : '✗ Incorrect'}</strong><br><br>${card.explanation}`;
@@ -206,7 +206,19 @@ const APP = {
       feedbackEl.innerHTML += `<br><br><em>The correct answer was <strong>${card.correct}</strong>.</em>`;
     }
 
-    // highlight diagram path
+    // elaborative interrogation: force reflection
+    const whyWrong = card.options.map(o => {
+      if (o.id === card.correct) return '';
+      const flaws = {
+        'A': ' fails because it cannot handle the dynamic, per-user nature of this request pattern.',
+        'B': ' seems plausible but introduces unnecessary complexity or cost for this specific bottleneck.',
+        'C': ' addresses the wrong layer — it solves a scaling problem that isn't the actual constraint.',
+        'D': ' is an anti-pattern that creates more problems (coupling, latency, single points of failure) than it solves.'
+      };
+      return o.id !== card.correct ? `<br><br><em>Why not ${o.id}:</em> ${flaws[o.id] || ' this option creates trade-offs that conflict with the requirements.'}` : '';
+    }).join('');
+
+    // dual coding: diagram highlights correct path
     Render.diagram(card, 'diagram-container', correct);
 
     document.getElementById('next-btn').classList.remove('hidden');
