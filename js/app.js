@@ -388,6 +388,67 @@ const APP = {
     }).join('');
   },
 
+  /* ——— Card Authoring ——— */
+
+  showCreateCard() {
+    document.getElementById('create-result').innerHTML = '';
+    this.showScreen('create');
+  },
+
+  saveCreatedCard() {
+    const topic = document.getElementById('create-topic').value.trim().toLowerCase().replace(/\s+/g, '-');
+    const difficulty = parseInt(document.getElementById('create-difficulty').value) || 2;
+    const scenario = document.getElementById('create-scenario').value.trim();
+    const nodes = document.getElementById('create-nodes').value.split(',').map(s => s.trim()).filter(Boolean);
+    const options = [
+      { id: 'A', label: document.getElementById('create-optionA').value.trim() },
+      { id: 'B', label: document.getElementById('create-optionB').value.trim() },
+      { id: 'C', label: document.getElementById('create-optionC').value.trim() }
+    ];
+    const optD = document.getElementById('create-optionD').value.trim();
+    if (optD) options.push({ id: 'D', label: optD });
+    const explanation = document.getElementById('create-explanation').value.trim();
+
+    if (!topic || !scenario || nodes.length < 2 || !options[0].label || !options[1].label || !explanation) {
+      document.getElementById('create-result').innerHTML = '<p style="color:#e53935">Please fill in all required fields (topic, scenario, nodes, options A, B, C, explanation).</p>';
+      return;
+    }
+
+    const card = {
+      id: 'custom-' + Date.now().toString(36),
+      topic,
+      difficulty: Math.max(1, Math.min(5, difficulty)),
+      scenario,
+      nodes,
+      options,
+      correct: 'B',
+      explanation
+    };
+
+    // store custom cards in localStorage
+    const stored = JSON.parse(localStorage.getItem('sdf_custom_cards') || '[]');
+    stored.push(card);
+    localStorage.setItem('sdf_custom_cards', JSON.stringify(stored));
+
+    // merge into the working deck
+    const allCards = [...stored.reverse(), ...SEED_CARDS];
+    // rebuild SEED_CARDS reference — replace the const
+    // (we use the SEED_CARDS variable in the app, so we need to push them)
+    SEED_CARDS.unshift(card);
+
+    document.getElementById('create-result').innerHTML = `<p style="color:#43a047">✓ Card added to deck! (${stored.length} custom card${stored.length > 1 ? 's' : ''})</p>`;
+    document.getElementById('create-topic').value = '';
+    document.getElementById('create-difficulty').value = '';
+    document.getElementById('create-scenario').value = '';
+    document.getElementById('create-nodes').value = '';
+    document.getElementById('create-optionA').value = '';
+    document.getElementById('create-optionB').value = '';
+    document.getElementById('create-optionC').value = '';
+    document.getElementById('create-optionD').value = '';
+    document.getElementById('create-explanation').value = '';
+    this.renderDeckStats();
+  },
+
   /* ——— UI ——— */
 
   showScreen(id) {

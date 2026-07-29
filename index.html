@@ -24,7 +24,30 @@
     <button class="btn btn-primary" style="width:100%;margin:12px 0" onclick="APP.startSession()">Start Session</button>
     <h2 style="margin-top:20px">Your Profile</h2>
     <div id="topic-breakdown"></div>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
+  </div>
+
+  <!-- Create Card -->
+  <div id="screen-create" class="screen hidden">
+    <h1>Create a Card</h1>
+    <p style="color:#666;font-size:0.9rem">Write your own system design scenario to add to the deck.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin:16px 0;">
+      <input id="create-topic" placeholder="Topic (e.g. caching, queues, databases)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <input id="create-difficulty" type="number" min="1" max="5" placeholder="Difficulty (1-5)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <textarea id="create-scenario" placeholder="Describe the scenario..." rows="4" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;font-family:inherit;"></textarea>
+      <input id="create-nodes" placeholder="Nodes (comma-separated, e.g. Client, API Server, DB)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <input id="create-optionA" placeholder="Option A" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <input id="create-optionB" placeholder="Option B (correct)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <input id="create-optionC" placeholder="Option C" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <input id="create-optionD" placeholder="Option D (optional)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+      <textarea id="create-explanation" placeholder="Why is B correct? Explain the trade-offs..." rows="3" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;font-family:inherit;"></textarea>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-primary" onclick="APP.saveCreatedCard()">Add to Deck</button>
+      <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Cancel</button>
+    </div>
+    <div id="create-result" style="margin-top:12px;"></div>
   </div>
 
   <!-- Session -->
