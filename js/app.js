@@ -21,6 +21,11 @@ const APP = {
     this._initTheme();
     this._initSwipe();
     this._requestNotificationPermission();
+    // auto-resume prompt: show button if session was interrupted
+    if (localStorage.getItem('sdf_resume')) {
+      const btn = document.getElementById('resume-btn');
+      if (btn) btn.classList.remove('hidden');
+    }
   },
 
   _initTheme() {
@@ -413,6 +418,11 @@ const APP = {
       optionsEl.appendChild(btn);
     });
 
+    // update bookmark button
+    const bm = document.getElementById('bookmark-btn');
+    if (bm) bm.textContent = this.isBookmarked(card.id) ? '★' : '☆';
+
+    this._saveSessionState();
     document.getElementById('feedback').classList.add('hidden');
     document.getElementById('next-btn').classList.add('hidden');
   },
@@ -601,7 +611,7 @@ const APP = {
       <p>Topics covered: <strong>${new Set(this.sessionCards.map(c => c.topic)).size}</strong></p>
       <p>Current streak: <strong>${this.profile.streaks.current} days</strong> (best: ${this.profile.streaks.best})</p>
       <p>Average difficulty of session: <strong>${(this.sessionCards.reduce((s,c) => s + c.difficulty, 0) / this.sessionCards.length).toFixed(1)} / 5</strong> — ${this.sessionCards.length > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
-    `;
+    this.showSessionReview();
     this._stopTimer();
     this._saveSession(this.sessionCards.length, this.profile.totalCorrect);
     this.renderDeckStats();
@@ -846,6 +856,9 @@ const APP = {
     document.getElementById('stat-due').textContent = due;
     document.getElementById('stat-streak').textContent = this.profile.streaks.current;
     this.renderGoal();
+    // show resume button if session state exists
+    const resumeBtn = document.getElementById('resume-btn');
+    if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem('sdf_resume'));
 
     // achievements display
     const aEl = document.getElementById('achievement-list');
@@ -939,6 +952,216 @@ const APP = {
       const toast = document.getElementById('achievement-toast');
       if (toast) { toast.textContent = '📋 Results copied to clipboard!'; toast.className = 'toast show'; setTimeout(() => toast.className = 'toast', 3000); }
     }).catch(() => alert('Could not copy to clipboard.\n\n' + lines));
+  },
+
+  /* ——— Session Review ——— */
+
+  showSessionReview() {
+    const el = document.getElementById('session-summary');
+    const correct = this.profile.totalCorrect;
+    const total = this.profile.totalAnswered;
+    const pct = total > 0 ? Math.round(100 * correct / total) : 0;
+    let html = `<p>Session complete — <strong>${this.sessionCards.length}</strong> cards, <strong>${pct}%</strong> correct</p><div style="margin:12px 0;">`;
+    for (let i = 0; i < this.sessionCards.length; i++) {
+      const card = this.sessionCards[i];
+      const review = this.getCardReview(card.id);
+      const wasCorrect = review.lastConfidence && review.lastConfidence > 0;
+      html += `<div style="display:flex;gap:8px;align-items:start;padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;border-left:3px solid ${wasCorrect ? 'var(--success)' : 'var(--danger)'}">
+        <span style="font-size:0.8rem;font-weight:600;min-width:24px;">${i+1}.</span>
+        <div style="flex:1;font-size:0.8rem;">
+          <strong>${card.topic}</strong>: ${card.scenario.substring(0, 70)}…<br>
+          <span style="color:var(--muted)">→ ${card.correct} · ${SRS.confidenceLabel(review.lastConfidence)}</span>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  },
+
+  /* ——— Learning Path ——— */
+
+  showLearningPath() {
+    const topicOrder = ['api-design', 'caching', 'loadbalancing', 'queues', 'databases', 'storage', 'consensus', 'real-time', 'observability', 'security', 'rate-limiting', 'dns', 'messaging'];
+    const topicLabels = { 'api-design': 'API Design', caching: 'Caching', loadbalancing: 'Load Balancing', queues: 'Queues', databases: 'Databases', storage: 'Storage', consensus: 'Consensus', 'real-time': 'Real-Time', observability: 'Observability', security: 'Security', 'rate-limiting': 'Rate Limiting', dns: 'DNS', messaging: 'Messaging' };
+    const el = document.getElementById('stats-global');
+    el.innerHTML = '<strong>Suggested Learning Path</strong><br><br>' + topicOrder.map(t => {
+      const score = this.getTopicScore(t);
+      const pct = Math.round(score * 100);
+      const mastered = this.isTopicMastered(t);
+      return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:0.85rem;opacity:${mastered ? '0.5' : '1'}">
+        <span style="font-size:1rem;">${mastered ? '✅' : '📖'}</span>
+        <span style="width:100px;">${topicLabels[t] || t}</span>
+        <div style="flex:1;height:8px;background:var(--topic-bar-bg);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${mastered ? 'var(--success)' : 'var(--primary)'};border-radius:4px;"></div></div>
+        <span style="width:40px;text-align:right;font-size:0.75rem;color:var(--muted)">${pct}%</span>
+      </div>`;
+    }).join('');
+    setTimeout(() => APP.drawRadarChart(), 100);
+    this.showScreen('stats');
+  },
+
+  /* ——— Radar Chart (Canvas) ——— */
+
+  drawRadarChart() {
+    const canvas = document.getElementById('radar-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width = Math.min(300, canvas.parentElement.clientWidth - 20);
+    const cx = size / 2, cy = size / 2, r = size * 0.35;
+    const topics = ['caching', 'queues', 'databases', 'consensus', 'api-design', 'loadbalancing'];
+    const labels = { caching: 'Cache', queues: 'Queue', databases: 'DB', consensus: 'Consensus', 'api-design': 'API', loadbalancing: 'LB' };
+    const n = topics.length;
+    ctx.clearRect(0, 0, size, size);
+
+    // background grid
+    for (let ring = 1; ring <= 5; ring++) {
+      ctx.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
+        const x = cx + Math.cos(angle) * r * ring / 5;
+        const y = cy + Math.sin(angle) * r * ring / 5;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#ddd'; ctx.lineWidth = 0.5; ctx.stroke();
+    }
+
+    // data polygon
+    ctx.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const t = topics[i % n];
+      const score = this.getTopicScore(t);
+      const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
+      const x = cx + Math.cos(angle) * r * score;
+      const y = cy + Math.sin(angle) * r * score;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.fillStyle = 'rgba(57, 73, 171, 0.15)'; ctx.fill();
+    ctx.strokeStyle = '#3949ab'; ctx.lineWidth = 2; ctx.stroke();
+
+    // labels
+    for (let i = 0; i < n; i++) {
+      const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
+      const lx = cx + Math.cos(angle) * (r + 20);
+      const ly = cy + Math.sin(angle) * (r + 20);
+      ctx.fillStyle = '#666'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(labels[topics[i]], lx, ly);
+    }
+  },
+
+  /* ——— Bookmarks ——— */
+
+  toggleBookmark(cardId) {
+    const bm = JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]');
+    const idx = bm.indexOf(cardId);
+    if (idx >= 0) bm.splice(idx, 1); else bm.push(cardId);
+    localStorage.setItem('sdf_bookmarks', JSON.stringify(bm));
+    this.renderBookmarks();
+  },
+
+  isBookmarked(cardId) { return JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]').includes(cardId); },
+
+  renderBookmarks() {
+    const el = document.getElementById('bookmark-list');
+    if (!el) return;
+    const bm = JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]');
+    if (bm.length === 0) { el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">No bookmarked cards yet. Use the ★ button during a session to save one.</p>'; return; }
+    const cards = SEED_CARDS.filter(c => bm.includes(c.id));
+    el.innerHTML = cards.map(c => `<div style="padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;font-size:0.85rem;"><strong>${c.topic}</strong>: ${c.scenario.substring(0, 60)}… <span style="color:var(--muted)">[${c.correct}]</span></div>`).join('');
+  },
+
+  /* ——— Search / Filter ——— */
+
+  filterCards() {
+    const query = document.getElementById('search-input')?.value?.toLowerCase().trim() || '';
+    const diffFilter = parseInt(document.getElementById('diff-filter')?.value) || 0;
+    const topicFilter = document.getElementById('topic-filter')?.value || '';
+    let results = [...SEED_CARDS];
+    if (query) results = results.filter(c => c.scenario.toLowerCase().includes(query) || c.topic.includes(query));
+    if (diffFilter) results = results.filter(c => c.difficulty === diffFilter);
+    if (topicFilter) results = results.filter(c => c.topic === topicFilter);
+    document.getElementById('search-results').innerHTML = results.length === 0
+      ? '<p style="color:var(--muted);font-size:0.85rem;">No matching cards.</p>'
+      : results.slice(0, 20).map(c => `<div style="padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;font-size:0.8rem;"><strong>${c.topic}</strong> ★${c.difficulty}: ${c.scenario.substring(0, 80)}… <span style="color:var(--muted)">[${c.correct}]</span></div>`).join('');
+  },
+
+  /* ——— Export / Import Profile ——— */
+
+  exportProfile() {
+    const data = { profile: this.profile, customCards: JSON.parse(localStorage.getItem('sdf_custom_cards') || '[]'), bookmarks: JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]') };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'sdf-profile.json'; a.click();
+  },
+
+  importProfile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (data.profile) {
+          this.profile = data.profile;
+          this.saveProfile();
+        }
+        if (data.customCards) localStorage.setItem('sdf_custom_cards', JSON.stringify(data.customCards));
+        if (data.bookmarks) localStorage.setItem('sdf_bookmarks', JSON.stringify(data.bookmarks));
+        this.renderDeckStats();
+        alert('Profile imported successfully!');
+      } catch { alert('Invalid profile file.'); }
+    };
+    reader.readAsText(file);
+  },
+
+  /* ——— Session Resume ——— */
+
+  _saveSessionState() {
+    if (this.sessionCards.length > 0 && this.sessionIndex < this.sessionCards.length) {
+      localStorage.setItem('sdf_resume', JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex, start: this.sessionStart }));
+    } else {
+      localStorage.removeItem('sdf_resume');
+    }
+  },
+
+  resumeSession() {
+    const raw = localStorage.getItem('sdf_resume');
+    if (!raw) return false;
+    try {
+      const state = JSON.parse(raw);
+      this.sessionCards = state.cards;
+      this.sessionIndex = state.index;
+      this.sessionStart = state.start || Date.now();
+      this._startTimer();
+      this.showCard();
+      this.showScreen('session');
+      return true;
+    } catch { return false; }
+  },
+
+  /* ——— Auto-Calibrate Difficulty ——— */
+
+  autoCalibrate() {
+    const cards = SEED_CARDS;
+    for (const card of cards) {
+      const review = this.getCardReview(card.id);
+      if (review.timesReviewed >= 3) {
+        const accuracy = review.timesCorrect / review.timesReviewed;
+        // If accuracy > 80% and difficulty < 5, increase difficulty
+        if (accuracy > 0.8 && card.difficulty < 5) card.difficulty = Math.min(5, card.difficulty + 1);
+        if (accuracy < 0.4 && card.difficulty > 1) card.difficulty = Math.max(1, card.difficulty - 1);
+      }
+    }
+    this.renderDeckStats();
+  },
+
+  /* ——— High Contrast Mode ——— */
+
+  toggleContrast() {
+    const el = document.documentElement;
+    const isHigh = el.getAttribute('data-theme') === 'high-contrast';
+    if (isHigh) {
+      el.setAttribute('data-theme', localStorage.getItem('sdf_theme') === 'dark' ? 'dark' : '');
+      localStorage.setItem('sdf_contrast', 'normal');
+    } else {
+      el.setAttribute('data-theme', 'high-contrast');
+      localStorage.setItem('sdf_contrast', 'high');
+    }
   }
 };
 

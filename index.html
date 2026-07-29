@@ -30,6 +30,7 @@
       <div class="stat-card"><div class="stat-num" id="stat-streak">0</div><div class="stat-label">Day Streak</div></div>
     </div>
     <button class="btn btn-primary" style="width:100%;margin:12px 0" onclick="APP.startSession()">Start Session</button>
+    <button id="resume-btn" class="btn btn-outline hidden" style="width:100%;margin:12px 0" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
     <button class="btn btn-success" style="width:100%;margin:12px 0" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
     <div id="study-goal" style="margin:12px 0;padding:12px;background:var(--card-bg);border-radius:10px;box-shadow:0 1px 3px var(--stat-shadow);">
       <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
@@ -46,6 +47,15 @@
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showHistory()">📜 Session History</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.enableNudges()">🔔 Enable Study Reminders</button>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showLearningPath()">🧭 Learning Path</button>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
+    <div style="display:flex;gap:8px;margin:12px 0;">
+      <button class="btn btn-outline" style="flex:1;font-size:0.85rem" onclick="APP.exportProfile()">📤 Export Data</button>
+      <button class="btn btn-outline" style="flex:1;font-size:0.85rem" onclick="document.getElementById('import-file').click()">📥 Import Data</button>
+      <input type="file" id="import-file" accept=".json" style="display:none" onchange="APP.importProfile(this.files[0])">
+    </div>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0;font-size:0.85rem" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
   </div>
 
   <!-- Create Card -->
@@ -73,7 +83,10 @@
   <!-- Session -->
   <div id="screen-session" class="screen hidden">
     <div class="card-header">
-      <span id="card-counter">1 / 8</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="card-counter">1 / 8</span>
+        <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
+      </div>
       <div class="card-meta">
         <span id="card-topic">Topic</span>
         <span id="card-difficulty">★★★</span>
@@ -117,6 +130,28 @@
   <div id="screen-history" class="screen hidden">
     <h1>Session History</h1>
     <div id="history-list" style="margin:12px 0;"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-outline" style="flex:1;font-size:0.85rem" onclick="APP.autoCalibrate()">⚙️ Auto-Calibrate Difficulty</button>
+      <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Dashboard</button>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div id="screen-search" class="screen hidden">
+    <h1>Search Cards</h1>
+    <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;">
+      <input id="search-input" placeholder="Search scenarios..." style="flex:1;padding:8px;border:2px solid var(--card-border);border-radius:8px;font-size:0.9rem;background:var(--card-bg);color:var(--fg);" oninput="APP.filterCards()">
+      <select id="topic-filter" style="padding:8px;border:2px solid var(--card-border);border-radius:8px;background:var(--card-bg);color:var(--fg);font-size:0.85rem;" onchange="APP.filterCards()"><option value="">All topics</option><option value="caching">Caching</option><option value="queues">Queues</option><option value="databases">DB</option><option value="consensus">Consensus</option><option value="api-design">API</option><option value="loadbalancing">LB</option></select>
+      <input id="diff-filter" type="number" min="0" max="5" placeholder="Difficulty" style="width:80px;padding:8px;border:2px solid var(--card-border);border-radius:8px;background:var(--card-bg);color:var(--fg);font-size:0.85rem;" onchange="APP.filterCards()">
+    </div>
+    <div id="search-results" style="margin:12px 0;"></div>
+    <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Dashboard</button>
+  </div>
+
+  <!-- Bookmarks -->
+  <div id="screen-bookmarks" class="screen hidden">
+    <h1>Bookmarked Cards</h1>
+    <div id="bookmark-list" style="margin:12px 0;"></div>
     <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Dashboard</button>
   </div>
 
@@ -127,6 +162,8 @@
     <div id="study-calendar" style="display:flex;flex-wrap:wrap;gap:4px;margin:12px 0;min-height:60px;"></div>
     <h2>Topic Mastery</h2>
     <div id="mastery-chart" style="margin:12px 0;"></div>
+    <h2>Radar View</h2>
+    <div style="display:flex;justify-content:center;"><canvas id="radar-canvas" style="margin:8px 0;"></canvas></div>
     <div id="stats-global" style="margin:12px 0;padding:16px;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"></div>
     <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Back to Dashboard</button>
   </div>
