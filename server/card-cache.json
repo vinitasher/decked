@@ -1,0 +1,35 @@
+{
+  "caching:2": {
+    "id": "caching-gen-1785292361000",
+    "topic": "caching",
+    "difficulty": 2,
+    "scenario": "You are designing a product catalog API for an e-commerce flash-sale platform serving 15,000 QPS. Each product response (15 KB) includes price, inventory count, and description stored in Postgres. Prices and inventory change in real time during flash sales. The latency budget is 50 ms. The team must choose a caching strategy that balances freshness, latency, and operational cost.",
+    "nodes": [
+      "Mobile App",
+      "API Server (Node.js)",
+      "Redis Cache",
+      "Postgres (Primary)",
+      "Inventory Service"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Edge CDN with 30-second TTL in front of the API to absorb read traffic and reduce origin load."
+      },
+      {
+        "id": "B",
+        "label": "Redis write-through cache where the inventory service writes to Redis on every price or stock change before updating Postgres."
+      },
+      {
+        "id": "C",
+        "label": "Per-instance in-memory LRU cache on each API server with a 30-second TTL and periodic background refresh."
+      },
+      {
+        "id": "D",
+        "label": "Direct Postgres reads using a covering index on product_id with read-replica scaling and connection pooling."
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails because CDN edge caches take tens of seconds to purge; during a flash sale, stale prices persist long enough to cause customer disputes and lost revenue. Option C fails because in-memory caches are not shared across instances — during a flash sale each server returns different prices for the same product, breaking consistency guarantees. Option D fails because 15,000 QPS × 40 ms average query time requires roughly 600 concurrent database connections, demanding an expensive Postgres cluster, and leaves no headroom in the 50 ms budget. Option B is correct because write-through caching in Redis ensures every price and stock update immediately refreshes the cache, delivering consistent sub-5 ms reads while easily handling 15,000 QPS on a modest Redis cluster."
+  }
+}

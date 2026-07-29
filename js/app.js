@@ -1,16 +1,84 @@
 /* System Design Flashcards — main application logic */
 
+const SERVER_BASE = 'http://localhost:3456';
+
 const APP = {
   profile: null,
   currentCard: null,
   sessionCards: [],
   sessionIndex: 0,
   sessionStart: null,
+  _cardCache: {},
+  _nextCard: null,
+  _isGenerating: false,
 
   init() {
     this.loadProfile();
     this.renderDeckStats();
     this.showScreen('welcome');
+  },
+
+  /* ——— AI Card Generation (with localStorage cache & seed fallback) ——— */
+
+  _cacheKey(topic, difficulty) { return `${topic}:${difficulty}`; },
+
+  async fetchCard(topic, difficulty) {
+    const key = this._cacheKey(topic, difficulty);
+    // localStorage cache (persists across page loads)
+    const stored = localStorage.getItem('sdf_gen_' + key);
+    if (stored) try { return JSON.parse(stored); } catch (_) {}
+
+    // in-memory cache
+    if (this._cardCache[key]) return this._cardCache[key];
+
+    // try server
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/generate?topic=${encodeURIComponent(topic)}&difficulty=${difficulty}`);
+      if (!res.ok) throw new Error(`server returned ${res.status}`);
+      const data = await res.json();
+      this._cardCache[key] = data.card;
+      localStorage.setItem('sdf_gen_' + key, JSON.stringify(data.card));
+      return data.card;
+    } catch (err) {
+      console.warn('AI generation unavailable, using seed fallback:', err.message);
+    }
+
+    // seed fallback — pick a random card from the seed deck for this topic
+    const topicCards = SEED_CARDS.filter(c => c.topic === topic);
+    if (topicCards.length > 0) {
+      return topicCards[Math.floor(Math.random() * topicCards.length)];
+    }
+    // any fallback card
+    return SEED_CARDS[Math.floor(Math.random() * SEED_CARDS.length)];
+  },
+
+  async prefetchNext() {
+    if (this._isGenerating) return;
+    this._isGenerating = true;
+    try {
+      // determine the next topic via the adaptive algorithm
+      const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
+      const scored = topics.map(t => ({
+        topic: t,
+        score: this._difficultyWeight({ topic: t, difficulty: 3 }) + Math.random() * 0.1
+      }));
+      scored.sort((a, b) => b.score - a.score);
+      const nextTopic = scored[0].topic;
+
+      // check cache first
+      const key = this._cacheKey(nextTopic, 3);
+      const stored = localStorage.getItem('sdf_gen_' + key);
+      if (stored || this._cardCache[key]) {
+        this._nextCard = JSON.parse(stored) || this._cardCache[key];
+        this._isGenerating = false;
+        return;
+      }
+
+      // fetch (or seed fallback)
+      this._nextCard = await this.fetchCard(nextTopic, 3);
+    } finally {
+      this._isGenerating = false;
+    }
   },
 
   /* ——— Profile persistence ——— */
@@ -93,68 +161,47 @@ const APP = {
 
   /* ——— Session management ——— */
 
-  startSession(count = 8) {
-    this.sessionCards = this.selectCards(count);
+  async startSession(count = 8) {
+    this.sessionCards = await this._generateSessionCards(count);
     this.sessionIndex = 0;
     this.sessionStart = Date.now();
-    this.profile.totalSessions++;
+    this._nextCard = null;
     this.profile.totalSessions++;
     this.saveProfile();
-    // show daily reminder if not studied today
-    const lastStudyDate = localStorage.getItem('sdf_last_study_date');
-    const today = new Date().toISOString().split('T')[0];
-    if (lastStudyDate && lastStudyDate !== today) {
-      // subtle reminder on welcome screen
-      const remEl = document.getElementById('study-reminder');
-      if (remEl) remEl.classList.remove('hidden');
-    }
     if (this.sessionCards.length === 0) {
-      alert('No cards due for review! Check back later.');
+      alert('No cards available! Check back later.');
       return;
     }
+    // pre-generate the next card while the user views the first
+    this.prefetchNext();
     this.showCard();
     this.showScreen('session');
   },
 
-  selectCards(count) {
-    const now = Date.now();
-    // due cards first (spaced repetition)
-    let candidates = SEED_CARDS.filter(c => {
-      const r = this.getCardReview(c.id);
-      return r.nextReviewAt <= now || r.timesReviewed === 0;
-    });
-
-    if (candidates.length < count) {
-      candidates = SEED_CARDS.slice(); // fallback: all cards
-    }
-
-    // adaptively pick weakest topics first with desirable difficulty escalation
-    const scored = candidates.map(c => ({
-      card: c,
-      score: this._difficultyWeight(c) + Math.random() * 0.1
+  async _generateSessionCards(count) {
+    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
+    const scored = topics.map(t => ({
+      topic: t,
+      score: this._difficultyWeight({ topic: t, difficulty: 3 }) + Math.random() * 0.1
     }));
     scored.sort((a, b) => b.score - a.score);
 
-    // enforce topic interleaving: reorder so adjacent cards are different topics
-    const topicGroups = {};
-    for (const s of scored) {
-      (topicGroups[s.card.topic] = topicGroups[s.card.topic] || []).push(s.card);
-    }
-    const interleaved = [];
-    const keys = Object.keys(topicGroups);
-    let remaining = count;
-    while (remaining > 0) {
-      let any = false;
-      for (const k of keys) {
-        if (topicGroups[k].length > 0) {
-          interleaved.push(topicGroups[k].shift());
-          remaining--;
-          any = true;
+    const cards = [];
+    let idx = 0;
+    while (cards.length < count) {
+      const t = scored[idx % scored.length];
+      if (t) {
+        const card = await this.fetchCard(t.topic, Math.min(5, 1 + Math.floor(Math.random() * 5)));
+        if (card) {
+          // approximate dedup by checking first 40 chars of scenario
+          const dup = cards.find(c => c.scenario.substring(0, 40) === card.scenario.substring(0, 40));
+          if (!dup) cards.push(card);
         }
       }
-      if (!any) break;
+      idx++;
+      if (idx > count * 5) break;
     }
-    return interleaved.slice(0, count);
+    return cards.slice(0, count);
   },
 
   _yesterday() {
@@ -302,6 +349,9 @@ const APP = {
 
     // reveal diagram
     Render.diagram(card, 'diagram-container', true);
+
+    // start pre-generating the next card for zero-latency transitions
+    this.prefetchNext();
   },
 
   peekDiagram() {
@@ -313,6 +363,21 @@ const APP = {
   nextCard() {
     this.sessionIndex++;
     this._cardStartTime = Date.now();
+
+    // try to use the prefetched card for next session slot
+    if (this._nextCard) {
+      const nextIdx = this.sessionIndex;
+      if (nextIdx < this.sessionCards.length) {
+        this.sessionCards[nextIdx] = this._nextCard;
+      } else {
+        this.sessionCards.push(this._nextCard);
+      }
+      this._nextCard = null;
+    }
+
+    // immediately start prefetching the one after that
+    this.prefetchNext();
+
     this.showCard();
   },
 
