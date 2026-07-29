@@ -6,25 +6,29 @@ const { execSync } = require('child_process');
 const topic = process.argv[2] || 'caching';
 const difficulty = process.argv[3] || '2';
 
-const prompt = `Generate a system design flash card for the topic "${topic}" at difficulty ${difficulty}/5 (5 = hardest).
+const prompt = `Generate a system design flash card for the topic "${topic}" at difficulty ${difficulty}/5 (5 = hardest). This card will be used by engineers learning system design — it must be accurate, specific, and teach a real trade-off.
 
 The card must be a single JSON object with these exact keys:
-- id: a unique string like "${topic}-gen-${Date.now()}"
+- id: "${topic}-gen-${Date.now()}"
 - topic: "${topic}"
 - difficulty: ${difficulty}
-- scenario: a realistic system design problem as one paragraph (2-4 sentences). Include concrete numbers (latency, QPS, data size) where possible. The problem must involve a trade-off between at least two architectural approaches.
-- nodes: an array of 3-5 system components involved (e.g. ["Web Client", "API Server", "Cache", "Database"]). Use real technology names where appropriate.
-- options: an array of 4 objects, each with "id" ("A","B","C","D") and "label" (one-sentence description of the approach). Option B must be the correct answer. The other three options must be PLAUSIBLE but each fails for a specific, teachable reason.
+- scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches.
+- nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
+- options: 4 objects {id, label} where B is correct. Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
 - correct: "B"
-- explanation: a paragraph explaining why each wrong option fails and why B is correct. Reference specific trade-offs (consistency vs availability, cost vs latency, complexity vs scalability, etc.) rather than vague statements.
+- explanation: explain why each of A, C, D fails (different reason per option) and why B wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
+
+EXAMPLES OF GOOD OPTIONS STRUCTURE:
+- Option A fails because it introduces a single point of failure or coupling
+- Option C fails because it doesn't scale cost-effectively at the given QPS
+- Option D fails because it sacrifices consistency guarantees the scenario requires
 
 CRITICAL RULES:
-- Every option must be a real, defensible architectural choice that an experienced engineer might reasonably consider.
-- The wrong options must teach something — each fails for a different reason.
-- The scenario must be original (not a clone of any existing card).
-- Output ONLY the JSON object — no markdown, no explanation, no surrounding text.
-- Keep the scenario and explanation concise (3-5 sentences each).
-- Make the scenario feel realistic with concrete technology references (Redis, Kafka, S3, Postgres, WebSocket, CDN, gRPC, etc.).`;
+- Every option must be concrete (name real technologies: Redis, Kafka, S3, Postgres, WebSocket, gRPC, CDN, DynamoDB, Elasticsearch, RabbitMQ, etc.)
+- The scenario MUST differ from every previous card's scenario
+- The explanation must name the specific bottleneck or trade-off for each option
+- Difficulty ${difficulty}/5 means: 1=basic CRUD, 3=multi-service caching/async, 5=distributed consensus/partitioning
+- Output ONLY valid JSON — no markdown, no code fences, no surrounding text.`;
 
 try {
   const stdout = execSync(
