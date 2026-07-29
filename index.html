@@ -103,20 +103,25 @@
     <div id="diagram-container"></div>
     <div id="options"></div>
     <div id="feedback" aria-live="polite"></div>
-    <div id="confidence-buttons" class="hidden" style="display:flex;gap:6px;justify-content:center;margin:8px 0;flex-wrap:wrap;">
-      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(1)" style="border-color:#e53935;color:#e53935;font-size:0.8rem">😰 Hard</button>
-      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(2)" style="border-color:#f9a825;color:#f9a825;font-size:0.8rem">🤔 Good</button>
-      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(3)" style="border-color:#43a047;color:#43a047;font-size:0.8rem">😊 Easy</button>
-      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(4)" style="border-color:#1b5e20;color:#1b5e20;font-size:0.8rem">⚡ Perfect</button>
-    </div>
-    <div id="quality-rating" class="hidden" style="display:flex;gap:8px;justify-content:center;margin:8px 0;">
-      <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935">👎</button>
-      <span style="font-size:0.8rem;color:#888;align-self:center;">Rate card quality</span>
-      <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047">👍</button>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:8px;">
-      <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()" style="flex:1">Next Card <span style="font-size:0.7rem;opacity:0.6">[N]</span> →</button>
-      <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" style="flex:0;font-size:0.85rem">🔄 Regenerate</button>
+    <div id="post-answer-actions" class="post-answer-actions hidden">
+      <div id="confidence-buttons" class="hidden">
+        <p>How difficult was this question?</p>
+        <div class="confidence-options">
+          <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(1)" style="border-color:#e53935;color:#e53935;">Hard</button>
+          <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(2)" style="border-color:#f9a825;color:#f9a825;">Good</button>
+          <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(3)" style="border-color:#43a047;color:#43a047;">Easy</button>
+          <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(4)" style="border-color:#1b5e20;color:#1b5e20;">Perfect</button>
+        </div>
+      </div>
+      <div id="quality-rating" class="hidden">
+        <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935" aria-label="Poor card quality">👎</button>
+        <span>Rate card quality</span>
+        <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047" aria-label="Good card quality">👍</button>
+      </div>
+      <div class="next-card-actions">
+        <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>
+        <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
+      </div>
     </div>
   </div>
 

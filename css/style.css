@@ -51,6 +51,16 @@ p { margin-bottom: 12px; line-height: 1.5; }
 #feedback { background: var(--card-bg); border-radius: 10px; padding: 16px; margin: 8px 0; line-height: 1.6; font-size: 0.9rem; border-left: 4px solid; }
 #feedback.correct { border-color: var(--success); }
 #feedback.incorrect { border-color: var(--danger); }
+.post-answer-actions { margin: 10px 0; padding: 10px; background: var(--bg); }
+#confidence-buttons p { margin: 0 0 8px; text-align: center; color: var(--muted-text); font-size: 0.85rem; font-weight: 600; }
+.confidence-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.confidence-options .btn { min-width: 0; padding: 9px 4px; }
+#quality-rating { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
+#quality-rating span { align-self: center; color: var(--muted); font-size: 0.8rem; }
+.next-card-actions { display: flex; gap: 8px; margin-top: 8px; }
+#next-btn { flex: 1; }
+#regenerate-btn { flex: 0 0 auto; padding: 10px 14px; }
+.keyboard-hint { font-size: 0.7rem; opacity: 0.6; }
 
 #session-summary p { margin: 8px 0; font-size: 1.05rem; }
 .actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
@@ -81,4 +91,6 @@ p { margin-bottom: 12px; line-height: 1.5; }
   .topic-grid, .prerequisite-options { grid-template-columns: 1fr; }
   .card-header { align-items: flex-start; gap: 6px; }
   .card-meta { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .post-answer-actions:not(.hidden) { position: sticky; bottom: 0; z-index: 10; margin: 8px -16px -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--card-border); box-shadow: 0 -4px 12px var(--stat-shadow); }
+  .keyboard-hint { display: none; }
 }

@@ -464,7 +464,11 @@ const APP = {
 
     this._saveSessionState();
     document.getElementById('feedback').classList.add('hidden');
+    document.getElementById('post-answer-actions').classList.add('hidden');
+    document.getElementById('confidence-buttons').classList.add('hidden');
     document.getElementById('next-btn').classList.add('hidden');
+    document.getElementById('regenerate-btn').classList.add('hidden');
+    document.getElementById('quality-rating').classList.add('hidden');
   },
 
   answer(selectedId, idx) {
@@ -490,10 +494,13 @@ const APP = {
     }
 
     // show confidence buttons (hidden until user taps one)
+    const actionsEl = document.getElementById('post-answer-actions');
+    actionsEl.classList.remove('hidden');
     document.getElementById('confidence-buttons').classList.remove('hidden');
     document.getElementById('next-btn').classList.add('hidden'); // wait for confidence
     document.getElementById('regenerate-btn').classList.add('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
+    actionsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   },
 
   rateConfidence(confidence) {
