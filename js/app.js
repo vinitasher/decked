@@ -87,10 +87,10 @@ const APP = {
       candidates = SEED_CARDS.slice(); // fallback: all cards
     }
 
-    // adaptively pick weakest topics first — interleaving
+    // adaptively pick weakest topics first with desirable difficulty escalation
     const scored = candidates.map(c => ({
       card: c,
-      score: (1 - this.getTopicScore(c.topic)) + Math.random() * 0.1
+      score: this._difficultyWeight(c) + Math.random() * 0.1
     }));
     scored.sort((a, b) => b.score - a.score);
 
@@ -114,6 +114,19 @@ const APP = {
       if (!any) break;
     }
     return interleaved.slice(0, count);
+  },
+
+  _yesterday() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  },
+
+  /* Desirable difficulty: weight cards by (1 - mastery) × challenge score */
+  _difficultyWeight(card) {
+    const mastery = this.getTopicScore(card.topic);
+    const challenge = card.difficulty / 5;
+    return (1 - mastery) * (0.5 + challenge * 0.5);
   },
 
   showCard() {
@@ -183,9 +196,20 @@ const APP = {
     // update topic score
     this.updateTopicScore(card.topic, correct, 1);
 
-    // update global stats
+    // update global stats + streak
     this.profile.totalAnswered++;
     if (correct) this.profile.totalCorrect++;
+    const today = new Date().toISOString().split('T')[0];
+    if (this.profile.streaks.lastDate === today) {
+      // already counted today
+    } else if (this.profile.streaks.lastDate === this._yesterday()) {
+      this.profile.streaks.current++;
+      this.profile.streaks.lastDate = today;
+    } else {
+      this.profile.streaks.current = 1;
+      this.profile.streaks.lastDate = today;
+    }
+    this.profile.streaks.best = Math.max(this.profile.streaks.best, this.profile.streaks.current);
     this.saveProfile();
 
     // disable all option buttons
@@ -248,7 +272,8 @@ const APP = {
       <p>Cards reviewed: <strong>${this.sessionCards.length}</strong></p>
       <p>Lifetime correct: <strong>${this.profile.totalCorrect} / ${this.profile.totalAnswered}</strong> (${correct}%)</p>
       <p>Topics covered: <strong>${new Set(this.sessionCards.map(c => c.topic)).size}</strong></p>
-      <p>Current streak: <strong>${this.profile.streaks.current} days</strong></p>
+      <p>Current streak: <strong>${this.profile.streaks.current} days</strong> (best: ${this.profile.streaks.best})</p>
+      <p>Average difficulty of session: <strong>${(this.sessionCards.reduce((s,c) => s + c.difficulty, 0) / this.sessionCards.length).toFixed(1)} / 5</strong> — ${this.sessionCards.length > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
     `;
     this.renderDeckStats();
   },
@@ -272,6 +297,7 @@ const APP = {
     document.getElementById('stat-total').textContent = total;
     document.getElementById('stat-reviewed').textContent = reviewed;
     document.getElementById('stat-due').textContent = due;
+    document.getElementById('stat-streak').textContent = this.profile.streaks.current;
 
     // topic breakdown
     const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
