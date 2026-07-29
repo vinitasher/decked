@@ -12,9 +12,11 @@
   <!-- Welcome / Dashboard -->
   <div id="screen-welcome" class="screen">
     <div class="welcome-header">
+      <p id="study-reminder" class="hidden" style="background:#fff3e0;padding:8px 16px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;">⏰ You haven't studied yet today. A quick session?</p>
       <h1>System Design Flashcards</h1>
       <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
     </div>
+    <div id="achievement-toast" class="toast"></div>
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Cards</div></div>
       <div class="stat-card"><div class="stat-num" id="stat-reviewed">0</div><div class="stat-label">Learned</div></div>
@@ -22,6 +24,8 @@
       <div class="stat-card"><div class="stat-num" id="stat-streak">0</div><div class="stat-label">Day Streak</div></div>
     </div>
     <button class="btn btn-primary" style="width:100%;margin:12px 0" onclick="APP.startSession()">Start Session</button>
+    <h2 style="margin-top:20px">🏆 Achievements</h2>
+    <div id="achievement-list" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
     <h2 style="margin-top:20px">Your Profile</h2>
     <div id="topic-breakdown"></div>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>

@@ -98,7 +98,16 @@ const APP = {
     this.sessionIndex = 0;
     this.sessionStart = Date.now();
     this.profile.totalSessions++;
+    this.profile.totalSessions++;
     this.saveProfile();
+    // show daily reminder if not studied today
+    const lastStudyDate = localStorage.getItem('sdf_last_study_date');
+    const today = new Date().toISOString().split('T')[0];
+    if (lastStudyDate && lastStudyDate !== today) {
+      // subtle reminder on welcome screen
+      const remEl = document.getElementById('study-reminder');
+      if (remEl) remEl.classList.remove('hidden');
+    }
     if (this.sessionCards.length === 0) {
       alert('No cards due for review! Check back later.');
       return;
@@ -245,6 +254,14 @@ const APP = {
       this.profile.streaks.lastDate = today;
     }
     this.profile.streaks.best = Math.max(this.profile.streaks.best, this.profile.streaks.current);
+    localStorage.setItem('sdf_last_study_date', today);
+    // track consecutive correct for achievements
+    if (correct) {
+      this._consecutiveCorrect = (this._consecutiveCorrect || 0) + 1;
+    } else {
+      this._consecutiveCorrect = 0;
+    }
+    this._checkAchievements();
     this.saveProfile();
 
     // disable all option buttons
@@ -449,6 +466,43 @@ const APP = {
     this.renderDeckStats();
   },
 
+  /* ——— Achievements ——— */
+
+  _achievementDefs: [
+    { id: 'first-card', label: 'First Card', desc: 'Answer your first card', check: () => this.profile.totalAnswered >= 1 },
+    { id: 'quick-learner', label: 'Quick Learner', desc: '3 correct in a row', check: () => (this._consecutiveCorrect || 0) >= 3 },
+    { id: 'streak-7', label: 'Hot Streak', desc: '7-day study streak', check: () => this.profile.streaks.current >= 7 },
+    { id: 'scholar', label: 'Scholar', desc: 'Master 1 topic', check: () => Object.keys(this.profile.topicScores).filter(t => this.isTopicMastered(t)).length >= 1 },
+    { id: 'master', label: 'Master', desc: 'Master 3 topics', check: () => Object.keys(this.profile.topicScores).filter(t => this.isTopicMastered(t)).length >= 3 },
+    { id: 'dedicated', label: 'Dedicated', desc: 'Answer 50 cards', check: () => this.profile.totalAnswered >= 50 },
+    { id: 'architect', label: 'Architect', desc: 'Answer 100 cards', check: () => this.profile.totalAnswered >= 100 },
+    { id: 'deck-explorer', label: 'Deck Explorer', desc: 'Review every card once', check: () => Object.keys(this.profile.cardHistory).length >= SEED_CARDS.length }
+  ],
+
+  _checkAchievements() {
+    const earned = new Set(this.profile.achievements || []);
+    const today = new Date().toISOString().split('T')[0];
+    for (const def of this._achievementDefs) {
+      if (!earned.has(def.id) && def.check()) {
+        earned.add(def.id);
+        console.log(`🏆 Achievement unlocked: ${def.label}`);
+        // show inline toast
+        const toast = document.getElementById('achievement-toast');
+        if (toast) {
+          toast.innerHTML = `🏆 ${def.label}: ${def.desc}`;
+          toast.className = 'toast show';
+          setTimeout(() => toast.className = 'toast', 4000);
+        }
+      }
+    }
+    this.profile.achievements = [...earned];
+    this.saveProfile();
+  },
+
+  getAchievedCount() {
+    return (this.profile.achievements || []).length;
+  },
+
   /* ——— UI ——— */
 
   showScreen(id) {
@@ -469,6 +523,16 @@ const APP = {
     document.getElementById('stat-reviewed').textContent = reviewed;
     document.getElementById('stat-due').textContent = due;
     document.getElementById('stat-streak').textContent = this.profile.streaks.current;
+
+    // achievements display
+    const aEl = document.getElementById('achievement-list');
+    if (aEl) {
+      const earned = new Set(this.profile.achievements || []);
+      aEl.innerHTML = this._achievementDefs.map(d => {
+        const has = earned.has(d.id);
+        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:${has ? '#e8f5e9' : '#f5f5f5'};border-radius:20px;font-size:0.75rem;border:1px solid ${has ? '#81c784' : '#e0e0e0'};color:${has ? '#2e7d32' : '#bbb'}">${has ? '✓' : '○'} ${d.label}</span>`;
+      }).join('');
+    }
 
     // topic breakdown
     const topics = [...new Set(SEED_CARDS.map(c => c.topic))];

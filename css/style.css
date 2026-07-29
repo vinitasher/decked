@@ -13,6 +13,8 @@ p { margin-bottom: 12px; line-height: 1.5; }
 .btn-success { background: #43a047; color: #fff; }
 .btn-outline { background: transparent; border: 2px solid #3949ab; color: #3949ab; }
 .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1a237e; color: #fff; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.9rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); transition: opacity 0.3s; opacity: 0; pointer-events: none; z-index: 100; }
+.toast.show { opacity: 1; }
 
 /* Welcome screen */
 .welcome-header { text-align: center; padding: 40px 0 24px; }
