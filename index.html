@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>System Design Flashcards</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
 <div class="container">
@@ -28,6 +30,14 @@
       <div class="stat-card"><div class="stat-num" id="stat-streak">0</div><div class="stat-label">Day Streak</div></div>
     </div>
     <button class="btn btn-primary" style="width:100%;margin:12px 0" onclick="APP.startSession()">Start Session</button>
+    <button class="btn btn-success" style="width:100%;margin:12px 0" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
+    <div id="study-goal" style="margin:12px 0;padding:12px;background:var(--card-bg);border-radius:10px;box-shadow:0 1px 3px var(--stat-shadow);">
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+        <span>🎯 Daily Goal</span>
+        <span><input type="number" id="goal-target" value="10" min="1" max="50" style="width:50px;padding:2px 4px;border:1px solid var(--card-border);border-radius:4px;background:var(--card-bg);color:var(--fg);font-size:0.85rem;" onchange="APP.setGoal(this.value)"> cards</span>
+      </div>
+      <div id="goal-progress" style="height:8px;background:var(--topic-bar-bg);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="goal-fill" style="height:100%;width:0%;background:var(--primary);border-radius:4px;transition:width 0.3s;"></div></div>
+    </div>
     <h2 style="margin-top:20px">🏆 Achievements</h2>
     <div id="achievement-list" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
     <h2 style="margin-top:20px">Your Profile</h2>
@@ -35,6 +45,7 @@
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showHistory()">📜 Session History</button>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.enableNudges()">🔔 Enable Study Reminders</button>
   </div>
 
   <!-- Create Card -->
@@ -74,9 +85,15 @@
     <div id="diagram-container"></div>
     <div id="options"></div>
     <div id="feedback" aria-live="polite"></div>
+    <div id="confidence-buttons" class="hidden" style="display:flex;gap:6px;justify-content:center;margin:8px 0;flex-wrap:wrap;">
+      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(1)" style="border-color:#e53935;color:#e53935;font-size:0.8rem">😰 Hard</button>
+      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(2)" style="border-color:#f9a825;color:#f9a825;font-size:0.8rem">🤔 Good</button>
+      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(3)" style="border-color:#43a047;color:#43a047;font-size:0.8rem">😊 Easy</button>
+      <button class="btn btn-sm btn-outline" onclick="APP.rateConfidence(4)" style="border-color:#1b5e20;color:#1b5e20;font-size:0.8rem">⚡ Perfect</button>
+    </div>
     <div id="quality-rating" class="hidden" style="display:flex;gap:8px;justify-content:center;margin:8px 0;">
       <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935">👎</button>
-      <span style="font-size:0.8rem;color:#888;align-self:center;">Rate this card</span>
+      <span style="font-size:0.8rem;color:#888;align-self:center;">Rate card quality</span>
       <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047">👍</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px;">

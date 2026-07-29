@@ -20,6 +20,7 @@ const APP = {
     this._checkServerHealth();
     this._initTheme();
     this._initSwipe();
+    this._requestNotificationPermission();
   },
 
   _initTheme() {
@@ -156,15 +157,68 @@ const APP = {
     }
   },
 
-  /* ——— Profile persistence ——— */
+  /* ——— Multi-profile ——— */
 
-  loadProfile() {
+  switchProfile(profileId) {
+    this.profile.userId = profileId;
+    this.loadProfile();
+    this.renderDeckStats();
+  },
+
+  /* ——— Study Goals ——— */
+
+  setGoal(count) {
+    const n = parseInt(count) || 10;
+    localStorage.setItem('sdf_goal', n);
+    this.renderGoal();
+  },
+
+  getGoal() { return parseInt(localStorage.getItem('sdf_goal')) || 10; },
+
+  renderGoal() {
+    const el = document.getElementById('goal-fill');
+    const target = document.getElementById('goal-target');
+    if (!el || !target) return;
+    const goal = this.getGoal();
+    target.value = goal;
+    const done = Math.min(goal, this.profile.totalAnswered);
+    const pct = Math.round(100 * done / goal);
+    el.style.width = pct + '%';
+  },
+
+  /* —── Quick Review ——— */
+
+  async startQuickReview() {
+    const cards = await this._generateSessionCards(15);
+    if (cards.length === 0) return alert('No cards available!');
+    this.sessionCards = cards;
+    this.sessionIndex = 0;
+    this._quickReview = true;
+    this._quickTimer = 120; // 2 minutes
+    this.profile.totalSessions++;
+    this._startTimer();
+    this.prefetchNext();
+    this.showCard();
+    this.showScreen('session');
+    this._tickQuickTimer();
+  },
+
+  _tickQuickTimer() {
+    if (!this._quickReview) return;
+    const el = document.getElementById('session-timer');
+    if (el) el.textContent = `⏱ ${this._quickTimer}s`;
+    if (this._quickTimer <= 0) { this.endSession(); return; }
+    this._quickTimer--;
+    setTimeout(() => this._tickQuickTimer(), 1000);
+  },
+
+  /* ——— Profile persistence ——— */
     const raw = localStorage.getItem('sdf_profile');
     if (raw) {
       this.profile = JSON.parse(raw);
     } else {
       this.profile = {
-        userId: 'local-' + Date.now().toString(36),
+        userId: localStorage.getItem('sdf_profile_id') || 'local-' + Date.now().toString(36),
         topicScores: {},
         cardHistory: {},
         streaks: { current: 0, best: 0, lastDate: null },
@@ -365,21 +419,52 @@ const APP = {
 
   answer(selectedId, idx) {
     const card = this.currentCard;
-    const correct = selectedId === card.correct;
-    const startTime = this.sessionStart;
+    this._selectedId = selectedId;
+    this._cardCorrect = selectedId === card.correct;
+
+    // disable options and show correct/incorrect highlighting
+    document.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
+    document.querySelectorAll('.option-btn').forEach((btn, i) => {
+      const opt = card.options[i];
+      if (opt.id === card.correct) btn.classList.add('correct');
+      else if (opt.id === selectedId && !this._cardCorrect) btn.classList.add('incorrect');
+    });
+
+    // show feedback with correct answer, then let user rate confidence
+    const feedbackEl = document.getElementById('feedback');
+    const isCorrect = this._cardCorrect;
+    feedbackEl.className = isCorrect ? 'feedback correct' : 'feedback incorrect';
+    feedbackEl.innerHTML = `<strong>${isCorrect ? '✓ Correct!' : '✗ The answer was ' + card.correct}</strong><br><br>${card.explanation}`;
+    if (!isCorrect) {
+      feedbackEl.innerHTML += `<br><br><em>The correct answer was <strong>${card.correct}</strong>.</em>`;
+    }
+
+    // show confidence buttons (hidden until user taps one)
+    document.getElementById('confidence-buttons').classList.remove('hidden');
+    document.getElementById('next-btn').classList.add('hidden'); // wait for confidence
+    document.getElementById('regenerate-btn').classList.add('hidden');
+    document.getElementById('quality-rating').classList.add('hidden');
+  },
+
+  rateConfidence(confidence) {
+    const card = this.currentCard;
+    const correct = this._cardCorrect;
     const responseTime = Date.now() - (this._cardStartTime || Date.now());
 
-    // update SRS
+    // update SRS with confidence-based grading
     const review = this.getCardReview(card.id);
+    const grade = correct ? SRS.gradeCard(confidence) : 0;
     review.timesReviewed++;
     if (correct) review.timesCorrect++;
+    review.lastConfidence = confidence;
+    review.confidenceSum = (review.confidenceSum || 0) + (correct ? confidence : 0);
     review.lastResponseTime = responseTime;
-    const grade = SRS.gradeCard(correct, responseTime);
-    review.ease = SRS.nextEase(correct, review.ease);
-    review.interval = SRS.nextInterval(correct, review.ease, review.interval);
+
+    const newState = SRS.nextState(grade, review.stability, review.difficulty);
+    review.stability = newState.stability;
+    review.difficulty = newState.difficulty;
+    review.interval = SRS.nextInterval(grade, review.stability, review.difficulty);
     review.nextReviewAt = Date.now() + review.interval * 86400000;
-    review.lastReviewAt = Date.now();
-    if (!review._createdAt) review._createdAt = Date.now();
     this.saveCardReview(card.id, review);
 
     // update topic score + mastery tracking
@@ -414,52 +499,15 @@ const APP = {
     this._checkAchievements();
     this.saveProfile();
 
-    // disable all option buttons
-    document.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
-
-    // highlight correct answer
-    document.querySelectorAll('.option-btn').forEach((btn, i) => {
-      const opt = card.options[i];
-      if (opt.id === card.correct) btn.classList.add('correct');
-      else if (opt.id === selectedId && !correct) btn.classList.add('incorrect');
-    });
-
-    // show feedback with elaborative interrogation
-    const feedbackEl = document.getElementById('feedback');
-    feedbackEl.className = correct ? 'feedback correct' : 'feedback incorrect';
-    feedbackEl.innerHTML = `<strong>${correct ? '✓ Correct!' : '✗ Incorrect'}</strong><br><br>${card.explanation}`;
-    if (!correct) {
-      feedbackEl.innerHTML += `<br><br><em>The correct answer was <strong>${card.correct}</strong>.</em>`;
-    }
-
-    // reset quality rating for new card
-  document.getElementById('quality-rating').querySelectorAll('button').forEach(b => b.disabled = false);
-
-  // elaborative interrogation: force reflection
-    const whyWrong = card.options.map(o => {
-      if (o.id === card.correct) return '';
-      const flaws = {
-        'A': ' fails because it cannot handle the dynamic, per-user nature of this request pattern.',
-        'B': ' seems plausible but introduces unnecessary complexity or cost for this specific bottleneck.',
-        'C': ' addresses the wrong layer — it solves a scaling problem that isn't the actual constraint.',
-        'D': ' is an anti-pattern that creates more problems (coupling, latency, single points of failure) than it solves.'
-      };
-      return o.id !== card.correct ? `<br><br><em>Why not ${o.id}:</em> ${flaws[o.id] || ' this option creates trade-offs that conflict with the requirements.'}` : '';
-    }).join('');
-
-    // dual coding: diagram highlights correct path
-    Render.diagram(card, 'diagram-container', correct);
-
+    // show next + regenerate + quality rating
+    document.getElementById('confidence-buttons').classList.add('hidden');
     document.getElementById('next-btn').setAttribute('aria-label', 'Next card');
     document.getElementById('next-btn').classList.remove('hidden');
     document.getElementById('regenerate-btn').classList.remove('hidden');
     document.getElementById('quality-rating').classList.remove('hidden');
-    this.renderDeckStats();
-
-    // reveal diagram
+    document.getElementById('quality-rating').querySelectorAll('button').forEach(b => b.disabled = false);
     Render.diagram(card, 'diagram-container', true);
-
-    // start pre-generating the next card for zero-latency transitions
+    this.renderDeckStats();
     this.prefetchNext();
   },
 
@@ -543,6 +591,7 @@ const APP = {
   },
 
   endSession() {
+    this._quickReview = false;
     this.showScreen('session-end');
     const correct = this.profile.totalAnswered > 0
       ? Math.round(100 * this.profile.totalCorrect / this.profile.totalAnswered) : 0;
@@ -745,6 +794,37 @@ const APP = {
     return (this.profile.achievements || []).length;
   },
 
+  /* ——— Notifications ——— */
+
+  _requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  },
+
+  sendNudge() {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const due = SEED_CARDS.filter(c => {
+        const r = this.getCardReview(c.id);
+        return r.nextReviewAt <= Date.now();
+      }).length;
+      if (due > 0) {
+        new Notification('📚 System Design Flashcards', {
+          body: `${due} card${due > 1 ? 's' : ''} due for review! A quick session?`,
+          icon: '/icon-192.png'
+        });
+      }
+    }
+  },
+
+  enableNudges() {
+    if ('Notification' in window) {
+      Notification.requestPermission();
+    }
+    localStorage.setItem('sdf_nudges', 'true');
+    this.sendNudge();
+  },
+
   /* ——— UI ——— */
 
   showScreen(id) {
@@ -765,6 +845,7 @@ const APP = {
     document.getElementById('stat-reviewed').textContent = reviewed;
     document.getElementById('stat-due').textContent = due;
     document.getElementById('stat-streak').textContent = this.profile.streaks.current;
+    this.renderGoal();
 
     // achievements display
     const aEl = document.getElementById('achievement-list');
