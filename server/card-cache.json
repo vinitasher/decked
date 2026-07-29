@@ -31,5 +31,39 @@
     ],
     "correct": "B",
     "explanation": "Option A fails because CDN edge caches take tens of seconds to purge; during a flash sale, stale prices persist long enough to cause customer disputes and lost revenue. Option C fails because in-memory caches are not shared across instances — during a flash sale each server returns different prices for the same product, breaking consistency guarantees. Option D fails because 15,000 QPS × 40 ms average query time requires roughly 600 concurrent database connections, demanding an expensive Postgres cluster, and leaves no headroom in the 50 ms budget. Option B is correct because write-through caching in Redis ensures every price and stock update immediately refreshes the cache, delivering consistent sub-5 ms reads while easily handling 15,000 QPS on a modest Redis cluster."
+  },
+  "queues:3": {
+    "id": "queues-gen-1785292786255",
+    "topic": "queues",
+    "difficulty": 3,
+    "scenario": "You are designing the booking engine for a concert ticketing platform. During on-sale events, 500,000 concurrent users submit 50,000 booking requests per second for 20,000 total seats. Each request must be processed in order per seat category and confirmed within 500 ms. Double-bookings are unacceptable. The team must choose a queuing architecture that balances ordering guarantees, throughput, and operational complexity.",
+    "nodes": [
+      "Web Client (React)",
+      "Nginx Rate-Limiting Reverse Proxy",
+      "Booking API Service (Go)",
+      "Kafka Cluster (3 brokers)",
+      "Postgres with optimistic locking",
+      "Redis for idempotency tokens"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Direct Postgres INSERT with SERIALIZABLE isolation; each booking request acquires row-level locks on seat and event rows."
+      },
+      {
+        "id": "B",
+        "label": "Kafka ingestion with one partition per seat category; consumers process sequentially per partition and write to Postgres with optimistic locking."
+      },
+      {
+        "id": "C",
+        "label": "RabbitMQ competing consumers pulling from a single queue; each consumer reads seat availability from Redis, then writes to Postgres."
+      },
+      {
+        "id": "D",
+        "label": "Amazon SQS FIFO queues (one per seat category) feeding AWS Lambda; consumers write to DynamoDB with conditional write for seat claims."
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails for scalability: 50,000 RPS with SERIALIZABLE isolation would exhaust Postgres max_connections (typically 100-500) and cause catastrophic deadlock retries, capping throughput below 5,000 RPS. Option C fails for consistency: competing consumers read seat availability from Redis simultaneously, both see a seat as free and proceed to book it — a classic read-then-write race condition that produces double-bookings. Option D fails for latency and complexity: SQS FIFO queues throttle at 3,000 TPS per queue, requiring 17+ queues and a custom sharding layer, while Lambda cold starts on burst add 200-500ms that push past the 500ms confirmation budget. Option B is correct because Kafka partitions guarantee strict ordering per seat category, handle 50,000 RPS on three brokers with ease, and consumers using optimistic locking (version-check on UPDATE) prevent double-bookings without expensive coordination."
   }
 }

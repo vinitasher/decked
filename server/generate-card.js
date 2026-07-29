@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/* generate-card.js — calls opencode CLI to produce a flash card JSON object */
+/* generate-card.js — calls opencode CLI to produce a flash card JSON object with
+   validation and auto-retry (up to 3 attempts). */
 
 const { execSync } = require('child_process');
 
@@ -18,49 +19,91 @@ The card must be a single JSON object with these exact keys:
 - correct: "B"
 - explanation: explain why each of A, C, D fails (different reason per option) and why B wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
 
-EXAMPLES OF GOOD OPTIONS STRUCTURE:
-- Option A fails because it introduces a single point of failure or coupling
-- Option C fails because it doesn't scale cost-effectively at the given QPS
-- Option D fails because it sacrifices consistency guarantees the scenario requires
-
 CRITICAL RULES:
 - Every option must be concrete (name real technologies: Redis, Kafka, S3, Postgres, WebSocket, gRPC, CDN, DynamoDB, Elasticsearch, RabbitMQ, etc.)
 - The scenario MUST differ from every previous card's scenario
 - The explanation must name the specific bottleneck or trade-off for each option
 - Difficulty ${difficulty}/5 means: 1=basic CRUD, 3=multi-service caching/async, 5=distributed consensus/partitioning
-- Output ONLY valid JSON — no markdown, no code fences, no surrounding text.`;
+- Output ONLY valid JSON — no markdown, no code fences, no surrounding text.
+- DO NOT write any files. DO NOT create files. Your entire response must be the JSON object and nothing else.`;
 
-try {
-  const stdout = execSync(
-    `/home/pi/.nvm/versions/node/v22.23.1/bin/opencode run --auto --dir /home/pi/git/mamaLab --model opencode-go/deepseek-v4-flash "${prompt.replace(/"/g, '\\"')}"`,
-    { timeout: 60000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
+const model = process.env.OPENCODE_MODEL || 'opencode-go/deepseek-v4-flash';
+const opencodeBin = '/home/pi/.nvm/versions/node/v22.23.1/bin/opencode';
+
+function callModel() {
+  const escaped = prompt.replace(/"/g, '\\"');
+  // Read-only enforcement: the model must not write files
+  const env = { ...process.env, OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"deny","bash":"deny"}}' };
+  return execSync(
+    `${opencodeBin} run --auto --dir /home/pi/git/mamaLab --model ${model} "${escaped}"`,
+    { timeout: 90000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, env }
   );
+}
 
-  // extract JSON from the output (opencode may wrap it in markdown)
+function extractAndValidate(stdout) {
+  // try parsing JSON from stdout
   const cleaned = stdout.replace(/```json?/gi, '').replace(/```/g, '').trim();
   const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start === -1 || end === -1) {
-    console.error(JSON.stringify({ error: 'no JSON found in model output', raw: cleaned }));
-    process.exit(1);
+  let card;
+  if (start !== -1) {
+    const end = cleaned.lastIndexOf('}');
+    if (end !== -1) {
+      try { card = JSON.parse(cleaned.substring(start, end + 1)); } catch (_) {}
+    }
   }
+  // if not found in stdout, check for newly written JSON files (fallback)
+  if (!card) {
+    const fs = require('fs');
+    const dir = '/home/pi/git/mamaLab';
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') && (f.includes('card') || f.includes('gen')));
+    // pick the most recent
+    files.sort((a, b) => fs.statSync(dir + '/' + b).mtimeMs - fs.statSync(dir + '/' + a).mtimeMs);
+    for (const fname of files) {
+      try {
+        card = JSON.parse(fs.readFileSync(dir + '/' + fname, 'utf-8'));
+        fs.unlinkSync(dir + '/' + fname); // clean up
+        break;
+      } catch (_) {}
+    }
+  }
+  if (!card) throw new Error('no JSON found in output');
 
-  const card = JSON.parse(cleaned.substring(start, end + 1));
-
-  // validate required fields
   const required = ['id', 'topic', 'difficulty', 'scenario', 'nodes', 'options', 'correct', 'explanation'];
   for (const f of required) {
     if (!card[f]) throw new Error(`missing field: ${f}`);
   }
-  if (card.options.length < 2) throw new Error('need at least 2 options');
-  if (!card.options.find(o => o.id === card.correct)) throw new Error('correct answer not in options');
 
-  // normalize
+  const errors = [];
+  if (!/\d{2,}/.test(card.scenario)) errors.push('scenario lacks concrete numbers');
+  if (card.nodes.length < 3) errors.push('need at least 3 nodes');
+  if (card.options.length < 4) errors.push('need 4 options');
+  if (!card.options.map(o => o.id).includes(card.correct)) errors.push('correct not in options');
+  if (card.explanation.length < 80) errors.push('explanation too short');
+  const labels = card.options.map(o => o.label.toLowerCase());
+  if (new Set(labels).size < labels.length) errors.push('duplicate option labels');
+  if (!card.options.every(o => o.label.length > 25)) errors.push('option labels too short');
+
+  if (errors.length > 0) {
+    throw new Error('validation: ' + errors.join('; ') + '\n' + JSON.stringify(card).substring(0, 200));
+  }
+
   card.topic = topic;
   card.difficulty = parseInt(difficulty) || 2;
-
-  console.log(JSON.stringify(card));
-} catch (err) {
-  console.error(JSON.stringify({ error: err.message, stderr: err.stderr?.substring(0, 1000) }));
-  process.exit(1);
+  return card;
 }
+
+let lastErr;
+for (let attempt = 1; attempt <= 3; attempt++) {
+  try {
+    const stdout = callModel();
+    const card = extractAndValidate(stdout);
+    console.log(JSON.stringify(card));
+    process.exit(0);
+  } catch (err) {
+    lastErr = err;
+    if (attempt < 3) process.stderr.write(`Attempt ${attempt} failed: ${err.message}\n`);
+  }
+}
+
+console.error(JSON.stringify({ error: 'all 3 attempts failed', last: lastErr?.message }));
+process.exit(1);
