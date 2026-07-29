@@ -1,0 +1,11 @@
+name = "system-design-flashcards"
+compatibility_date = "2025-06-01"
+pages_build_output_dir = "."
+
+[[kv_namespaces]]
+binding = "CARD_CACHE"
+id = ""
+preview_id = ""
+
+[[ai]]
+binding = "AI"

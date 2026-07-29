@@ -1,6 +1,7 @@
 /* System Design Flashcards — main application logic */
 
-const SERVER_BASE = 'http://localhost:3456';
+const SERVER_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:3456' : '';
 
 const APP = {
   profile: null,
