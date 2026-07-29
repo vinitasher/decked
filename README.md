@@ -33,7 +33,8 @@ decision-based practice with adaptive difficulty.
 - The user selects from 2-4 plausible wiring options (e.g. "sync resize in the
   API process" vs "async worker queue + object store callback")
 - After answering, the card shows WHY the better option wins (the trade-offs)
-- Each card lists the topics a learner is expected to know first
+- Each option lists the topics needed to evaluate that approach; the card's
+  Know First list aggregates the prerequisites from every option
 - A navigable topic map shows prerequisites, dependent topics, mastery, and
   focused practice actions without locking advanced content
 
@@ -57,9 +58,9 @@ decision-based practice with adaptive difficulty.
     "scenario": "A read-heavy API returns user profiles...",
     "nodes": ["mobile app", "API server", "PostgreSQL"],
     "options": [
-      {"id": "A", "label": "Add Redis between API and PG"},
-      {"id": "B", "label": "Add CDN in front of API"},
-      {"id": "C", "label": "Add read replicas to PG"}
+      {"id": "A", "label": "Add Redis between API and PG", "prerequisiteTopics": ["caching"]},
+      {"id": "B", "label": "Add CDN in front of API", "prerequisiteTopics": ["caching", "dns"]},
+      {"id": "C", "label": "Add read replicas to PG", "prerequisiteTopics": ["databases"]}
     ],
     "correct": "A",
     "explanation": "Redis ... because ...",
@@ -122,9 +123,11 @@ Generation retries transient Flash capacity failures and uses
 
 Generated cards are stored permanently in Cloudflare KV until explicitly
 replaced or deleted. Learner progress remains local to each browser.
-Legacy cached cards receive canonical prerequisite metadata when read and are
-rewritten permanently. Custom cards and their prerequisite lists remain in
-browser local storage.
+Each generated option declares prerequisite topics, and the question-level
+Know First list is their deduplicated aggregate. Legacy cached options receive
+empty prerequisite arrays while existing card prerequisites are preserved;
+normalized cards are rewritten permanently. Custom cards and their prerequisite
+lists remain in browser local storage.
 
 ```sh
 bash check.sh

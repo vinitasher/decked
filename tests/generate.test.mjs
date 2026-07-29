@@ -13,8 +13,26 @@ const card = {
   scenario: 'A producer sends more work than a consumer can process.',
   nodes: ['producer', 'queue', 'consumer', 'database'],
   options: [
-    { id: 'A', label: 'Call the consumer synchronously' },
-    { id: 'B', label: 'Buffer work in a durable queue' }
+    {
+      id: 'A',
+      label: 'Call the consumer synchronously',
+      prerequisiteTopics: ['api-design', 'real-time']
+    },
+    {
+      id: 'B',
+      label: 'Buffer work in a durable queue',
+      prerequisiteTopics: ['api-design', 'messaging']
+    },
+    {
+      id: 'C',
+      label: 'Poll a shared database table',
+      prerequisiteTopics: ['databases', 'queues', 'unknown']
+    },
+    {
+      id: 'D',
+      label: 'Broadcast work to every consumer',
+      prerequisiteTopics: ['messaging', 'queues']
+    }
   ],
   correct: 'B',
   explanation: 'A queue absorbs bursts and lets the consumer recover.'
@@ -58,7 +76,19 @@ test('generation retries a temporary provider failure and caches the card', asyn
     assert.deepEqual(models, ['deepseek-v4-flash', 'deepseek-v4-flash']);
     assert.equal(cached.key, 'queues:2');
     assert.equal(JSON.parse(cached.value).id, card.id);
-    assert.deepEqual(JSON.parse(cached.value).prerequisiteTopics, ['api-design']);
+    assert.deepEqual(
+      JSON.parse(cached.value).prerequisiteTopics,
+      ['api-design', 'real-time', 'messaging', 'databases']
+    );
+    assert.deepEqual(
+      JSON.parse(cached.value).options.map(option => option.prerequisiteTopics),
+      [
+        ['api-design', 'real-time'],
+        ['api-design', 'messaging'],
+        ['databases'],
+        ['messaging']
+      ]
+    );
     assert.equal(cached.options, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -66,7 +96,10 @@ test('generation retries a temporary provider failure and caches the card', asyn
 });
 
 test('cached legacy cards gain canonical prerequisites without an expiration', async () => {
-  const legacyCard = { ...card };
+  const legacyCard = {
+    ...card,
+    options: card.options.map(({ prerequisiteTopics: _, ...option }) => option)
+  };
   delete legacyCard.prerequisiteTopics;
   let rewritten;
 
@@ -86,9 +119,38 @@ test('cached legacy cards gain canonical prerequisites without an expiration', a
   assert.equal(response.status, 200);
   assert.equal(body.cached, true);
   assert.deepEqual(body.card.prerequisiteTopics, ['api-design']);
+  assert.deepEqual(
+    body.card.options.map(option => option.prerequisiteTopics),
+    [[], [], [], []]
+  );
   assert.equal(rewritten.key, 'queues:2');
   assert.deepEqual(JSON.parse(rewritten.value).prerequisiteTopics, ['api-design']);
   assert.equal(rewritten.options, undefined);
+});
+
+test('generation rejects an option without prerequisite topics', async () => {
+  const originalFetch = globalThis.fetch;
+  const invalidCard = {
+    ...card,
+    options: card.options.map(option => ({ ...option }))
+  };
+  delete invalidCard.options[2].prerequisiteTopics;
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { content: JSON.stringify(invalidCard) } }]
+  });
+
+  try {
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2'),
+      env: { OPENCODE_API_KEY: 'test-key' }
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error, 'Invalid field: option prerequisiteTopics');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('generation fails clearly when the server-side key is missing', async () => {

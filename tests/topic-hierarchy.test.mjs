@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const source = await readFile(new URL('../js/cards.js', import.meta.url), 'utf8');
+const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
 const context = {};
 vm.createContext(context);
 vm.runInContext(`${source}
@@ -48,13 +49,51 @@ test('every seed card declares valid prerequisites', () => {
   }
 });
 
-test('legacy cards receive defaults while authored prerequisites are preserved', () => {
-  const legacy = context.normalize({ topic: 'consensus' });
+test('legacy cards receive defaults and empty option prerequisite lists', () => {
+  const legacy = context.normalize({
+    topic: 'consensus',
+    options: [{ id: 'A', label: 'Legacy option' }]
+  });
   const authored = context.normalize({
     topic: 'custom-topic',
-    prerequisiteTopics: ['api-design', 'api-design', 'custom-topic', 'unknown']
+    prerequisiteTopics: ['api-design', 'api-design', 'custom-topic', 'unknown'],
+    options: []
   });
 
   assert.deepEqual([...legacy.prerequisiteTopics], ['databases', 'storage']);
+  assert.deepEqual([...legacy.options[0].prerequisiteTopics], []);
   assert.deepEqual([...authored.prerequisiteTopics], ['api-design']);
+});
+
+test('card prerequisites aggregate all normalized option prerequisites', () => {
+  const card = context.normalize({
+    topic: 'queues',
+    prerequisiteTopics: ['security'],
+    options: [
+      { id: 'A', label: 'A', prerequisiteTopics: ['api-design', 'databases'] },
+      { id: 'B', label: 'B', prerequisiteTopics: ['messaging', 'databases'] },
+      { id: 'C', label: 'C', prerequisiteTopics: ['queues', 'unknown', null] },
+      { id: 'D', label: 'D', prerequisiteTopics: ['security'] }
+    ]
+  });
+
+  assert.deepEqual(
+    [...card.prerequisiteTopics],
+    ['api-design', 'security', 'databases', 'messaging']
+  );
+  assert.deepEqual(
+    card.options.map(option => [...option.prerequisiteTopics]),
+    [
+      ['api-design', 'databases'],
+      ['messaging', 'databases'],
+      [],
+      ['security']
+    ]
+  );
+});
+
+test('card options render their own know-first topics', () => {
+  assert.match(appSource, /opt\.prerequisiteTopics/);
+  assert.match(appSource, /option-prerequisites/);
+  assert.match(appSource, /Know first:/);
 });

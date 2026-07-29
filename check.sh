@@ -12,6 +12,8 @@ scripts=(
   sw.js
   functions/api/generate.js
   functions/api/cache-stats.js
+  server/generate-card.js
+  server/server.js
 )
 
 for script in "${scripts[@]}"; do

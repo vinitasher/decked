@@ -16,12 +16,34 @@ const TOPIC_PREREQUISITES = {
   consensus: ['databases', 'storage']
 };
 
+function normalizeTopics(topics, cardTopic) {
+  return [...new Set(Array.isArray(topics) ? topics : [])]
+    .filter(topic =>
+      typeof topic === 'string' &&
+      topic !== cardTopic &&
+      Object.hasOwn(TOPIC_PREREQUISITES, topic)
+    );
+}
+
 export function normalizeCard(card, topic, difficulty) {
+  const options = Array.isArray(card.options)
+    ? card.options.map(option => ({
+        ...option,
+        prerequisiteTopics: normalizeTopics(option.prerequisiteTopics, topic)
+      }))
+    : [];
+  const prerequisiteTopics = normalizeTopics([
+    ...(TOPIC_PREREQUISITES[topic] || []),
+    ...(Array.isArray(card.prerequisiteTopics) ? card.prerequisiteTopics : []),
+    ...options.flatMap(option => option.prerequisiteTopics)
+  ], topic);
+
   return {
     ...card,
     topic,
     difficulty,
-    prerequisiteTopics: [...(TOPIC_PREREQUISITES[topic] || [])]
+    prerequisiteTopics,
+    options
   };
 }
 
@@ -56,10 +78,11 @@ Return a JSON object with these exact keys:
 - id: "${topic}-gen-${Date.now()}"
 - topic: "${topic}"
 - difficulty: ${difficulty}
-- prerequisiteTopics: ${JSON.stringify(TOPIC_PREREQUISITES[topic] || [])}
+- prerequisiteTopics: the aggregate list of topics needed to understand the whole question.
 - scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off.
 - nodes: array of 4-5 system components with real technology names.
-- options: array of 4 objects {id, label}. Option B is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
+- options: array of exactly 4 objects {id, label, prerequisiteTopics}, with ids A, B, C, D. Each option's prerequisiteTopics must be an array containing every topic needed to evaluate that option, selected only from: ${JSON.stringify(Object.keys(TOPIC_PREREQUISITES))}. Do not include "${topic}". Option B is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
+- prerequisiteTopics must include the union of all four options' prerequisiteTopics.
 - correct: "B"
 - explanation: 3-5 sentences on why each other option fails and why B wins. Name specific bottlenecks and trade-offs.
 
@@ -134,6 +157,17 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
     }
     if (!Array.isArray(generatedCard.prerequisiteTopics)) {
       throw new Error('Invalid field: prerequisiteTopics');
+    }
+    const expectedOptionIds = ['A', 'B', 'C', 'D'];
+    if (
+      !Array.isArray(generatedCard.options) ||
+      generatedCard.options.length !== expectedOptionIds.length ||
+      !expectedOptionIds.every(id => generatedCard.options.some(option => option?.id === id))
+    ) {
+      throw new Error('Invalid field: options');
+    }
+    if (!generatedCard.options.every(option => Array.isArray(option.prerequisiteTopics))) {
+      throw new Error('Invalid field: option prerequisiteTopics');
     }
 
     const card = normalizeCard(generatedCard, topic, difficulty);

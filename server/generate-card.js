@@ -6,6 +6,11 @@ const { execSync } = require('child_process');
 
 const topic = process.argv[2] || 'caching';
 const difficulty = process.argv[3] || '2';
+const topicIds = [
+  'api-design', 'dns', 'caching', 'queues', 'databases', 'security',
+  'loadbalancing', 'storage', 'messaging', 'rate-limiting', 'observability',
+  'real-time', 'consensus'
+];
 
 const prompt = `Generate a system design flash card for the topic "${topic}" at difficulty ${difficulty}/5 (5 = hardest). This card will be used by engineers learning system design — it must be accurate, specific, and teach a real trade-off.
 
@@ -15,7 +20,8 @@ The card must be a single JSON object with these exact keys:
 - difficulty: ${difficulty}
 - scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches.
 - nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
-- options: 4 objects {id, label} where B is correct. Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
+- options: exactly 4 objects {id, label, prerequisiteTopics} with ids A, B, C, D, where B is correct. prerequisiteTopics must list every topic needed to evaluate that option, using only these IDs: ${JSON.stringify(topicIds)}. Do not include "${topic}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
+- prerequisiteTopics: the deduplicated union of all four options' prerequisiteTopics.
 - correct: "B"
 - explanation: explain why each of A, C, D fails (different reason per option) and why B wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
 
@@ -77,6 +83,9 @@ function extractAndValidate(stdout) {
   if (!/\d{2,}/.test(card.scenario)) errors.push('scenario lacks concrete numbers');
   if (card.nodes.length < 3) errors.push('need at least 3 nodes');
   if (card.options.length < 4) errors.push('need 4 options');
+  if (!card.options.every(o => Array.isArray(o.prerequisiteTopics))) {
+    errors.push('every option needs prerequisiteTopics');
+  }
   if (!card.options.map(o => o.id).includes(card.correct)) errors.push('correct not in options');
   if (card.explanation.length < 80) errors.push('explanation too short');
   const labels = card.options.map(o => o.label.toLowerCase());
@@ -89,6 +98,16 @@ function extractAndValidate(stdout) {
 
   card.topic = topic;
   card.difficulty = parseInt(difficulty) || 2;
+  const normalizeTopics = topics => [...new Set(Array.isArray(topics) ? topics : [])]
+    .filter(value => topicIds.includes(value) && value !== topic);
+  card.options = card.options.map(option => ({
+    ...option,
+    prerequisiteTopics: normalizeTopics(option.prerequisiteTopics)
+  }));
+  card.prerequisiteTopics = normalizeTopics([
+    ...(Array.isArray(card.prerequisiteTopics) ? card.prerequisiteTopics : []),
+    ...card.options.flatMap(option => option.prerequisiteTopics)
+  ]);
   return card;
 }
 

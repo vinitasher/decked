@@ -20,13 +20,31 @@ function getTopicPrerequisites(topic) {
   return [...(TOPIC_CATALOG[topic]?.prerequisites || [])];
 }
 
+function normalizePrerequisiteTopics(topics, cardTopic) {
+  return [...new Set(Array.isArray(topics) ? topics : [])]
+    .filter(topic =>
+      typeof topic === "string" &&
+      topic !== cardTopic &&
+      TOPIC_CATALOG[topic]
+    );
+}
+
 function normalizeCardPrerequisites(card) {
   if (!card || typeof card !== "object") return card;
-  if (!Array.isArray(card.prerequisiteTopics)) {
-    card.prerequisiteTopics = getTopicPrerequisites(card.topic);
-  }
-  card.prerequisiteTopics = [...new Set(card.prerequisiteTopics)]
-    .filter(topic => topic !== card.topic && TOPIC_CATALOG[topic]);
+  card.options = Array.isArray(card.options)
+    ? card.options.map(option => ({
+        ...option,
+        prerequisiteTopics: normalizePrerequisiteTopics(
+          option?.prerequisiteTopics,
+          card.topic
+        )
+      }))
+    : [];
+  card.prerequisiteTopics = normalizePrerequisiteTopics([
+    ...getTopicPrerequisites(card.topic),
+    ...(Array.isArray(card.prerequisiteTopics) ? card.prerequisiteTopics : []),
+    ...card.options.flatMap(option => option.prerequisiteTopics)
+  ], card.topic);
   return card;
 }
 
