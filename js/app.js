@@ -16,39 +16,75 @@ const APP = {
     this.loadProfile();
     this.renderDeckStats();
     this.showScreen('welcome');
+    this._setupKeyboard();
   },
 
   /* ——— AI Card Generation (with localStorage cache & seed fallback) ——— */
 
   _cacheKey(topic, difficulty) { return `${topic}:${difficulty}`; },
 
-  async fetchCard(topic, difficulty) {
+  _scenarioFingerprint(scenario) {
+    return scenario.replace(/\s+/g, ' ').substring(0, 60).toLowerCase();
+  },
+
+  _isDuplicateScenario(scenario, excludeList) {
+    const fp = this._scenarioFingerprint(scenario);
+    for (const card of excludeList) {
+      if (this._scenarioFingerprint(card.scenario) === fp) return true;
+    }
+    return false;
+  },
+
+  _loadCachedKeys() {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('sdf_gen_')) {
+        try { keys.push(JSON.parse(localStorage.getItem(k))); } catch (_) {}
+      }
+    }
+    return keys;
+  },
+
+  async fetchCard(topic, difficulty, avoidList = []) {
     const key = this._cacheKey(topic, difficulty);
-    // localStorage cache (persists across page loads)
-    const stored = localStorage.getItem('sdf_gen_' + key);
-    if (stored) try { return JSON.parse(stored); } catch (_) {}
+    const allCached = [...this._loadCachedKeys(), ...Object.values(this._cardCache)];
 
-    // in-memory cache
-    if (this._cardCache[key]) return this._cardCache[key];
-
-    // try server
-    try {
-      const res = await fetch(`${SERVER_BASE}/api/generate?topic=${encodeURIComponent(topic)}&difficulty=${difficulty}`);
-      if (!res.ok) throw new Error(`server returned ${res.status}`);
-      const data = await res.json();
-      this._cardCache[key] = data.card;
-      localStorage.setItem('sdf_gen_' + key, JSON.stringify(data.card));
-      return data.card;
-    } catch (err) {
-      console.warn('AI generation unavailable, using seed fallback:', err.message);
+    // try server, checking diversity against avoidList + cached cards
+    for (let attempt = 0; attempt < 5; attempt++) {
+      // check localStorage cache first
+      const stored = localStorage.getItem('sdf_gen_' + key);
+      if (stored) {
+        try {
+          const card = JSON.parse(stored);
+          const dup = this._isDuplicateScenario(card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+          if (!dup) return card;
+        } catch (_) {}
+      }
+      // check in-memory cache
+      if (this._cardCache[key]) {
+        const dup = this._isDuplicateScenario(this._cardCache[key].scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+        if (!dup) return this._cardCache[key];
+      }
+      // try server
+      try {
+        const res = await fetch(`${SERVER_BASE}/api/generate?topic=${encodeURIComponent(topic)}&difficulty=${difficulty}`);
+        if (!res.ok) throw new Error(`server returned ${res.status}`);
+        const data = await res.json();
+        const dup = this._isDuplicateScenario(data.card.scenario, [...avoidList, ...allCached, ...this.sessionCards]);
+        if (!dup) {
+          this._cardCache[key] = data.card;
+          localStorage.setItem('sdf_gen_' + key, JSON.stringify(data.card));
+          return data.card;
+        }
+      } catch (err) {
+        // server unavailable — continue to fallback
+      }
     }
 
-    // seed fallback — pick a random card from the seed deck for this topic
+    // seed fallback
     const topicCards = SEED_CARDS.filter(c => c.topic === topic);
-    if (topicCards.length > 0) {
-      return topicCards[Math.floor(Math.random() * topicCards.length)];
-    }
-    // any fallback card
+    if (topicCards.length > 0) return topicCards[Math.floor(Math.random() * topicCards.length)];
     return SEED_CARDS[Math.floor(Math.random() * SEED_CARDS.length)];
   },
 
@@ -56,7 +92,6 @@ const APP = {
     if (this._isGenerating) return;
     this._isGenerating = true;
     try {
-      // determine the next topic via the adaptive algorithm
       const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
       const scored = topics.map(t => ({
         topic: t,
@@ -64,18 +99,8 @@ const APP = {
       }));
       scored.sort((a, b) => b.score - a.score);
       const nextTopic = scored[0].topic;
-
-      // check cache first
-      const key = this._cacheKey(nextTopic, 3);
-      const stored = localStorage.getItem('sdf_gen_' + key);
-      if (stored || this._cardCache[key]) {
-        this._nextCard = JSON.parse(stored) || this._cardCache[key];
-        this._isGenerating = false;
-        return;
-      }
-
-      // fetch (or seed fallback)
-      this._nextCard = await this.fetchCard(nextTopic, 3);
+      const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
+      this._nextCard = await this.fetchCard(nextTopic, 3, avoidList);
     } finally {
       this._isGenerating = false;
     }
@@ -172,8 +197,9 @@ const APP = {
       alert('No cards available! Check back later.');
       return;
     }
-    // pre-generate the next card while the user views the first
+    // pre-generate the next card + pre-warm cache for other likely topics
     this.prefetchNext();
+    this._warmCache();
     this.showCard();
     this.showScreen('session');
   },
@@ -191,7 +217,7 @@ const APP = {
     while (cards.length < count) {
       const t = scored[idx % scored.length];
       if (t) {
-        const card = await this.fetchCard(t.topic, Math.min(5, 1 + Math.floor(Math.random() * 5)));
+        const card = await this.fetchCard(t.topic, Math.min(5, 1 + Math.floor(Math.random() * 5)), cards);
         if (card) {
           // approximate dedup by checking first 40 chars of scenario
           const dup = cards.find(c => c.scenario.substring(0, 40) === card.scenario.substring(0, 40));
@@ -214,7 +240,25 @@ const APP = {
   _difficultyWeight(card) {
     const mastery = this.getTopicScore(card.topic);
     const challenge = card.difficulty / 5;
-    return (1 - mastery) * (0.5 + challenge * 0.5);
+    // adaptive difficulty: lower mastery → higher weight, but also prefer harder cards for strong topics
+    return (1 - mastery) * (0.3 + challenge * 0.7);
+  },
+
+  /* Cache warming: pre-generate cards for likely next topics in background */
+  async _warmCache() {
+    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
+    const scored = topics.map(t => ({
+      topic: t,
+      score: this._difficultyWeight({ topic: t, difficulty: 3 })
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    // pre-warm the top 3 likely topics
+    for (const s of scored.slice(0, 3)) {
+      const key = this._cacheKey(s.topic, 3);
+      if (!localStorage.getItem('sdf_gen_' + key)) {
+        this.fetchCard(s.topic, 3, this.sessionCards).catch(() => {});
+      }
+    }
   },
 
   showCard() {
@@ -255,7 +299,8 @@ const APP = {
     card.options.forEach((opt, idx) => {
       const btn = document.createElement('button');
       btn.className = 'option-btn';
-      btn.innerHTML = `<span class="option-letter">${opt.id}</span><span class="option-text">${opt.label}</span>`;
+      const keyNum = idx + 1;
+      btn.innerHTML = `<span class="option-letter">${opt.id}<span style="display:block;font-size:0.55rem;opacity:0.5;">[${keyNum}]</span></span><span class="option-text">${opt.label}</span>`;
       btn.onclick = () => this.answer(opt.id, idx);
       optionsEl.appendChild(btn);
     });
@@ -356,12 +401,11 @@ const APP = {
   },
 
   async regenerateCard() {
-    const oldId = this.currentCard?.id;
     document.getElementById('regenerate-btn').disabled = true;
     document.getElementById('regenerate-btn').textContent = '⏳ Generating...';
+    const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
     for (let attempt = 0; attempt < 5; attempt++) {
-      const newCard = await this.fetchCard(this.currentCard.topic, this.currentCard.difficulty);
-      if (newCard && newCard.id !== oldId && newCard.scenario !== this.currentCard.scenario) {
+      const newCard = await this.fetchCard(this.currentCard.topic, this.currentCard.difficulty, [this.currentCard, ...avoidList]);
         // replace current card in session
         if (this.sessionIndex < this.sessionCards.length) {
           this.sessionCards[this.sessionIndex] = newCard;
@@ -374,6 +418,27 @@ const APP = {
     }
     document.getElementById('regenerate-btn').disabled = false;
     document.getElementById('regenerate-btn').textContent = '🔄 Regenerate';
+  },
+
+  _setupKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const key = e.key;
+      // 1-4 for option selection
+      if (['1','2','3','4'].includes(key) && !document.getElementById('next-btn').classList.contains('hidden')) {
+        const btns = document.querySelectorAll('.option-btn:not(:disabled)');
+        const idx = parseInt(key) - 1;
+        if (btns[idx]) btns[idx].click();
+      }
+      // N for next card
+      if (key.toLowerCase() === 'n' && !document.getElementById('next-btn').classList.contains('hidden')) {
+        this.nextCard();
+      }
+      // R for regenerate
+      if (key.toLowerCase() === 'r' && !document.getElementById('regenerate-btn').classList.contains('hidden')) {
+        this.regenerateCard();
+      }
+    });
   },
 
   peekDiagram() {
