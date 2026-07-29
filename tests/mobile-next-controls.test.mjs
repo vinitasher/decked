@@ -26,3 +26,9 @@ test('answer flow reveals and scrolls the action tray into view', () => {
   assert.match(app, /actionsEl\.classList\.remove\('hidden'\)/);
   assert.match(app, /actionsEl\.scrollIntoView\(\{ behavior: 'smooth', block: 'nearest' \}\)/);
 });
+
+test('confidence feedback advances automatically after three seconds', () => {
+  assert.match(app, /nextButton\.textContent = 'Next question\.\.\.'/);
+  assert.match(app, /this\._advanceTimer = setTimeout\(\(\) => this\.nextCard\(\), 3000\)/);
+  assert.match(app, /clearTimeout\(this\._advanceTimer\)/);
+});

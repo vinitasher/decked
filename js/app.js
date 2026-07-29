@@ -413,6 +413,10 @@ const APP = {
   },
 
   showCard() {
+    if (this._advanceTimer) {
+      clearTimeout(this._advanceTimer);
+      this._advanceTimer = null;
+    }
     if (this.sessionIndex >= this.sessionCards.length) {
       this.endSession();
       return;
@@ -556,16 +560,16 @@ const APP = {
     this._checkAchievements();
     this.saveProfile();
 
-    // show next + regenerate + quality rating
+    // Briefly show the transition state, then advance automatically.
     document.getElementById('confidence-buttons').classList.add('hidden');
-    document.getElementById('next-btn').setAttribute('aria-label', 'Next card');
-    document.getElementById('next-btn').classList.remove('hidden');
-    document.getElementById('regenerate-btn').classList.remove('hidden');
-    document.getElementById('quality-rating').classList.remove('hidden');
-    document.getElementById('quality-rating').querySelectorAll('button').forEach(b => b.disabled = false);
+    const nextButton = document.getElementById('next-btn');
+    nextButton.textContent = 'Next question...';
+    nextButton.disabled = true;
+    nextButton.classList.remove('hidden');
     Render.diagram(card, 'diagram-container', true);
     this.renderDeckStats();
     this.prefetchNext();
+    this._advanceTimer = setTimeout(() => this.nextCard(), 3000);
   },
 
   async regenerateCard() {
@@ -626,6 +630,13 @@ const APP = {
   },
 
   nextCard() {
+    if (this._advanceTimer) {
+      clearTimeout(this._advanceTimer);
+      this._advanceTimer = null;
+    }
+    const nextButton = document.getElementById('next-btn');
+    nextButton.disabled = false;
+    nextButton.innerHTML = 'Next Card <span class="keyboard-hint">[N]</span> →';
     this.sessionIndex++;
     this._cardStartTime = Date.now();
 
