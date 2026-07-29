@@ -1,0 +1,64 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; }
+.container { max-width: 720px; margin: 0 auto; padding: 16px; min-height: 100vh; display: flex; flex-direction: column; }
+.hidden { display: none !important; }
+h1 { font-size: 1.5rem; margin-bottom: 8px; color: #1a237e; }
+h2 { font-size: 1.2rem; margin-bottom: 12px; color: #283593; }
+p { margin-bottom: 12px; line-height: 1.5; }
+
+/* Buttons */
+.btn { display: inline-block; padding: 12px 24px; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+.btn-primary { background: #3949ab; color: #fff; }
+.btn-primary:hover { background: #303f9f; }
+.btn-success { background: #43a047; color: #fff; }
+.btn-outline { background: transparent; border: 2px solid #3949ab; color: #3949ab; }
+
+/* Welcome screen */
+.welcome-header { text-align: center; padding: 40px 0 24px; }
+.welcome-header .subtitle { color: #666; font-size: 0.95rem; }
+.stats-row { display: flex; gap: 12px; margin: 20px 0; }
+.stat-card { flex: 1; background: #fff; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.stat-card .stat-num { font-size: 1.8rem; font-weight: 700; color: #1a237e; }
+.stat-card .stat-label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Topic breakdown */
+.topic-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.85rem; }
+.topic-row span:first-child { width: 140px; text-align: right; }
+.topic-bar { flex: 1; height: 12px; background: #e0e0e0; border-radius: 6px; overflow: hidden; }
+.topic-fill { height: 100%; background: linear-gradient(90deg, #42a5f5, #3949ab); border-radius: 6px; transition: width 0.5s; }
+.topic-pct { width: 40px; font-weight: 600; color: #555; }
+
+/* Session screen */
+.card-header { display: flex; justify-content: space-between; font-size: 0.85rem; color: #666; margin-bottom: 8px; }
+.card-meta { display: flex; gap: 12px; }
+#scenario { background: #fff; border-radius: 10px; padding: 16px; margin: 8px 0; line-height: 1.6; box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-size: 0.95rem; }
+#diagram-container { margin: 8px 0; background: #fff; border-radius: 10px; padding: 8px; min-height: 140px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+#options { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.option-btn { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 10px; background: #fff; cursor: pointer; font-size: 0.9rem; text-align: left; transition: all 0.15s; }
+.option-btn:hover:not(:disabled) { border-color: #3949ab; background: #e8eaf6; }
+.option-btn:disabled { cursor: default; opacity: 0.85; }
+.option-btn.correct { border-color: #43a047; background: #e8f5e9; }
+.option-btn.incorrect { border-color: #e53935; background: #ffebee; }
+.option-letter { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #e8eaf6; font-weight: 700; font-size: 0.85rem; color: #3949ab; flex-shrink: 0; }
+.option-btn.correct .option-letter { background: #43a047; color: #fff; }
+.option-btn.incorrect .option-letter { background: #e53935; color: #fff; }
+.option-text { flex: 1; }
+
+/* Feedback */
+#feedback { background: #fff; border-radius: 10px; padding: 16px; margin: 8px 0; line-height: 1.6; font-size: 0.9rem; border-left: 4px solid; }
+#feedback.correct { border-color: #43a047; }
+#feedback.incorrect { border-color: #e53935; }
+#feedback strong { font-size: 1rem; }
+
+#next-btn { margin: 8px auto; min-width: 160px; }
+
+/* Session end */
+#session-summary p { margin: 8px 0; font-size: 1.05rem; }
+.actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+.actions .btn { flex: 1; text-align: center; }
+
+/* Responsive */
+@media (max-width: 480px) {
+  .stats-row { flex-direction: column; }
+  .topic-row span:first-child { width: 100px; }
+}
