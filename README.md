@@ -127,4 +127,5 @@ publishes the production branch to `https://decked.pages.dev`.
 
 Cloudflare Git integration uses `bash check.sh && bash build.sh`, watches
 `system-design-flashcards/**`, and deploys `.pages-dist` from the `main`
-branch. Pull requests receive preview deployments.
+branch. Pull requests receive preview deployments, while changes outside this
+project directory do not trigger unnecessary builds.
