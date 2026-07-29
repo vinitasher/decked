@@ -37,6 +37,39 @@ test('profile migration replaces non-serializable set remnants with arrays', () 
 
   assert.deepEqual([...profile.topicScores.caching.daysSpanned], []);
   assert.deepEqual([...profile._topicCardSeen.caching], []);
+  assert.equal(profile.streaks.current, 0);
+  assert.equal(profile.streaks.best, 0);
+  assert.equal(profile.totalSessions, 0);
+  assert.equal(profile.totalAnswered, 0);
+  assert.equal(profile.totalCorrect, 0);
+});
+
+test('difficulty button invokes feedback with its numeric value', () => {
+  const app = context.appForTest;
+  let handler;
+  let submitted;
+  const originalQuerySelectorAll = context.document.querySelectorAll;
+  const originalRateConfidence = app.rateConfidence;
+  context.document.querySelectorAll = selector => {
+    assert.equal(selector, '[data-confidence]');
+    return [{
+      dataset: { confidence: '3' },
+      addEventListener(type, listener) {
+        assert.equal(type, 'click');
+        handler = listener;
+      }
+    }];
+  };
+  app.rateConfidence = confidence => { submitted = confidence; };
+
+  try {
+    app._setupConfidenceButtons();
+    handler();
+    assert.equal(submitted, 3);
+  } finally {
+    context.document.querySelectorAll = originalQuerySelectorAll;
+    app.rateConfidence = originalRateConfidence;
+  }
 });
 
 test('topic review remains valid after profile serialization and reload', () => {

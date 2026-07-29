@@ -11,6 +11,17 @@ function normalizeProfileData(profile) {
     ? normalized.cardHistory : {};
   normalized.streaks = normalized.streaks && typeof normalized.streaks === 'object'
     ? normalized.streaks : { current: 0, best: 0, lastDate: null };
+  normalized.streaks.current = Number.isFinite(normalized.streaks.current)
+    ? normalized.streaks.current : 0;
+  normalized.streaks.best = Number.isFinite(normalized.streaks.best)
+    ? normalized.streaks.best : 0;
+  normalized.streaks.lastDate = normalized.streaks.lastDate || null;
+  normalized.totalSessions = Number.isFinite(normalized.totalSessions)
+    ? normalized.totalSessions : 0;
+  normalized.totalAnswered = Number.isFinite(normalized.totalAnswered)
+    ? normalized.totalAnswered : 0;
+  normalized.totalCorrect = Number.isFinite(normalized.totalCorrect)
+    ? normalized.totalCorrect : 0;
   normalized._topicCardSeen = normalized._topicCardSeen && typeof normalized._topicCardSeen === 'object'
     ? normalized._topicCardSeen : {};
 
@@ -40,6 +51,7 @@ const APP = {
     this.renderDeckStats();
     this.showScreen('welcome');
     this._setupKeyboard();
+    this._setupConfidenceButtons();
     this._checkServerHealth();
     this._initTheme();
     this._initSwipe();
@@ -79,6 +91,14 @@ const APP = {
     document.addEventListener('touchend', (e) => {
       const dx = e.changedTouches[0].clientX - xStart;
       if (dx < -80 && !document.getElementById('next-btn').classList.contains('hidden')) this.nextCard();
+    });
+  },
+
+  _setupConfidenceButtons() {
+    document.querySelectorAll('[data-confidence]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.rateConfidence(Number(button.dataset.confidence));
+      });
     });
   },
 
@@ -447,6 +467,7 @@ const APP = {
     }
     this.currentCard = this.sessionCards[this.sessionIndex];
     const card = this.currentCard;
+    this._confidenceSubmitted = false;
 
     document.getElementById('card-counter').textContent =
       `${this.sessionIndex + 1} / ${this.sessionCards.length}`;
@@ -496,7 +517,11 @@ const APP = {
     this._saveSessionState();
     document.getElementById('feedback').classList.add('hidden');
     document.getElementById('post-answer-actions').classList.add('hidden');
-    document.getElementById('confidence-buttons').classList.add('hidden');
+    const confidenceButtons = document.getElementById('confidence-buttons');
+    confidenceButtons.classList.add('hidden');
+    confidenceButtons.querySelectorAll('button').forEach(button => {
+      button.disabled = false;
+    });
     document.getElementById('next-btn').classList.add('hidden');
     document.getElementById('regenerate-btn').classList.add('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
@@ -535,10 +560,27 @@ const APP = {
   },
 
   rateConfidence(confidence) {
+    if (this._confidenceSubmitted || !Number.isInteger(confidence) || confidence < 1 || confidence > 4) {
+      return;
+    }
+    this._confidenceSubmitted = true;
     const card = this.currentCard;
     const correct = this._cardCorrect;
     const responseTime = Date.now() - (this._cardStartTime || Date.now());
 
+    // Respond to the tap before storage or rendering work can fail.
+    const confidenceButtons = document.getElementById('confidence-buttons');
+    confidenceButtons.querySelectorAll('button').forEach(button => {
+      button.disabled = true;
+    });
+    confidenceButtons.classList.add('hidden');
+    const nextButton = document.getElementById('next-btn');
+    nextButton.textContent = 'Next question...';
+    nextButton.disabled = true;
+    nextButton.classList.remove('hidden');
+    this._advanceTimer = setTimeout(() => this.nextCard(), 3000);
+
+    try {
     // update SRS with confidence-based grading
     const review = this.getCardReview(card.id);
     const grade = correct ? SRS.gradeCard(confidence) : 0;
@@ -586,17 +628,13 @@ const APP = {
     }
     this._checkAchievements();
     this.saveProfile();
+    } catch (error) {
+      console.error('Unable to persist confidence feedback', error);
+    }
 
-    // Briefly show the transition state, then advance automatically.
-    document.getElementById('confidence-buttons').classList.add('hidden');
-    const nextButton = document.getElementById('next-btn');
-    nextButton.textContent = 'Next question...';
-    nextButton.disabled = true;
-    nextButton.classList.remove('hidden');
     Render.diagram(card, 'diagram-container', true);
     this.renderDeckStats();
     this.prefetchNext();
-    this._advanceTimer = setTimeout(() => this.nextCard(), 3000);
   },
 
   async regenerateCard() {

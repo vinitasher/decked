@@ -1,5 +1,5 @@
 /* Service worker — offline cache for PWA */
-const CACHE = 'sdf-v2';
+const CACHE = 'sdf-v3';
 const STATIC = ['/', '/index.html', '/css/style.css', '/js/app.js', '/js/srs.js', '/js/render.js', '/js/cards.js', '/manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -16,7 +16,19 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) {
+    return;
+  }
   e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request).catch(() => new Response('Offline', { status: 503 })))
+    fetch(e.request)
+      .then(response => {
+        if (response.ok) {
+          const cachedResponse = response.clone();
+          caches.open(CACHE).then(cache => cache.put(e.request, cachedResponse));
+        }
+        return response;
+      })
+      .catch(() => caches.match(e.request)
+        .then(response => response || new Response('Offline', { status: 503 })))
   );
 });
