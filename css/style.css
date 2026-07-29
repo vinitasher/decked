@@ -27,6 +27,7 @@ p { margin-bottom: 12px; line-height: 1.5; }
 .topic-row span:first-child { width: 140px; text-align: right; }
 .topic-bar { flex: 1; height: 12px; background: #e0e0e0; border-radius: 6px; overflow: hidden; }
 .topic-fill { height: 100%; background: linear-gradient(90deg, #42a5f5, #3949ab); border-radius: 6px; transition: width 0.5s; }
+.mastered-fill { background: linear-gradient(90deg, #f9a825, #f57f17); }
 .topic-pct { width: 40px; font-weight: 600; color: #555; }
 .topic-row span:first-child { white-space: nowrap; }
 .topic-row .mastered { color: #f9a825; font-size: 1rem; }

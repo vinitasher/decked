@@ -24,6 +24,7 @@
     <button class="btn btn-primary" style="width:100%;margin:12px 0" onclick="APP.startSession()">Start Session</button>
     <h2 style="margin-top:20px">Your Profile</h2>
     <div id="topic-breakdown"></div>
+    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
   </div>
 
   <!-- Session -->
@@ -50,6 +51,17 @@
       <button class="btn btn-primary" onclick="APP.startSession()">Another Session</button>
       <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Dashboard</button>
     </div>
+  </div>
+
+  <!-- Statistics Dashboard -->
+  <div id="screen-stats" class="screen hidden">
+    <h1>Statistics</h1>
+    <h2>Study Calendar</h2>
+    <div id="study-calendar" style="display:flex;flex-wrap:wrap;gap:4px;margin:12px 0;min-height:60px;"></div>
+    <h2>Topic Mastery</h2>
+    <div id="mastery-chart" style="margin:12px 0;"></div>
+    <div id="stats-global" style="margin:12px 0;padding:16px;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"></div>
+    <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Back to Dashboard</button>
   </div>
 
 </div>

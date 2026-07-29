@@ -97,6 +97,8 @@ const APP = {
     this.sessionCards = this.selectCards(count);
     this.sessionIndex = 0;
     this.sessionStart = Date.now();
+    this.profile.totalSessions++;
+    this.saveProfile();
     if (this.sessionCards.length === 0) {
       alert('No cards due for review! Check back later.');
       return;
@@ -221,6 +223,8 @@ const APP = {
     review.ease = SRS.nextEase(correct, review.ease);
     review.interval = SRS.nextInterval(correct, review.ease, review.interval);
     review.nextReviewAt = Date.now() + review.interval * 86400000;
+    review.lastReviewAt = Date.now();
+    if (!review._createdAt) review._createdAt = Date.now();
     this.saveCardReview(card.id, review);
 
     // update topic score + mastery tracking
@@ -307,6 +311,81 @@ const APP = {
       <p>Average difficulty of session: <strong>${(this.sessionCards.reduce((s,c) => s + c.difficulty, 0) / this.sessionCards.length).toFixed(1)} / 5</strong> — ${this.sessionCards.length > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
     `;
     this.renderDeckStats();
+  },
+
+  /* ——— Statistics Dashboard ——— */
+
+  showStats() {
+    this.renderStudyCalendar();
+    this.renderMasteryChart();
+    const total = SEED_CARDS.length;
+    const mastered = Object.keys(this.profile.topicScores).filter(t => this.isTopicMastered(t)).length;
+    const totalTopics = [...new Set(SEED_CARDS.map(c => c.topic))].length;
+    document.getElementById('stats-global').innerHTML = `
+      <strong>Overall Progress</strong><br>
+      Cards: ${this.profile.totalAnswered} answered, ${Math.round(100 * this.profile.totalCorrect / Math.max(1, this.profile.totalAnswered))}% correct<br>
+      Topics: ${mastered} / ${totalTopics} mastered (${Math.round(100 * mastered / totalTopics)}%)<br>
+      Sessions: ${this.profile.totalSessions}<br>
+      Best streak: ${this.profile.streaks.best} days
+    `;
+    this.showScreen('stats');
+  },
+
+  renderStudyCalendar() {
+    const el = document.getElementById('study-calendar');
+    el.innerHTML = '';
+    const today = new Date();
+    const dayMs = 86400000;
+    // show last 49 days
+    for (let i = 48; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * dayMs);
+      const key = d.toISOString().split('T')[0];
+      const day = d.getDate();
+      const weekday = d.getDay();
+      // only show weekdays-ish (Mon-Fri) to keep it compact
+      const intensity = [...Array(250)].map((_, j) => {
+        const check = new Date(today.getTime() - (i + j) * dayMs);
+        const ck = check.toISOString().split('T')[0];
+      });
+      // simpler: count reviews on that day from card history
+      let reviewsOnDay = 0;
+      for (const cid of Object.keys(this.profile.cardHistory)) {
+        const card = SEED_CARDS.find(c => c.id === cid);
+        if (!card) continue;
+        const review = this.profile.cardHistory[cid];
+        // approximate: check when the review occurred (we only store the last review time as nextReviewAt)
+        // use the nextReviewAt as a proxy for when it was done
+        const reviewDate = new Date(review._createdAt || Date.now()).toISOString().split('T')[0];
+        if (reviewDate === key) reviewsOnDay++;
+      }
+      // fallback: use session-based tracking
+      const color = reviewsOnDay === 0 ? '#f0f0f0' :
+        reviewsOnDay <= 1 ? '#c8e6c9' :
+        reviewsOnDay <= 3 ? '#81c784' :
+        reviewsOnDay <= 6 ? '#43a047' : '#1b5e20';
+      const dot = document.createElement('div');
+      dot.style.cssText = `width:14px;height:14px;border-radius:3px;background:${color};position:relative;`;
+      dot.title = `${key}: ${reviewsOnDay} reviews`;
+      el.appendChild(dot);
+    }
+  },
+
+  renderMasteryChart() {
+    const el = document.getElementById('mastery-chart');
+    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
+    const topicLabels = {
+      caching: 'Caching', queues: 'Queues', databases: 'DB', consensus: 'Consensus',
+      'api-design': 'API', loadbalancing: 'LB', storage: 'Storage',
+      observability: 'Observe', security: 'Security', 'real-time': 'RT',
+      'rate-limiting': 'Rate Lim', dns: 'DNS', 'messaging': 'Msg'
+    };
+    el.innerHTML = topics.map(t => {
+      const score = this.getTopicScore(t);
+      const pct = Math.round(score * 100);
+      const mastered = this.isTopicMastered(t);
+      const label = topicLabels[t] || t;
+      return `<div class="topic-row"><span>${label}</span><div class="topic-bar"><div class="topic-fill${mastered ? ' mastered-fill' : ''}" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
+    }).join('');
   },
 
   /* ——— UI ——— */
