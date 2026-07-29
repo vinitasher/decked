@@ -1,11 +1,14 @@
-name = "system-design-flashcards"
-compatibility_date = "2025-06-01"
+name = "deckd"
 pages_build_output_dir = "."
+compatibility_date = "2025-06-01"
 
+# Run once: npx wrangler kv:namespace create CARD_CACHE
+# then paste the returned id below
 [[kv_namespaces]]
 binding = "CARD_CACHE"
-id = ""
-preview_id = ""
+id = "__FILL_ME_IN__"
+preview_id = "__FILL_ME_IN__"
 
-[[ai]]
+# Workers AI binding
+[ai]
 binding = "AI"
