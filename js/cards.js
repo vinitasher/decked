@@ -225,5 +225,136 @@ const SEED_CARDS = [
     ],
     correct: "B",
     explanation: "Operational Transform (B) is the proven approach for character-by-character collaboration: each operation is transformed against concurrent operations from other users to produce a consistent document. A (locking) kills real-time collaboration. C (last-write-wins) causes data loss. D is impractical for real-time collaboration."
+  },
+
+  // ── Rate Limiting ──
+  {
+    id: "rl-001", topic: "rate-limiting", difficulty: 2,
+    scenario: "A public API is used by thousands of developers. One misbehaving client is sending 10,000 requests/second, degrading the experience for everyone else. The API needs to protect itself while still allowing legitimate bursts.",
+    nodes: ["Client", "API Gateway", "Rate Limiter", "App Server", "Redis"],
+    options: [
+      { id: "A", label: "Block the client's IP at the firewall when traffic spikes" },
+      { id: "B", label: "Token bucket algorithm: each client gets N tokens/minute; refill happens in Redis" },
+      { id: "C", label: "Charge per request; the client will naturally slow down as costs rise" },
+      { id: "D", label: "Rate limit at the app server level using an in-memory counter per IP" }
+    ],
+    correct: "B",
+    explanation: "Token bucket (B) is the standard: Redis stores each client's token count, the API gateway checks before forwarding the request. It allows bursts up to the bucket size while enforcing a steady-state rate. A (IP blocking) is too aggressive — a legitimate user sharing an IP gets collateral damage. C (charging) is a business solution, not an architectural one. D works only on a single server — behind a load balancer each server gets a fraction of the requests and doesn't see the full picture."
+  },
+  {
+    id: "rl-002", topic: "rate-limiting", difficulty: 3,
+    scenario: "A multi-tenant SaaS platform has customers on tiered plans: Free (100 req/hr), Pro (10,000 req/hr), Enterprise (unlimited with fair-use caps). Enforcement must be consistent across 20 backend servers.",
+    nodes: ["Client", "API Gateway", "Redis Cluster", "Rate Limit Service", "Backend Pool"],
+    options: [
+      { id: "A", label: "Each backend server tracks its own rate limit counter locally; sum across servers at query time" },
+      { id: "B", label: "Redis-backed sliding window counter; API gateway checks the count before proxying each request" },
+      { id: "C", label: "Issue signed tokens to each client on login; the token encodes how many requests are allowed" },
+      { id: "D", label: "Use a separate database table per customer; log every request and count rows" }
+    ],
+    correct: "B",
+    explanation: "A Redis-backed sliding window (B) gives consistent enforcement across all 20 backends with sub-millisecond overhead. A (local counters) is inconsistent — the client can exceed limits by hitting multiple servers. C (signed tokens) is fine for pre-paid quotas but doesn't handle real-time refill. D (DB table per customer) does not scale — logging every request to a database introduces write amplification and latency."
+  },
+
+  // ── DNS ──
+  {
+    id: "dns-001", topic: "dns", difficulty: 2,
+    scenario: "A global e-commerce site serves users in 50 countries. During a flash sale, traffic spikes 50x in one region. The site uses a single DNS A record pointing to a single server IP.",
+    nodes: ["User Browser", "Recursive DNS", "Authoritative DNS", "Load Balancer IP", "Web Server"],
+    options: [
+      { id: "A", label: "Upgrade the single server to handle 50x traffic" },
+      { id: "B", label: "Use DNS-based load balancing: multiple A records resolve to different IPs; DNS round-robins" },
+      { id: "C", label: "Replace the A record with a CNAME pointing to a CDN that has the site's content" },
+      { id: "D", label: "Use latency-based DNS routing; different regions resolve to different server pools" }
+    ],
+    correct: "D",
+    explanation: "Latency-based DNS routing (D) is ideal for global services: DNS returns the IP of the closest server pool, keeping latency low and absorbing regional spikes independently. A (single server) doesn't scale. B (round-robin DNS) distributes traffic but ignores region — clients in Japan may get routed to Europe. C (CNAME to CDN) works for static content but dynamic requests still need to hit origin servers."
+  },
+
+  // ── Service Mesh ──
+  {
+    id: "mesh-001", topic: "loadbalancing", difficulty: 4,
+    scenario: "A microservices platform has 200 services. Each service needs to discover other services, retry on failure, collect latency metrics, and enforce mTLS. Adding this logic to every service individually is not sustainable.",
+    nodes: ["Service A", "Sidecar Proxy", "Control Plane", "Service Registry", "Service B"],
+    options: [
+      { id: "A", label: "Write a shared library implementing retry, discovery, and TLS; every service must use it" },
+      { id: "B", label: "Deploy a service mesh with sidecar proxies: each service gets a proxy that handles networking concerns transparently" },
+      { id: "C", label: "Configure each service to use DNS-based service discovery and leave TLS to the infrastructure" },
+      { id: "D", label: "Route all traffic through a single API gateway that handles everything" }
+    ],
+    correct: "B",
+    explanation: "Service mesh (B) is the proven solution at 200+ services: sidecar proxies intercept all traffic transparently, providing discovery, retries, metrics, and mTLS without modifying service code. A (shared library) requires every team to adopt and maintain the same library — at 200 services this fragments quickly. C leaves security and observability gaps. D (single gateway) becomes a bottleneck and a single point of failure for all inter-service communication."
+  },
+
+  // ── Messaging Patterns ──
+  {
+    id: "msg-001", topic: "queues", difficulty: 3,
+    scenario: "An order processing system must guarantee that every order is processed exactly once. The order service receives 2,000 orders/s. If the processing service crashes mid-way, the order must not be lost or duplicated on restart.",
+    nodes: ["Web App", "Order Service", "Message Broker", "Processing Service", "Database"],
+    options: [
+      { id: "A", label: "Order service writes to DB synchronously; processing service polls DB for new orders" },
+      { id: "B", label: "Message broker with at-least-once delivery + consumer-side dedup using a unique order ID" },
+      { id: "C", label: "Processing service reads from a TCP socket; if it crashes the OS sends remaining data" },
+      { id: "D", label: "Use a file-based approach: write orders to NFS; processing service reads new files" }
+    ],
+    correct: "B",
+    explanation: "B gives exactly-once semantics: at-least-once delivery guarantees the message survives crashes, while consumer-side dedup (checking order ID against processed orders in the DB) makes it idempotent. A (DB polling) is fragile — polling intervals add latency and the DB becomes a message store. C (TCP socket) loses in-flight data when the consumer crashes. D (NFS) introduces file locking and stale-NFS-cache bugs."
+  },
+  {
+    id: "msg-002", topic: "queues", difficulty: 3,
+    scenario: "An event-driven architecture has 10 event producers and 50 event consumers. Each event should be delivered to all interested consumers. New consumers should be able to replay past events to build their own state.",
+    nodes: ["Producer A", "Event Bus", "Topic (partitioned)", "Consumer Group X", "Consumer Group Y"],
+    options: [
+      { id: "A", label: "Each producer broadcasts events via HTTP POST to every consumer" },
+      { id: "B", label: "Apache Kafka: events are published to a partitioned topic; consumer groups read independently, each with its own offset" },
+      { id: "C", label: "Redis pub/sub: producers publish to a channel; all subscribers receive events in real time" },
+      { id: "D", label: "Store events in a shared database table; consumers poll for new rows" }
+    ],
+    correct: "B",
+    explanation: "Kafka (B) exactly matches this: partitioned topics for parallelism, consumer groups for independent consumption, offset tracking for replay. A (HTTP POST) doesn't scale to 50 consumers — every producer fans out to 50 endpoints. C (Redis pub/sub) doesn't persist messages — a late-joining consumer cannot replay history. D (shared DB table) doesn't provide the ordering, partitioning, or throughput that Kafka provides."
+  },
+
+  // ── Monitoring ──
+  {
+    id: "mon-001", topic: "observability", difficulty: 1,
+    scenario: "A team deploys a new API endpoint that occasionally returns 500 errors, but only for a small subset of users. The errors happen randomly and are hard to reproduce locally.",
+    nodes: ["User", "CDN", "API Server", "Log Aggregator", "Monitoring Dashboard"],
+    options: [
+      { id: "A", label: "Add a try/catch around the new code; log the error to stdout; grep the logs when users complain" },
+      { id: "B", label: "Add structured logging with the user ID and request context; send logs to a centralized logging service; set up an alert on 5xx rate" },
+      { id: "C", label: "Watch the server's CPU and memory; infer the problem from resource usage patterns" },
+      { id: "D", label: "Ask users to send screenshots of the error when they see it" }
+    ],
+    correct: "B",
+    explanation: "B is proper observability: structured logs with request context let you correlate errors with user behavior, and a 5xx alert catches the problem in real time. A relies on manual grep after the fact. C gives no insight into application errors. D (user-reported screenshots) is slow, low-fidelity, and privacy-invasive."
+  },
+
+  // ── Container Orchestration ──
+  {
+    id: "k8s-001", topic: "loadbalancing", difficulty: 4,
+    scenario: "A Python web service runs in a Docker container on a Kubernetes cluster. During a traffic spike, the service slows down but doesn't crash. Kubernetes has no way to know the service is degraded and keeps sending traffic.",
+    nodes: ["User", "Ingress Controller", "K8s Service", "Pod A", "Pod B", "Horizontal Pod Autoscaler"],
+    options: [
+      { id: "A", label: "Increase the CPU request so Kubernetes notices the load and auto-scales" },
+      { id: "B", label: "Add a liveness probe (HTTP /health) and a readiness probe (HTTP /ready that checks internal health); configure HPA based on custom metrics" },
+      { id: "C", label: "Manually increase the replica count during every forecasted peak" },
+      { id: "D", label: "Use a bigger instance type for the entire cluster" }
+    ],
+    correct: "B",
+    explanation: "B is Kubernetes-native: a readiness probe that checks internal health (DB connection, queue depth, latency) tells the Service to stop sending traffic to degraded pods, while the HPA with custom metrics (requests per second, latency) triggers horizontal scaling. A (higher CPU request) doesn't help because the process isn't CPU-bound. C and D don't address automatic detection and response."
+  },
+
+  // ── CDN ──
+  {
+    id: "cdn-001", topic: "caching", difficulty: 2,
+    scenario: "A SaaS dashboard renders dynamic charts for each user. Chart data changes every few minutes. The page loads in 4 seconds — mostly from database queries for the chart data.",
+    nodes: ["User Browser", "CDN", "API Server", "Chart Render Cache", "Database"],
+    options: [
+      { id: "A", label: "Cache the entire dashboard HTML at the CDN for 5 minutes; invalidate on data change" },
+      { id: "B", label: "Cache the raw chart data in a server-side cache (Redis), keyed by user + chart ID; CDN caches static assets only" },
+      { id: "C", label: "Pre-render all chart images on a cron job every 5 minutes; serve as static PNGs from CDN" },
+      { id: "D", label: "Remove the CDN entirely; serve pages and data directly from the origin server" }
+    ],
+    correct: "B",
+    explanation: "B maximizes speed without sacrificing correctness: chart data is cached server-side in Redis (sub-millisecond reads vs 100+ms DB queries), while the CDN serves the static assets (JS, CSS). A (caching dynamic dashboard HTML at CDN) would show stale data to users — the cache invalidates on data change, but any user viewing a slightly older dataset sees wrong numbers. C pre-rendering doesn't support interactive or drill-down charts."
   }
 ];
