@@ -21,7 +21,7 @@ function normalizeTopics(topics, cardTopic) {
     .filter(topic =>
       typeof topic === 'string' &&
       topic !== cardTopic &&
-      Object.hasOwn(TOPIC_PREREQUISITES, topic)
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(topic)
     );
 }
 
@@ -81,7 +81,7 @@ Return a JSON object with these exact keys:
 - prerequisiteTopics: the aggregate list of topics needed to understand the whole question.
 - scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off.
 - nodes: array of 4-5 system components with real technology names.
-- options: array of exactly 4 objects {id, label, prerequisiteTopics}, with ids A, B, C, D. Each option's prerequisiteTopics must be an array containing every topic needed to evaluate that option, selected only from: ${JSON.stringify(Object.keys(TOPIC_PREREQUISITES))}. Do not include "${topic}". Option B is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
+- options: array of exactly 4 objects {id, label, prerequisiteTopics}, with ids A, B, C, D. Each option needs 2-4 prerequisite concepts required to evaluate its trade-off. Use specific lowercase kebab-case concepts such as "cache-invalidation", "replication-lag", or "message-ordering"; never use a technology/product name merely because it appears in the option, and avoid broad categories such as "databases", "caching", or "api-design". Do not include "${topic}". Option B is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
 - prerequisiteTopics must include the union of all four options' prerequisiteTopics.
 - correct: "B"
 - explanation: 3-5 sentences on why each other option fails and why B wins. Name specific bottlenecks and trade-offs.
@@ -168,6 +168,12 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
     }
     if (!generatedCard.options.every(option => Array.isArray(option.prerequisiteTopics))) {
       throw new Error('Invalid field: option prerequisiteTopics');
+    }
+    if (!generatedCard.options.every(option =>
+      option.prerequisiteTopics.length >= 2 &&
+      option.prerequisiteTopics.length <= 4
+    )) {
+      throw new Error('Each option needs 2-4 prerequisite concepts');
     }
 
     const card = normalizeCard(generatedCard, topic, difficulty);

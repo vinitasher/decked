@@ -18,46 +18,46 @@ const TOPIC_CATALOG = {
 
 const LEGACY_OPTION_PREREQUISITES = {
   "fallback-cache-001": {
-    A: ["dns", "api-design"],
-    B: ["databases", "api-design"],
-    C: ["databases"],
-    D: ["storage"]
+    A: ["cdn-caching", "http-cacheability", "cache-invalidation"],
+    B: ["cache-aside", "workload-skew", "cache-eviction"],
+    C: ["read-replication", "database-indexing", "replication-cost"],
+    D: ["static-site-generation", "content-freshness", "cache-invalidation"]
   },
   "fallback-queue-001": {
-    A: ["api-design", "messaging"],
-    B: ["api-design", "real-time"],
-    C: ["api-design"],
-    D: ["databases"]
+    A: ["durable-queues", "asynchronous-processing", "webhook-callbacks", "idempotency"],
+    B: ["async-io", "connection-lifecycle", "backpressure"],
+    C: ["thread-pools", "blocking-io", "backpressure"],
+    D: ["database-polling", "batch-processing", "latency-budgets"]
   },
   "fallback-db-001": {
-    A: ["caching"],
-    B: ["caching"],
-    C: [],
-    D: ["consensus", "storage"]
+    A: ["read-replication", "replication-lag", "read-after-write-consistency"],
+    B: ["asynchronous-replication", "read-models", "cache-invalidation"],
+    C: ["vertical-scaling", "connection-pooling", "database-bottlenecks"],
+    D: ["distributed-databases", "eventual-consistency", "data-partitioning"]
   },
   "fallback-consensus-001": {
-    A: ["databases"],
-    B: ["databases", "storage"],
-    C: ["messaging"],
-    D: ["storage"]
+    A: ["leader-failover", "failure-detection", "single-point-of-failure"],
+    B: ["leader-election", "quorum-commit", "linearizability"],
+    C: ["gossip-protocols", "eventual-consistency", "split-brain"],
+    D: ["shared-filesystems", "single-point-of-failure", "failure-domains"]
   },
   "fallback-api-001": {
-    A: [],
-    B: [],
-    C: [],
-    D: ["real-time"]
+    A: ["resource-modeling", "idempotency", "operation-lifecycle"],
+    B: ["rest-resources", "http-method-semantics", "idempotency"],
+    C: ["graphql-schemas", "mutation-semantics", "query-cost-control"],
+    D: ["grpc-streaming", "connection-lifecycle", "client-compatibility"]
   },
   "caching-gen-1785292361000": {
-    A: ["dns", "api-design"],
-    B: ["databases"],
-    C: ["api-design"],
-    D: ["databases"]
+    A: ["cdn-caching", "cache-invalidation", "content-freshness"],
+    B: ["write-through-caching", "cache-coherence", "write-ordering"],
+    C: ["local-caches", "cache-coherence", "cache-invalidation"],
+    D: ["database-indexing", "read-replication", "connection-pooling"]
   },
   "queues-gen-1785292786255": {
-    A: ["databases"],
-    B: ["messaging", "databases"],
-    C: ["messaging", "caching", "databases"],
-    D: ["messaging", "databases"]
+    A: ["transaction-isolation", "row-locking", "deadlocks", "connection-pooling"],
+    B: ["message-partitioning", "message-ordering", "optimistic-concurrency"],
+    C: ["competing-consumers", "cache-coherence", "read-modify-write-races"],
+    D: ["fifo-queues", "conditional-writes", "serverless-cold-starts"]
   }
 };
 
@@ -65,12 +65,17 @@ function getTopicPrerequisites(topic) {
   return [...(TOPIC_CATALOG[topic]?.prerequisites || [])];
 }
 
+function formatPrerequisiteLabel(topic) {
+  return TOPIC_CATALOG[topic]?.label
+    || topic.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" ");
+}
+
 function normalizePrerequisiteTopics(topics, cardTopic) {
   return [...new Set(Array.isArray(topics) ? topics : [])]
     .filter(topic =>
       typeof topic === "string" &&
       topic !== cardTopic &&
-      TOPIC_CATALOG[topic]
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(topic)
     );
 }
 
@@ -80,16 +85,18 @@ function normalizeCardPrerequisites(card) {
     ? card.options.map(option => ({
         ...option,
         prerequisiteTopics: normalizePrerequisiteTopics(
-          Array.isArray(option?.prerequisiteTopics)
-            ? option.prerequisiteTopics
-            : LEGACY_OPTION_PREREQUISITES[card.id]?.[option?.id],
+          LEGACY_OPTION_PREREQUISITES[card.id]?.[option?.id]
+            || option?.prerequisiteTopics,
           card.topic
         )
       }))
     : [];
+  const existingCardPrerequisites = LEGACY_OPTION_PREREQUISITES[card.id]
+    ? []
+    : (Array.isArray(card.prerequisiteTopics) ? card.prerequisiteTopics : []);
   card.prerequisiteTopics = normalizePrerequisiteTopics([
     ...getTopicPrerequisites(card.topic),
-    ...(Array.isArray(card.prerequisiteTopics) ? card.prerequisiteTopics : []),
+    ...existingCardPrerequisites,
     ...card.options.flatMap(option => option.prerequisiteTopics)
   ], card.topic);
   return card;

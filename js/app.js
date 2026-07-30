@@ -488,7 +488,7 @@ const APP = {
     const prerequisites = normalizeCardPrerequisites(card).prerequisiteTopics;
     const prerequisiteEl = document.getElementById('card-prerequisites');
     prerequisiteEl.textContent = prerequisites.length
-      ? `Know first: ${prerequisites.map(topic => TOPIC_CATALOG[topic]?.label || topic).join(', ')}`
+      ? `Know first: ${prerequisites.map(formatPrerequisiteLabel).join(', ')}`
       : 'Foundational topic';
 
     // retrieval practice: hide diagram until answered (user can toggle to peek)
@@ -507,7 +507,7 @@ const APP = {
       btn.className = 'option-btn';
       const keyNum = idx + 1;
       const optionPrerequisites = opt.prerequisiteTopics
-        .map(topic => TOPIC_CATALOG[topic]?.label || topic)
+        .map(formatPrerequisiteLabel)
         .join(', ');
       btn.innerHTML = `<span class="option-letter">${opt.id}<span style="display:block;font-size:0.55rem;opacity:0.5;">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${opt.label}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
       btn.setAttribute('role', 'radio');

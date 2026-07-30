@@ -78,14 +78,14 @@ test('generation retries a temporary provider failure and caches the card', asyn
     assert.equal(JSON.parse(cached.value).id, card.id);
     assert.deepEqual(
       JSON.parse(cached.value).prerequisiteTopics,
-      ['api-design', 'real-time', 'messaging', 'databases']
+      ['api-design', 'real-time', 'messaging', 'databases', 'unknown']
     );
     assert.deepEqual(
       JSON.parse(cached.value).options.map(option => option.prerequisiteTopics),
       [
         ['api-design', 'real-time'],
         ['api-design', 'messaging'],
-        ['databases'],
+        ['databases', 'unknown'],
         ['messaging']
       ]
     );
@@ -148,6 +148,33 @@ test('generation rejects an option without prerequisite topics', async () => {
 
     assert.equal(response.status, 500);
     assert.equal(body.error, 'Invalid field: option prerequisiteTopics');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('generation rejects shallow one-concept option prerequisites', async () => {
+  const originalFetch = globalThis.fetch;
+  const shallowCard = {
+    ...card,
+    options: card.options.map(option => ({
+      ...option,
+      prerequisiteTopics: ['databases']
+    }))
+  };
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { content: JSON.stringify(shallowCard) } }]
+  });
+
+  try {
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2'),
+      env: { OPENCODE_API_KEY: 'test-key' }
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error, 'Each option needs 2-4 prerequisite concepts');
   } finally {
     globalThis.fetch = originalFetch;
   }

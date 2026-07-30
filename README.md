@@ -124,8 +124,10 @@ Generation retries transient Flash capacity failures and uses
 Generated cards are stored permanently in Cloudflare KV until explicitly
 replaced or deleted. Learner progress remains local to each browser.
 Each generated option declares prerequisite topics, and the question-level
-Know First list is their deduplicated aggregate. Legacy cached options receive
-reviewed prerequisite metadata for the seven repository-held historical cards;
+Know First list is their deduplicated aggregate. Option prerequisites are
+specific study concepts such as Cache Invalidation, Replication Lag, or Message
+Ordering, not broad category or product-name tags. Legacy cached options receive
+reviewed concept metadata for the seven repository-held historical cards;
 their question aggregates are rebuilt and normalized cards are rewritten
 permanently. Unknown browser-only custom cards retain their authored metadata
 and remain in local storage.
