@@ -151,3 +151,26 @@ Cloudflare Git integration uses `bash check.sh && bash build.sh`, watches
 `system-design-flashcards/**`, and deploys `.pages-dist` from the `main`
 branch. Pull requests receive preview deployments, while changes outside this
 project directory do not trigger unnecessary builds.
+
+## PWA installability
+
+The app is installable as a Progressive Web App. To test on each platform:
+
+**Desktop Chrome:**
+Open DevTools (F12) > Application > Manifest — verify no errors. An install
+icon should appear in the address bar after visiting twice, five minutes apart.
+
+**Android Chrome:**
+Visit the site, then look for the "Add to Home Screen" prompt or tap the
+menu (⋮) > "Install app" / "Add to Home Screen". The installed app launches
+in standalone mode with no browser UI.
+
+**iOS Safari (iPhone):**
+Tap the share button (□↑) > "Add to Home Screen". The app icon appears on
+the home screen and launches in full-screen mode. `navigator.standalone` is
+`true` after installation.
+
+**Lighthouse audit:**
+Chrome DevTools > Lighthouse > Progressive Web App — should score 100% on
+installability checks (valid manifest, registered service worker, HTTPS,
+icons at required sizes).
