@@ -34,6 +34,19 @@ function normalizeProfileData(profile) {
   return normalized;
 }
 
+function shuffledOptions(options, rng = Math.random) {
+  const shuffled = [...options];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const randomValue = Number(rng());
+    const boundedValue = Number.isFinite(randomValue)
+      ? Math.min(Math.max(randomValue, 0), 1 - Number.EPSILON)
+      : 0;
+    const swapIndex = Math.floor(boundedValue * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 const APP = {
   profile: null,
   currentCard: null,
@@ -43,6 +56,8 @@ const APP = {
   _cardCache: {},
   _nextCard: null,
   _isGenerating: false,
+  _optionRng: Math.random,
+  _displayedOptions: [],
 
   init() {
     this.loadProfile();
@@ -502,7 +517,8 @@ const APP = {
     // render options
     const optionsEl = document.getElementById('options');
     optionsEl.innerHTML = '';
-    card.options.forEach((opt, idx) => {
+    this._displayedOptions = shuffledOptions(card.options, this._optionRng);
+    this._displayedOptions.forEach((opt, idx) => {
       const btn = document.createElement('button');
       btn.className = 'option-btn';
       const keyNum = idx + 1;
@@ -512,7 +528,7 @@ const APP = {
       btn.innerHTML = `<span class="option-letter">${opt.id}<span style="display:block;font-size:0.55rem;opacity:0.5;">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${opt.label}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-label', `Option ${opt.id}: ${opt.label}`);
-      btn.onclick = () => this.answer(opt.id, idx);
+      btn.onclick = () => this.answer(opt.id);
       optionsEl.appendChild(btn);
     });
 
@@ -533,7 +549,7 @@ const APP = {
     document.getElementById('quality-rating').classList.add('hidden');
   },
 
-  answer(selectedId, idx) {
+  answer(selectedId) {
     const card = this.currentCard;
     this._selectedId = selectedId;
     this._cardCorrect = selectedId === card.correct;
@@ -541,7 +557,7 @@ const APP = {
     // disable options and show correct/incorrect highlighting
     document.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
     document.querySelectorAll('.option-btn').forEach((btn, i) => {
-      const opt = card.options[i];
+      const opt = this._displayedOptions[i];
       if (opt.id === card.correct) btn.classList.add('correct');
       else if (opt.id === selectedId && !this._cardCorrect) btn.classList.add('incorrect');
     });
@@ -667,7 +683,8 @@ const APP = {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const key = e.key;
       // 1-4 for option selection
-      if (['1','2','3','4'].includes(key) && !document.getElementById('next-btn').classList.contains('hidden')) {
+      const sessionVisible = !document.getElementById('screen-session').classList.contains('hidden');
+      if (sessionVisible && ['1','2','3','4'].includes(key)) {
         const btns = document.querySelectorAll('.option-btn:not(:disabled)');
         const idx = parseInt(key) - 1;
         if (btns[idx]) btns[idx].click();

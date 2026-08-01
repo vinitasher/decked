@@ -33,6 +33,9 @@ decision-based practice with adaptive difficulty.
 - The user selects from 2-4 plausible wiring options (e.g. "sync resize in the
   API process" vs "async worker queue + object store callback")
 - After answering, the card shows WHY the better option wins (the trade-offs)
+- Answer options are shuffled for each card view while their authored letters
+  stay attached, so keyboard positions cannot reveal the answer and explanation
+  references remain accurate
 - Each option lists the topics needed to evaluate that approach; the card's
   Know First list aggregates the prerequisites from every option
 - A navigable topic map shows prerequisites, dependent topics, mastery, and
