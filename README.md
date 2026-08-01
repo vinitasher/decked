@@ -136,6 +136,13 @@ single-card values migrate to one-card pools when read. Responses include
 `cached`, `card`, `poolSize`, and `poolLimit` without exposing the other cards.
 At most 100 valid exclusion fingerprints are considered per request.
 Learner progress remains local to each browser.
+The browser mirrors the server format with bounded `{"cards": [...]}` pools
+under `sdf_gen_<topic>:<difficulty>`. Existing single-card entries migrate on
+read, malformed entries are ignored, and each local profile keeps its own
+persisted ledger of scenario fingerprints actually displayed. Unseen cached
+cards are used before a server request; prefetching does not mark a card seen.
+Normal study sessions retain the existing seed-card fallback when generation is
+offline, and seed cards are never stored or presented as newly generated cards.
 Each generated option declares prerequisite topics, and the question-level
 Know First list is their deduplicated aggregate. Option prerequisites are
 specific study concepts such as Cache Invalidation, Replication Lag, or Message

@@ -6,6 +6,7 @@ import test from 'node:test';
 const source = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
 const context = {
   window: { location: { hostname: 'example.com' } },
+  URLSearchParams,
   document: { addEventListener() {} },
   localStorage: {
     values: new Map(),
@@ -141,4 +142,150 @@ test('fetchCard reuses its own local cache entry without a network request', asy
   const result = await app.fetchCard('caching', 3);
 
   assert.equal(result.id, 'cached-card');
+  assert.deepEqual(JSON.parse(context.localStorage.getItem('sdf_gen_caching:3')), { cards: [card] });
+});
+
+function generatedCard(id, scenario, topic = 'caching', difficulty = 3) {
+  return { id, scenario, topic, difficulty, prerequisiteTopics: [] };
+}
+
+function resetApp() {
+  context.localStorage.values.clear();
+  context.appForTest._cardCache = {};
+  context.appForTest.sessionCards = [];
+  context.appForTest.profile = context.normalizeProfileDataForTest({
+    userId: 'profile-a', topicScores: {}, cardHistory: {}, streaks: {}, _topicCardSeen: {}
+  });
+}
+
+test('card pools preserve valid legacy cards and deduplicate scenarios', () => {
+  // Arrange
+  resetApp();
+  const first = generatedCard('first', 'The same   scenario');
+  const replacement = generatedCard('replacement', 'the same scenario');
+  context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [first, replacement] }));
+
+  // Act
+  const pool = context.appForTest._readCardPool('caching:3');
+
+  // Assert
+  assert.equal(pool.cards.length, 1);
+  assert.equal(pool.cards[0].id, 'replacement');
+});
+
+test('fetchCard selects an unseen local variant without network access', async () => {
+  // Arrange
+  resetApp();
+  const seen = generatedCard('seen', 'Previously shown scenario');
+  const unseen = generatedCard('unseen', 'Brand new scenario');
+  context.appForTest.profile.seenScenarioFingerprints = [context.appForTest._scenarioFingerprint(seen.scenario)];
+  context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [seen, unseen] }));
+  let requests = 0;
+  context.fetch = () => { requests++; throw new Error('unexpected network request'); };
+
+  // Act
+  const result = await context.appForTest.fetchCard('caching', 3);
+
+  // Assert
+  assert.equal(result.id, 'unseen');
+  assert.equal(requests, 0);
+});
+
+test('exhausted pools send profile and session exclusions then append server card', async () => {
+  // Arrange
+  resetApp();
+  const profileCard = generatedCard('profile', 'Profile scenario');
+  const sessionCard = generatedCard('session', 'Session scenario');
+  const serverCard = generatedCard('server', 'Server scenario');
+  context.appForTest.profile.seenScenarioFingerprints = [context.appForTest._scenarioFingerprint(profileCard.scenario)];
+  context.appForTest.sessionCards = [sessionCard];
+  context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [profileCard] }));
+  let requestUrl;
+  context.fetch = async url => {
+    requestUrl = new URL(url, 'https://example.com');
+    return { ok: true, async json() { return { card: serverCard }; } };
+  };
+
+  // Act
+  const result = await context.appForTest.fetchCard('caching', 3);
+
+  // Assert
+  assert.equal(result.id, 'server');
+  assert.deepEqual(requestUrl.searchParams.getAll('exclude').sort(), [
+    context.appForTest._scenarioFingerprint(profileCard.scenario),
+    context.appForTest._scenarioFingerprint(sessionCard.scenario)
+  ].sort());
+  assert.deepEqual(
+    JSON.parse(context.localStorage.getItem('sdf_gen_caching:3')).cards.map(card => card.id),
+    ['profile', 'server']
+  );
+});
+
+test('local card pools retain only the newest twenty distinct scenarios', () => {
+  // Arrange
+  resetApp();
+  const cards = Array.from({ length: 22 }, (_, index) => generatedCard(`card-${index}`, `Scenario ${index}`));
+
+  // Act
+  const pool = context.appForTest._writeCardPool('caching:3', cards);
+
+  // Assert
+  assert.equal(pool.cards.length, 20);
+  assert.equal(pool.cards[0].id, 'card-2');
+  assert.equal(pool.cards[19].id, 'card-21');
+});
+
+test('malformed storage recovers through generation and offline failures use seed fallback', async () => {
+  // Arrange
+  resetApp();
+  const fallback = generatedCard('seed', 'Offline seed scenario');
+  context.SEED_CARDS.push(fallback);
+  context.localStorage.setItem('sdf_gen_caching:3', '{bad json');
+  context.fetch = async () => { throw new Error('offline'); };
+
+  try {
+    // Act
+    const result = await context.appForTest.fetchCard('caching', 3);
+
+    // Assert
+    assert.equal(result.id, 'seed');
+    assert.equal(context.localStorage.getItem('sdf_gen_caching:3'), null);
+  } finally {
+    context.SEED_CARDS.pop();
+  }
+});
+
+test('seen ledgers persist per profile and prefetch does not mark cards seen', async () => {
+  // Arrange
+  resetApp();
+  const app = context.appForTest;
+  const displayed = generatedCard('displayed', 'Displayed scenario');
+  const prefetched = generatedCard('prefetched', 'Prefetched scenario');
+  context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [prefetched] }));
+
+  // Act
+  await app.fetchCard('caching', 3);
+  app._recordDisplayedScenario(displayed);
+  const savedProfileA = JSON.parse(context.localStorage.getItem('sdf_profile'));
+  app.profile = context.normalizeProfileDataForTest({
+    userId: 'profile-b', topicScores: {}, cardHistory: {}, streaks: {}, _topicCardSeen: {}
+  });
+
+  // Assert
+  assert.deepEqual(savedProfileA.seenScenarioFingerprints, [app._scenarioFingerprint(displayed.scenario)]);
+  assert.deepEqual([...app.profile.seenScenarioFingerprints], []);
+  assert.equal(savedProfileA.seenScenarioFingerprints.includes(app._scenarioFingerprint(prefetched.scenario)), false);
+});
+
+test('distinct generated IDs remain separate card history entries', () => {
+  // Arrange
+  resetApp();
+  const app = context.appForTest;
+
+  // Act
+  app.saveCardReview('generated-1', { timesReviewed: 1 });
+  app.saveCardReview('generated-2', { timesReviewed: 1 });
+
+  // Assert
+  assert.deepEqual(Object.keys(app.profile.cardHistory).sort(), ['generated-1', 'generated-2']);
 });

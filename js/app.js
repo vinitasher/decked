@@ -24,6 +24,9 @@ function normalizeProfileData(profile) {
     ? normalized.totalCorrect : 0;
   normalized._topicCardSeen = normalized._topicCardSeen && typeof normalized._topicCardSeen === 'object'
     ? normalized._topicCardSeen : {};
+  normalized.seenScenarioFingerprints = Array.isArray(normalized.seenScenarioFingerprints)
+    ? [...new Set(normalized.seenScenarioFingerprints.filter(value => typeof value === 'string' && value))]
+    : [];
 
   for (const score of Object.values(normalized.topicScores)) {
     score.daysSpanned = Array.isArray(score.daysSpanned) ? [...new Set(score.daysSpanned)] : [];
@@ -144,15 +147,72 @@ const APP = {
   _cacheKey(topic, difficulty) { return `${topic}:${difficulty}`; },
 
   _scenarioFingerprint(scenario) {
-    return scenario.replace(/\s+/g, ' ').substring(0, 60).toLowerCase();
+    return typeof scenario === 'string'
+      ? scenario.replace(/\s+/g, ' ').substring(0, 60).toLowerCase()
+      : '';
   },
 
   _isDuplicateScenario(scenario, excludeList) {
     const fp = this._scenarioFingerprint(scenario);
+    if (!fp) return true;
     for (const card of excludeList) {
-      if (this._scenarioFingerprint(card.scenario) === fp) return true;
+      if (this._scenarioFingerprint(card?.scenario) === fp) return true;
     }
     return false;
+  },
+
+  _normalizeCardPool(value) {
+    const candidates = Array.isArray(value?.cards) ? value.cards : [value];
+    const byFingerprint = new Map();
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const fingerprint = this._scenarioFingerprint(candidate.scenario);
+      if (!fingerprint) continue;
+      byFingerprint.delete(fingerprint);
+      byFingerprint.set(fingerprint, normalizeCardPrerequisites(candidate));
+    }
+    return { cards: [...byFingerprint.values()].slice(-20) };
+  },
+
+  _readCardPool(key) {
+    const storageKey = 'sdf_gen_' + key;
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return { cards: [] };
+    try {
+      const pool = this._normalizeCardPool(JSON.parse(stored));
+      localStorage.setItem(storageKey, JSON.stringify(pool));
+      return pool;
+    } catch (_) {
+      localStorage.removeItem(storageKey);
+      return { cards: [] };
+    }
+  },
+
+  _writeCardPool(key, cards) {
+    const pool = this._normalizeCardPool({ cards });
+    this._cardCache[key] = pool;
+    localStorage.setItem('sdf_gen_' + key, JSON.stringify(pool));
+    return pool;
+  },
+
+  _excludedScenarioFingerprints(avoidList = []) {
+    const fingerprints = new Set(this.profile?.seenScenarioFingerprints || []);
+    for (const card of [...avoidList, ...this.sessionCards]) {
+      const fingerprint = this._scenarioFingerprint(card?.scenario);
+      if (fingerprint) fingerprints.add(fingerprint);
+    }
+    return [...fingerprints].slice(-100);
+  },
+
+  _recordDisplayedScenario(card) {
+    const fingerprint = this._scenarioFingerprint(card?.scenario);
+    if (!fingerprint || !this.profile) return;
+    if (!Array.isArray(this.profile.seenScenarioFingerprints)) {
+      this.profile.seenScenarioFingerprints = [];
+    }
+    if (this.profile.seenScenarioFingerprints.includes(fingerprint)) return;
+    this.profile.seenScenarioFingerprints.push(fingerprint);
+    this.saveProfile();
   },
 
   _loadCachedKeys() {
@@ -160,7 +220,7 @@ const APP = {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k.startsWith('sdf_gen_')) {
-        try { keys.push(normalizeCardPrerequisites(JSON.parse(localStorage.getItem(k)))); } catch (_) {}
+        keys.push(...this._readCardPool(k.substring('sdf_gen_'.length)).cards);
       }
     }
     return keys;
@@ -168,40 +228,31 @@ const APP = {
 
   async fetchCard(topic, difficulty, avoidList = []) {
     const key = this._cacheKey(topic, difficulty);
-    const excludedCards = [...avoidList, ...this.sessionCards];
+    const excludedFingerprints = new Set(this._excludedScenarioFingerprints(avoidList));
+    const localPool = this._readCardPool(key);
+    const memoryPool = this._normalizeCardPool(this._cardCache[key] || { cards: [] });
+    const available = this._normalizeCardPool({ cards: [...localPool.cards, ...memoryPool.cards] });
+    const unseen = available.cards.find(card => !excludedFingerprints.has(this._scenarioFingerprint(card.scenario)));
+    if (unseen) {
+      this._writeCardPool(key, available.cards);
+      return unseen;
+    }
 
-    // A topic/difficulty cache entry is reusable unless it is already in this session.
-    for (let attempt = 0; attempt < 1; attempt++) {
-      // check localStorage cache first
-      const stored = localStorage.getItem('sdf_gen_' + key);
-      if (stored) {
-        try {
-          const card = normalizeCardPrerequisites(JSON.parse(stored));
-          localStorage.setItem('sdf_gen_' + key, JSON.stringify(card));
-          const dup = this._isDuplicateScenario(card.scenario, excludedCards);
-          if (!dup) return card;
-        } catch (_) {}
+    try {
+      const params = new URLSearchParams({ topic, difficulty: String(difficulty) });
+      for (const fingerprint of excludedFingerprints) params.append('exclude', fingerprint);
+      const res = await fetch(`${SERVER_BASE}/api/generate?${params}`);
+      if (!res.ok) throw new Error(`server returned ${res.status}`);
+      const data = await res.json();
+      const card = normalizeCardPrerequisites(data?.card);
+      const fingerprint = this._scenarioFingerprint(card?.scenario);
+      if (!card || !fingerprint || excludedFingerprints.has(fingerprint)) {
+        throw new Error('server returned an invalid or excluded card');
       }
-      // check in-memory cache
-      if (this._cardCache[key]) {
-        const dup = this._isDuplicateScenario(this._cardCache[key].scenario, excludedCards);
-        if (!dup) return normalizeCardPrerequisites(this._cardCache[key]);
-      }
-      // try server
-      try {
-        const res = await fetch(`${SERVER_BASE}/api/generate?topic=${encodeURIComponent(topic)}&difficulty=${difficulty}`);
-        if (!res.ok) throw new Error(`server returned ${res.status}`);
-        const data = await res.json();
-        const card = normalizeCardPrerequisites(data.card);
-        const dup = this._isDuplicateScenario(card.scenario, excludedCards);
-        if (!dup) {
-          this._cardCache[key] = card;
-          localStorage.setItem('sdf_gen_' + key, JSON.stringify(card));
-          return card;
-        }
-      } catch (err) {
-        // server unavailable — continue to fallback
-      }
+      this._writeCardPool(key, [...available.cards, card]);
+      return card;
+    } catch (err) {
+      // server unavailable — continue to the existing offline fallback
     }
 
     // seed fallback
@@ -488,6 +539,7 @@ const APP = {
     }
     this.currentCard = this.sessionCards[this.sessionIndex];
     const card = this.currentCard;
+    this._recordDisplayedScenario(card);
     this._confidenceSubmitted = false;
 
     document.getElementById('card-counter').textContent =
