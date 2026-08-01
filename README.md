@@ -120,6 +120,8 @@ this directory:
 
 Generation retries transient Flash capacity failures and uses
 `deepseek-v4-pro` as the final OpenCode Go fallback.
+Each generation attempt designates a uniformly selected correct letter from
+A-D, and model output is rejected unless it follows that prompt contract.
 
 Generated cards are stored permanently in Cloudflare KV until explicitly
 replaced or deleted. Learner progress remains local to each browser.

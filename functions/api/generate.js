@@ -16,6 +16,32 @@ const TOPIC_PREREQUISITES = {
   consensus: ['databases', 'storage']
 };
 
+const OPTION_IDS = ['A', 'B', 'C', 'D'];
+
+export function selectCorrectLetter(random = Math.random) {
+  const value = Number(random());
+  const bounded = Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0;
+  return OPTION_IDS[Math.min(Math.floor(bounded * OPTION_IDS.length), OPTION_IDS.length - 1)];
+}
+
+export function buildPrompt(topic, difficulty, designatedCorrect, now = Date.now()) {
+  return `Generate a system design flash card for the topic "${topic}" at difficulty ${difficulty}/5 (5 = hardest).
+
+Return a JSON object with these exact keys:
+- id: "${topic}-gen-${now}"
+- topic: "${topic}"
+- difficulty: ${difficulty}
+- prerequisiteTopics: the aggregate list of topics needed to understand the whole question.
+- scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off.
+- nodes: array of 4-5 system components with real technology names.
+- options: array of exactly 4 objects {id, label, prerequisiteTopics}, with ids A, B, C, D. Each option needs 2-4 prerequisite concepts required to evaluate its trade-off. Use specific lowercase kebab-case concepts such as "cache-invalidation", "replication-lag", or "message-ordering"; never use a technology/product name merely because it appears in the option, and avoid broad categories such as "databases", "caching", or "api-design". Do not include "${topic}". Option ${designatedCorrect} is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
+- prerequisiteTopics must include the union of all four options' prerequisiteTopics.
+- correct: "${designatedCorrect}"
+- explanation: 3-5 sentences on why each other option fails and why ${designatedCorrect} wins. Name specific bottlenecks and trade-offs.
+
+CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
+}
+
 function normalizeTopics(topics, cardTopic) {
   return [...new Set(Array.isArray(topics) ? topics : [])]
     .filter(topic =>
@@ -71,23 +97,6 @@ export async function onRequest(context) {
     }
   }
 
-  // Build the AI prompt
-  const prompt = `Generate a system design flash card for the topic "${topic}" at difficulty ${difficulty}/5 (5 = hardest).
-
-Return a JSON object with these exact keys:
-- id: "${topic}-gen-${Date.now()}"
-- topic: "${topic}"
-- difficulty: ${difficulty}
-- prerequisiteTopics: the aggregate list of topics needed to understand the whole question.
-- scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off.
-- nodes: array of 4-5 system components with real technology names.
-- options: array of exactly 4 objects {id, label, prerequisiteTopics}, with ids A, B, C, D. Each option needs 2-4 prerequisite concepts required to evaluate its trade-off. Use specific lowercase kebab-case concepts such as "cache-invalidation", "replication-lag", or "message-ordering"; never use a technology/product name merely because it appears in the option, and avoid broad categories such as "databases", "caching", or "api-design". Do not include "${topic}". Option B is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
-- prerequisiteTopics must include the union of all four options' prerequisiteTopics.
-- correct: "B"
-- explanation: 3-5 sentences on why each other option fails and why B wins. Name specific bottlenecks and trade-offs.
-
-CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
-
   try {
     if (!env.OPENCODE_API_KEY) {
       throw new Error('Card generation is not configured');
@@ -100,9 +109,12 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
       'deepseek-v4-pro'
     ];
     let completion;
+    let designatedCorrect;
     let providerError = '';
 
     for (let attempt = 0; attempt < models.length; attempt++) {
+      const attemptCorrect = selectCorrectLetter(context.random);
+      const prompt = buildPrompt(topic, difficulty, attemptCorrect);
       const aiResponse = await fetch('https://opencode.ai/zen/go/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -120,6 +132,7 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
 
       if (aiResponse.ok) {
         completion = await aiResponse.json();
+        designatedCorrect = attemptCorrect;
         break;
       }
 
@@ -158,11 +171,10 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
     if (!Array.isArray(generatedCard.prerequisiteTopics)) {
       throw new Error('Invalid field: prerequisiteTopics');
     }
-    const expectedOptionIds = ['A', 'B', 'C', 'D'];
     if (
       !Array.isArray(generatedCard.options) ||
-      generatedCard.options.length !== expectedOptionIds.length ||
-      !expectedOptionIds.every(id => generatedCard.options.some(option => option?.id === id))
+      generatedCard.options.length !== OPTION_IDS.length ||
+      !OPTION_IDS.every(id => generatedCard.options.some(option => option?.id === id))
     ) {
       throw new Error('Invalid field: options');
     }
@@ -174,6 +186,9 @@ CRITICAL: Output ONLY the JSON. No markdown, no explanation.`;
       option.prerequisiteTopics.length <= 4
     )) {
       throw new Error('Each option needs 2-4 prerequisite concepts');
+    }
+    if (generatedCard.correct !== designatedCorrect) {
+      throw new Error(`Invalid field: correct must match designated option ${designatedCorrect}`);
     }
 
     const card = normalizeCard(generatedCard, topic, difficulty);

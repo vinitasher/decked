@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const source = await readFile(new URL('../functions/api/generate.js', import.meta.url), 'utf8');
-const { onRequest } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+const { buildPrompt, onRequest, selectCorrectLetter } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+const require = createRequire(import.meta.url);
+const localGenerator = require('../server/generate-card.js');
 
 const card = {
   id: 'queues-generated',
@@ -38,6 +41,36 @@ const card = {
   explanation: 'A queue absorbs bursts and lets the consumer recover.'
 };
 
+const letterCases = [
+  { value: 0, expected: 'A' },
+  { value: 0.25, expected: 'B' },
+  { value: 0.5, expected: 'C' },
+  { value: 0.75, expected: 'D' }
+];
+
+test('correct-letter selection maps four equal intervals and safe boundaries to A-D', () => {
+  for (const { value, expected } of letterCases) {
+    assert.equal(selectCorrectLetter(() => value), expected);
+    assert.equal(localGenerator.selectCorrectLetter(() => value), expected);
+  }
+  assert.equal(selectCorrectLetter(() => 1), 'D');
+  assert.equal(selectCorrectLetter(() => -1), 'A');
+  assert.equal(selectCorrectLetter(() => Number.NaN), 'A');
+});
+
+test('both generation prompts consistently apply every designated correct letter', () => {
+  for (const { expected } of letterCases) {
+    for (const prompt of [
+      buildPrompt('queues', 2, expected, 123),
+      localGenerator.buildPrompt('queues', 2, expected, 123)
+    ]) {
+      assert.match(prompt, new RegExp(`(?:Option |where )${expected} is correct`));
+      assert.match(prompt, new RegExp(`correct: "${expected}"`));
+      assert.match(prompt, new RegExp(`why ${expected} wins`));
+    }
+  }
+});
+
 test('generation retries a temporary provider failure and caches the card', async () => {
   const originalFetch = globalThis.fetch;
   const models = [];
@@ -58,6 +91,7 @@ test('generation retries a temporary provider failure and caches the card', asyn
   try {
     const response = await onRequest({
       request: new Request('https://example.com/api/generate?topic=queues&difficulty=2'),
+      random: () => 0.25,
       env: {
         OPENCODE_API_KEY: 'test-key',
         CARD_CACHE: {
@@ -93,6 +127,53 @@ test('generation retries a temporary provider failure and caches the card', asyn
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('generation rejects a designated-letter mismatch without caching it', async () => {
+  const originalFetch = globalThis.fetch;
+  let cacheWrites = 0;
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { content: JSON.stringify(card) } }]
+  });
+
+  try {
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2'),
+      random: () => 0.5,
+      env: {
+        OPENCODE_API_KEY: 'test-key',
+        CARD_CACHE: {
+          get: async () => null,
+          put: async () => { cacheWrites++; }
+        }
+      }
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error, 'Invalid field: correct must match designated option C');
+    assert.equal(cacheWrites, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('local validation rejects a designated-letter mismatch', () => {
+  const localCard = {
+    ...card,
+    scenario: 'A service handles 1000 requests per second under burst traffic.',
+    nodes: ['producer', 'queue', 'consumer'],
+    options: card.options.map(option => ({
+      ...option,
+      label: `${option.label} with a production-ready scaling strategy`
+    })),
+    explanation: 'This detailed explanation is intentionally longer than eighty characters and compares each distinct system design trade-off.'
+  };
+
+  assert.throws(
+    () => localGenerator.extractAndValidate(JSON.stringify(localCard), 'C'),
+    /correct must match designated option C/
+  );
 });
 
 test('cached legacy cards gain canonical prerequisites without an expiration', async () => {

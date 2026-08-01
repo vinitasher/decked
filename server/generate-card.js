@@ -6,31 +6,41 @@ const { execSync } = require('child_process');
 
 const topic = process.argv[2] || 'caching';
 const difficulty = process.argv[3] || '2';
-const prompt = `Generate a system design flash card for the topic "${topic}" at difficulty ${difficulty}/5 (5 = hardest). This card will be used by engineers learning system design — it must be accurate, specific, and teach a real trade-off.
+const OPTION_IDS = ['A', 'B', 'C', 'D'];
+
+function selectCorrectLetter(random = Math.random) {
+  const value = Number(random());
+  const bounded = Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0;
+  return OPTION_IDS[Math.min(Math.floor(bounded * OPTION_IDS.length), OPTION_IDS.length - 1)];
+}
+
+function buildPrompt(topicName, cardDifficulty, designatedCorrect, now = Date.now()) {
+  return `Generate a system design flash card for the topic "${topicName}" at difficulty ${cardDifficulty}/5 (5 = hardest). This card will be used by engineers learning system design — it must be accurate, specific, and teach a real trade-off.
 
 The card must be a single JSON object with these exact keys:
-- id: "${topic}-gen-${Date.now()}"
-- topic: "${topic}"
-- difficulty: ${difficulty}
+- id: "${topicName}-gen-${now}"
+- topic: "${topicName}"
+- difficulty: ${cardDifficulty}
 - scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches.
 - nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
-- options: exactly 4 objects {id, label, prerequisiteTopics} with ids A, B, C, D, where B is correct. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topic}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
+- options: exactly 4 objects {id, label, prerequisiteTopics} with ids A, B, C, D, where ${designatedCorrect} is correct. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topicName}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
 - prerequisiteTopics: the deduplicated union of all four options' prerequisiteTopics.
-- correct: "B"
-- explanation: explain why each of A, C, D fails (different reason per option) and why B wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
+- correct: "${designatedCorrect}"
+- explanation: explain why each option other than ${designatedCorrect} fails (different reason per option) and why ${designatedCorrect} wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
 
 CRITICAL RULES:
 - Every option must be concrete (name real technologies: Redis, Kafka, S3, Postgres, WebSocket, gRPC, CDN, DynamoDB, Elasticsearch, RabbitMQ, etc.)
 - The scenario MUST differ from every previous card's scenario
 - The explanation must name the specific bottleneck or trade-off for each option
-- Difficulty ${difficulty}/5 means: 1=basic CRUD, 3=multi-service caching/async, 5=distributed consensus/partitioning
+- Difficulty ${cardDifficulty}/5 means: 1=basic CRUD, 3=multi-service caching/async, 5=distributed consensus/partitioning
 - Output ONLY valid JSON — no markdown, no code fences, no surrounding text.
 - DO NOT write any files. DO NOT create files. Your entire response must be the JSON object and nothing else.`;
+}
 
 const model = process.env.OPENCODE_MODEL || 'opencode-go/deepseek-v4-flash';
 const opencodeBin = '/home/pi/.nvm/versions/node/v22.23.1/bin/opencode';
 
-function callModel() {
+function callModel(prompt) {
   const escaped = prompt.replace(/"/g, '\\"');
   // Read-only enforcement: the model must not write files
   const env = { ...process.env, OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"deny","bash":"deny"}}' };
@@ -40,7 +50,7 @@ function callModel() {
   );
 }
 
-function extractAndValidate(stdout) {
+function extractAndValidate(stdout, designatedCorrect) {
   // try parsing JSON from stdout
   const cleaned = stdout.replace(/```json?/gi, '').replace(/```/g, '').trim();
   const start = cleaned.indexOf('{');
@@ -76,7 +86,10 @@ function extractAndValidate(stdout) {
   const errors = [];
   if (!/\d{2,}/.test(card.scenario)) errors.push('scenario lacks concrete numbers');
   if (card.nodes.length < 3) errors.push('need at least 3 nodes');
-  if (card.options.length < 4) errors.push('need 4 options');
+  if (
+    card.options.length !== OPTION_IDS.length ||
+    !OPTION_IDS.every(id => card.options.some(option => option?.id === id))
+  ) errors.push('options must have ids A, B, C, D exactly');
   if (!card.options.every(o => Array.isArray(o.prerequisiteTopics))) {
     errors.push('every option needs prerequisiteTopics');
   }
@@ -84,6 +97,7 @@ function extractAndValidate(stdout) {
     errors.push('every option needs 2-4 prerequisite concepts');
   }
   if (!card.options.map(o => o.id).includes(card.correct)) errors.push('correct not in options');
+  if (card.correct !== designatedCorrect) errors.push(`correct must match designated option ${designatedCorrect}`);
   if (card.explanation.length < 80) errors.push('explanation too short');
   const labels = card.options.map(o => o.label.toLowerCase());
   if (new Set(labels).size < labels.length) errors.push('duplicate option labels');
@@ -112,18 +126,27 @@ function extractAndValidate(stdout) {
   return card;
 }
 
-let lastErr;
-for (let attempt = 1; attempt <= 3; attempt++) {
-  try {
-    const stdout = callModel();
-    const card = extractAndValidate(stdout);
-    console.log(JSON.stringify(card));
-    process.exit(0);
-  } catch (err) {
-    lastErr = err;
-    if (attempt < 3) process.stderr.write(`Attempt ${attempt} failed: ${err.message}\n`);
+function run() {
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const designatedCorrect = selectCorrectLetter();
+      const stdout = callModel(buildPrompt(topic, difficulty, designatedCorrect));
+      const card = extractAndValidate(stdout, designatedCorrect);
+      console.log(JSON.stringify(card));
+      return 0;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 3) process.stderr.write(`Attempt ${attempt} failed: ${err.message}\n`);
+    }
   }
+
+  console.error(JSON.stringify({ error: 'all 3 attempts failed', last: lastErr?.message }));
+  return 1;
 }
 
-console.error(JSON.stringify({ error: 'all 3 attempts failed', last: lastErr?.message }));
-process.exit(1);
+module.exports = { buildPrompt, extractAndValidate, selectCorrectLetter };
+
+if (require.main === module) {
+  process.exit(run());
+}
