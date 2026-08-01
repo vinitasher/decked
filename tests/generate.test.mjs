@@ -4,7 +4,14 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const source = await readFile(new URL('../functions/api/generate.js', import.meta.url), 'utf8');
-const { buildPrompt, onRequest, selectCorrectLetter } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+const {
+  buildPrompt,
+  deduplicatePool,
+  normalizeCacheValue,
+  onRequest,
+  scenarioFingerprint,
+  selectCorrectLetter
+} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 const require = createRequire(import.meta.url);
 const localGenerator = require('../server/generate-card.js');
 
@@ -109,13 +116,13 @@ test('generation retries a temporary provider failure and caches the card', asyn
     assert.equal(body.card.id, card.id);
     assert.deepEqual(models, ['deepseek-v4-flash', 'deepseek-v4-flash']);
     assert.equal(cached.key, 'queues:2');
-    assert.equal(JSON.parse(cached.value).id, card.id);
+    assert.equal(JSON.parse(cached.value).cards[0].id, card.id);
     assert.deepEqual(
-      JSON.parse(cached.value).prerequisiteTopics,
+      JSON.parse(cached.value).cards[0].prerequisiteTopics,
       ['api-design', 'real-time', 'messaging', 'databases', 'unknown']
     );
     assert.deepEqual(
-      JSON.parse(cached.value).options.map(option => option.prerequisiteTopics),
+      JSON.parse(cached.value).cards[0].options.map(option => option.prerequisiteTopics),
       [
         ['api-design', 'real-time'],
         ['api-design', 'messaging'],
@@ -205,7 +212,7 @@ test('cached legacy cards gain canonical prerequisites without an expiration', a
     [[], [], [], []]
   );
   assert.equal(rewritten.key, 'queues:2');
-  assert.deepEqual(JSON.parse(rewritten.value).prerequisiteTopics, ['api-design']);
+  assert.deepEqual(JSON.parse(rewritten.value).cards[0].prerequisiteTopics, ['api-design']);
   assert.equal(rewritten.options, undefined);
 });
 
@@ -270,4 +277,244 @@ test('generation fails clearly when the server-side key is missing', async () =>
 
   assert.equal(response.status, 500);
   assert.equal(body.error, 'Card generation is not configured');
+});
+
+test('pool helpers fingerprint, normalize, deduplicate, and retain the newest cards', () => {
+  // Arrange
+  const cards = Array.from({ length: 22 }, (_, index) => ({
+    ...card,
+    id: `card-${index}`,
+    scenario: ` Scenario   ${index} `
+  }));
+  cards.push({ ...card, id: 'newest-duplicate', scenario: 'scenario 21' });
+
+  // Act
+  const normalized = normalizeCacheValue({ cards }, 'caching', 4);
+
+  // Assert
+  assert.equal(scenarioFingerprint('  Mixed\n CASE  '), 'mixed case');
+  assert.equal(scenarioFingerprint(null), '');
+  assert.equal(normalized.cards.length, 20);
+  assert.equal(normalized.cards.at(-1).id, 'newest-duplicate');
+  assert.equal(normalized.cards[0].id, 'card-2');
+  assert.ok(normalized.cards.every(candidate => candidate.topic === 'caching'));
+  assert.ok(normalized.cards.every(candidate => candidate.difficulty === 4));
+  assert.deepEqual(deduplicatePool([{ scenario: '' }, { scenario: null }]), []);
+  assert.deepEqual(normalizeCacheValue({ cards: 'invalid' }, 'queues', 2), { cards: [] });
+});
+
+test('an unseen cached pool member is returned after one normalization write', async () => {
+  // Arrange
+  const first = { ...card, id: 'first', scenario: 'Already seen scenario' };
+  const second = { ...card, id: 'second', scenario: 'Fresh cached scenario' };
+  let cacheWrites = 0;
+
+  // Act
+  const response = await onRequest({
+    request: new Request('https://example.com/api/generate?topic=queues&difficulty=2&exclude=already%20seen%20scenario'),
+    env: {
+      CARD_CACHE: {
+        get: async () => JSON.stringify({ cards: [first, second] }),
+        put: async () => { cacheWrites++; }
+      }
+    }
+  });
+  const body = await response.json();
+
+  // Assert
+  assert.equal(response.status, 200);
+  assert.equal(body.cached, true);
+  assert.equal(body.card.id, 'second');
+  assert.equal(body.poolSize, 2);
+  assert.equal(body.poolLimit, 20);
+  assert.equal(cacheWrites, 1);
+});
+
+test('exhausted exclusions generate and append a distinct card', async () => {
+  // Arrange
+  const originalFetch = globalThis.fetch;
+  const existing = { ...card, id: 'existing', scenario: 'Existing scenario' };
+  const generated = { ...card, id: 'generated', scenario: 'Brand new scenario' };
+  let stored;
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { content: JSON.stringify(generated) } }]
+  });
+
+  try {
+    // Act
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2&exclude=existing%20scenario'),
+      random: () => 0.25,
+      env: {
+        OPENCODE_API_KEY: 'test-key',
+        CARD_CACHE: {
+          get: async () => JSON.stringify({ cards: [existing] }),
+          put: async (_key, value) => { stored = JSON.parse(value); }
+        }
+      }
+    });
+    const body = await response.json();
+
+    // Assert
+    assert.equal(response.status, 200);
+    assert.equal(body.cached, false);
+    assert.equal(body.card.id, 'generated');
+    assert.deepEqual(stored.cards.map(candidate => candidate.id), ['existing', 'generated']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('force generation skips an available cached card', async () => {
+  // Arrange
+  const originalFetch = globalThis.fetch;
+  const generated = { ...card, id: 'forced', scenario: 'Forced distinct scenario' };
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls++;
+    return Response.json({ choices: [{ message: { content: JSON.stringify(generated) } }] });
+  };
+
+  try {
+    // Act
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2&force=1'),
+      random: () => 0.25,
+      env: {
+        OPENCODE_API_KEY: 'test-key',
+        CARD_CACHE: {
+          get: async () => JSON.stringify({ cards: [card] }),
+          put: async () => {}
+        }
+      }
+    });
+    const body = await response.json();
+
+    // Assert
+    assert.equal(body.card.id, 'forced');
+    assert.equal(body.cached, false);
+    assert.equal(providerCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('duplicate generated scenarios are retried and never appended', async () => {
+  // Arrange
+  const originalFetch = globalThis.fetch;
+  const existing = { ...card, id: 'existing', scenario: 'Same scenario' };
+  const distinct = { ...card, id: 'distinct', scenario: 'Different scenario' };
+  let providerCalls = 0;
+  let stored;
+  globalThis.fetch = async () => {
+    providerCalls++;
+    const candidate = providerCalls === 1 ? existing : distinct;
+    return Response.json({ choices: [{ message: { content: JSON.stringify(candidate) } }] });
+  };
+
+  try {
+    // Act
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2&force=1'),
+      random: () => 0.25,
+      env: {
+        OPENCODE_API_KEY: 'test-key',
+        CARD_CACHE: {
+          get: async () => JSON.stringify({ cards: [existing] }),
+          put: async (_key, value) => { stored = JSON.parse(value); }
+        }
+      }
+    });
+
+    // Assert
+    assert.equal(response.status, 200);
+    assert.equal(providerCalls, 2);
+    assert.deepEqual(stored.cards.map(candidate => candidate.id), ['existing', 'distinct']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('malformed cache recovers through generation with one pool write', async () => {
+  // Arrange
+  const originalFetch = globalThis.fetch;
+  let writes = 0;
+  let stored;
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { content: JSON.stringify(card) } }]
+  });
+
+  try {
+    // Act
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2'),
+      random: () => 0.25,
+      env: {
+        OPENCODE_API_KEY: 'test-key',
+        CARD_CACHE: {
+          get: async () => '{broken',
+          put: async (_key, value) => { writes++; stored = JSON.parse(value); }
+        }
+      }
+    });
+
+    // Assert
+    assert.equal(response.status, 200);
+    assert.equal(writes, 1);
+    assert.equal(stored.cards[0].id, card.id);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('provider failure leaves the stored pool unchanged', async () => {
+  // Arrange
+  const originalFetch = globalThis.fetch;
+  const storedPool = JSON.stringify({ cards: [card] });
+  let cacheWrites = 0;
+  globalThis.fetch = async () => new Response('unavailable', { status: 500 });
+
+  try {
+    // Act
+    const response = await onRequest({
+      request: new Request('https://example.com/api/generate?topic=queues&difficulty=2&force=1'),
+      env: {
+        OPENCODE_API_KEY: 'test-key',
+        CARD_CACHE: {
+          get: async () => storedPool,
+          put: async () => { cacheWrites++; }
+        }
+      }
+    });
+    const body = await response.json();
+
+    // Assert
+    assert.equal(response.status, 500);
+    assert.equal(body.error, 'Card generation provider is temporarily unavailable');
+    assert.equal(cacheWrites, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('only the first 100 valid exclusion fingerprints are accepted', async () => {
+  // Arrange
+  const pool = Array.from({ length: 101 }, (_, index) => ({
+    ...card,
+    id: `cached-${index}`,
+    scenario: `excluded scenario ${index}`
+  }));
+  const query = pool.map(candidate => `exclude=${encodeURIComponent(candidate.scenario)}`).join('&');
+
+  // Act
+  const response = await onRequest({
+    request: new Request(`https://example.com/api/generate?topic=queues&difficulty=2&${query}`),
+    env: { CARD_CACHE: { get: async () => JSON.stringify({ cards: pool }), put: async () => {} } }
+  });
+  const body = await response.json();
+
+  // Assert
+  assert.equal(response.status, 200);
+  assert.equal(body.cached, true);
+  assert.equal(body.card.id, 'cached-100');
 });

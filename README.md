@@ -126,8 +126,16 @@ Generation retries transient Flash capacity failures and uses
 Each generation attempt designates a uniformly selected correct letter from
 A-D, and model output is rejected unless it follows that prompt contract.
 
-Generated cards are stored permanently in Cloudflare KV until explicitly
-replaced or deleted. Learner progress remains local to each browser.
+Generated cards are stored permanently in Cloudflare KV as bounded
+`{"cards": [...]}` pools for each topic and difficulty. The generation endpoint
+serves a cached card whose whitespace-normalized, case-insensitive scenario
+fingerprint is not present in repeated `exclude` query parameters. When every
+cached scenario is excluded, or when `force=1` is supplied, it generates and
+appends a distinct card. Pools retain the newest 20 distinct scenarios; legacy
+single-card values migrate to one-card pools when read. Responses include
+`cached`, `card`, `poolSize`, and `poolLimit` without exposing the other cards.
+At most 100 valid exclusion fingerprints are considered per request.
+Learner progress remains local to each browser.
 Each generated option declares prerequisite topics, and the question-level
 Know First list is their deduplicated aggregate. Option prerequisites are
 specific study concepts such as Cache Invalidation, Replication Lag, or Message
