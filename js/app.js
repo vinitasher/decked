@@ -255,27 +255,27 @@ const APP = {
       // server unavailable — continue to the existing offline fallback
     }
 
-    // seed fallback
-    const topicCards = SEED_CARDS.filter(c => c.topic === topic);
+    // seed fallback: only a topic-matched, unseen seed card may substitute so
+    // offline sessions never pad a slot with cross-topic content.
+    const topicCards = SEED_CARDS.filter(c =>
+      c.topic === topic && !excludedFingerprints.has(this._scenarioFingerprint(c.scenario))
+    );
     if (topicCards.length > 0) {
       return normalizeCardPrerequisites(topicCards[Math.floor(Math.random() * topicCards.length)]);
     }
-    return normalizeCardPrerequisites(SEED_CARDS[Math.floor(Math.random() * SEED_CARDS.length)]);
+    return null;
   },
 
   async prefetchNext() {
     if (this._isGenerating) return;
     this._isGenerating = true;
     try {
-      const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
-      const scored = topics.map(t => ({
-        topic: t,
-        score: this._difficultyWeight({ topic: t, difficulty: 3 }) + Math.random() * 0.1
-      }));
-      scored.sort((a, b) => b.score - a.score);
+      const scored = this._rankedSessionTopics();
       const nextTopic = scored[0].topic;
       const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
       this._nextCard = await this.fetchCard(nextTopic, 3, avoidList);
+    } catch (error) {
+      this._nextCard = null;
     } finally {
       this._isGenerating = false;
     }
@@ -313,8 +313,9 @@ const APP = {
   /* —── Quick Review ——— */
 
   async startQuickReview() {
-    const cards = await this._generateSessionCards(15);
+    const { cards, requested } = await this._generateSessionCards(15);
     if (cards.length === 0) return alert('No cards available!');
+    if (cards.length < requested && !this._confirmShortSession(requested, cards.length)) return;
     this.sessionCards = cards;
     this.sessionIndex = 0;
     this._quickReview = true;
@@ -436,17 +437,21 @@ const APP = {
     startButton.disabled = true;
     startButton.textContent = 'Preparing session...';
     try {
-      this.sessionCards = await this._generateSessionCards(count);
+      const { cards, requested } = await this._generateSessionCards(count);
+      if (cards.length === 0) {
+        alert('No cards available! Check back later.');
+        return;
+      }
+      if (cards.length < requested && !this._confirmShortSession(requested, cards.length)) {
+        return;
+      }
+      this.sessionCards = cards;
       this.sessionIndex = 0;
       this.sessionStart = Date.now();
       this._nextCard = null;
       this.profile.totalSessions++;
       this._startTimer();
       this.saveProfile();
-      if (this.sessionCards.length === 0) {
-        alert('No cards available! Check back later.');
-        return;
-      }
       // pre-generate the next card + pre-warm cache for other likely topics
       this.prefetchNext();
       this._warmCache();
@@ -480,21 +485,85 @@ const APP = {
     this.showScreen('session');
   },
 
-  async _generateSessionCards(count) {
-    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
-    const scored = topics.map(t => {
-      const mastery = this.getTopicScore(t);
-      const targetDifficulty = Math.min(5, 1 + Math.round(mastery * 4)); // higher mastery → harder cards
-      return { topic: t, difficulty: targetDifficulty, score: this._difficultyWeight({ topic: t, difficulty: targetDifficulty }) + Math.random() * 0.1 };
-    });
-    scored.sort((a, b) => b.score - a.score);
+  /* Full-catalog session planning: every topic at its mastery-derived target
+     difficulty, ranked by adaptive weight with the existing random tie-break. */
+  _rankedSessionTopics() {
+    const topics = Object.keys(TOPIC_CATALOG || {});
+    return topics.map(topic => {
+      const mastery = this.getTopicScore(topic);
+      const difficulty = Math.min(5, 1 + Math.round(mastery * 4));
+      return {
+        topic,
+        difficulty,
+        score: this._difficultyWeight({ topic, difficulty }) + Math.random() * 0.1
+      };
+    }).sort((a, b) => b.score - a.score);
+  },
 
-    const candidates = await Promise.all(
-      scored.slice(0, count).map(item => this.fetchCard(item.topic, item.difficulty))
-    );
-    return candidates.filter((card, index) =>
-      card && !this._isDuplicateScenario(card.scenario, candidates.slice(0, index))
-    ).slice(0, count);
+  /* Deterministic candidate plan: every catalog topic once at its target
+     difficulty, then extra unique topic+difficulty pairs for the highest-ranked
+     topics until the plan reaches `count`. */
+  _buildSessionPlan(count) {
+    const requested = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8;
+    const ranked = this._rankedSessionTopics();
+    const plan = [];
+    const used = new Set();
+    const add = (topic, difficulty) => {
+      const key = topic + ':' + difficulty;
+      if (used.has(key)) return;
+      used.add(key);
+      plan.push({ topic, difficulty });
+    };
+    for (const item of ranked) {
+      if (plan.length >= requested) break;
+      add(item.topic, item.difficulty);
+    }
+    for (const item of ranked) {
+      for (let difficulty = 1; difficulty <= 5; difficulty++) {
+        if (plan.length >= requested) break;
+        add(item.topic, difficulty);
+      }
+    }
+    return plan;
+  },
+
+  async _generateSessionCards(count) {
+    const requested = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8;
+    const plan = this._buildSessionPlan(requested);
+    const session = [];
+    // Bound refill attempts so an unavailable generator cannot loop forever.
+    const maxAttempts = 3;
+    const maxFetches = requested * 3;
+    let attempts = 0;
+    let fetches = 0;
+    while (session.length < requested && attempts < maxAttempts && fetches < maxFetches) {
+      attempts++;
+      const batch = plan.slice(session.length);
+      const results = await Promise.all(batch.map(async item => {
+        let card = null;
+        try {
+          card = await this.fetchCard(item.topic, item.difficulty, session);
+        } catch (error) {
+          card = null;
+        }
+        return { card, item };
+      }));
+      fetches += batch.length;
+      for (const { card, item } of results) {
+        if (!card) continue;
+        if (this._isDuplicateScenario(card.scenario, session)) continue;
+        if (card.topic !== item.topic) continue;
+        session.push(card);
+      }
+    }
+    return { cards: session, requested };
+  },
+
+  /* Surface a real shortfall instead of silently starting an underfilled
+     session; the user chooses to proceed smaller or cancel. */
+  _confirmShortSession(requested, available) {
+    const message = `Fresh card generation is currently unavailable, so this session can only reach ${available} of ${requested} requested cards. Start the ${available}-card session or cancel?`;
+    return window.confirm(message);
   },
 
   _yesterday() {
@@ -513,12 +582,7 @@ const APP = {
 
   /* Cache warming: pre-generate cards for likely next topics in background */
   async _warmCache() {
-    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
-    const scored = topics.map(t => ({
-      topic: t,
-      score: this._difficultyWeight({ topic: t, difficulty: 3 })
-    }));
-    scored.sort((a, b) => b.score - a.score);
+    const scored = this._rankedSessionTopics();
     // pre-warm the top 3 likely topics
     for (const s of scored.slice(0, 3)) {
       const key = this._cacheKey(s.topic, 3);
@@ -717,7 +781,7 @@ const APP = {
     const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
     for (let attempt = 0; attempt < 5; attempt++) {
       const newCard = await this.fetchCard(this.currentCard.topic, this.currentCard.difficulty, [this.currentCard, ...avoidList]);
-      // replace current card in session
+      if (!newCard) break;
       if (this.sessionIndex < this.sessionCards.length) {
         this.sessionCards[this.sessionIndex] = newCard;
       }

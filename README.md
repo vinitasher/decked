@@ -51,7 +51,8 @@ decision-based practice with adaptive difficulty.
 **Adaptive deck:**
 - Cards due for review on a spaced repetition schedule (1d, 3d, 7d, 14d)
 - When picking a new card: weight by (1 - topic strength) × (coverage gap)
-- Daily session: 5-10 cards drawn to maximize learning rate
+- Standard session: exactly 8 distinct cards drawn from the full 13-topic
+  catalog; Quick Review requests 15
 
 **Data model:**
 ```json
@@ -143,6 +144,19 @@ persisted ledger of scenario fingerprints actually displayed. Unseen cached
 cards are used before a server request; prefetching does not mark a card seen.
 Normal study sessions retain the existing seed-card fallback when generation is
 offline, and seed cards are never stored or presented as newly generated cards.
+Session planning draws from every topic in the 13-topic catalog (never just the
+seed topics) at each topic's mastery-derived target difficulty, ranked by the
+existing adaptive weight with a random tie-break; sessions that need more cards
+than there are topics add other unique topic+difficulty pairs. Candidates are
+fetched with accumulated exclusions so duplicates are refilled rather than
+silently dropped, bounded to three plan passes (count × 3 fetches). A session
+only starts once its requested count is assembled: when generation and the
+offline fallback cannot reach the requested count within the bound, the app
+states the requested and available counts and asks the user to start the smaller
+session or cancel — it never silently shows `1 / 5` for an advertised 8 or 15.
+Offline seed substitution is topic-scoped, so a session slot is never padded
+with a card from an unrelated topic. Prefetching and cache warming also draw
+from the full catalog so the non-seed topics are not starved.
 Each generated option declares prerequisite topics, and the question-level
 Know First list is their deduplicated aggregate. Option prerequisites are
 specific study concepts such as Cache Invalidation, Replication Lag, or Message
