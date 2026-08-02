@@ -34,6 +34,16 @@ function normalizeProfileData(profile) {
   for (const [topic, cardIds] of Object.entries(normalized._topicCardSeen)) {
     normalized._topicCardSeen[topic] = Array.isArray(cardIds) ? [...new Set(cardIds)] : [];
   }
+  for (const record of Object.values(normalized.cardHistory)) {
+    if (!record || typeof record !== 'object') continue;
+    if (!record.card || typeof record.card !== 'object') continue;
+    record.card.options = Array.isArray(record.card.options) ? record.card.options : [];
+    record.card.prerequisiteTopics = Array.isArray(record.card.prerequisiteTopics)
+      ? record.card.prerequisiteTopics : [];
+    if (record.card.nodes !== undefined && !Array.isArray(record.card.nodes)) {
+      record.card.nodes = [];
+    }
+  }
   return normalized;
 }
 
@@ -429,6 +439,30 @@ const APP = {
     this.saveProfile();
   },
 
+  /* Minimal card content snapshot, persisted beside the SRS state so a reviewed
+     generated card can be re-served later without re-fetching. Only fields the
+     renderer needs; no transient or derived fields. */
+  _cardSnapshot(card) {
+    if (!card || typeof card !== 'object') return undefined;
+    const snapshot = {
+      scenario: card.scenario,
+      topic: card.topic,
+      difficulty: card.difficulty,
+      prerequisiteTopics: Array.isArray(card.prerequisiteTopics)
+        ? [...card.prerequisiteTopics] : [],
+      options: (Array.isArray(card.options) ? card.options : []).map(option => ({
+        id: option?.id,
+        label: option?.label,
+        prerequisiteTopics: Array.isArray(option?.prerequisiteTopics)
+          ? [...option.prerequisiteTopics] : []
+      })),
+      correct: card.correct,
+      explanation: card.explanation
+    };
+    if (Array.isArray(card.nodes)) snapshot.nodes = [...card.nodes];
+    return snapshot;
+  },
+
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
@@ -733,6 +767,7 @@ const APP = {
     review.difficulty = newState.difficulty;
     review.interval = SRS.nextInterval(grade, review.stability, review.difficulty);
     review.nextReviewAt = Date.now() + review.interval * 86400000;
+    review.card = this._cardSnapshot(card);
     this.saveCardReview(card.id, review);
 
     // update topic score + mastery tracking
