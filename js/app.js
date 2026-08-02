@@ -492,6 +492,42 @@ const APP = {
     return due.slice(0, limit).map(entry => ({ ...entry.card, review: true }));
   },
 
+  /* Distinct card ids in the studied set: every seed card plus every card the
+     user has ever reviewed (generated and seed alike). */
+  _studiedCardIds() {
+    const ids = new Set(SEED_CARDS.map(card => card.id));
+    for (const id of Object.keys(this.profile?.cardHistory || {})) ids.add(id);
+    return ids;
+  },
+
+  /* Distinct topics in the studied set: seed-card topics plus topics seen in
+     reviewed-card snapshots or the topic-review ledger. */
+  _studiedTopics() {
+    const topics = new Set(SEED_CARDS.map(card => card.topic));
+    for (const record of Object.values(this.profile?.cardHistory || {})) {
+      if (record && typeof record === 'object' && record.card && typeof record.card === 'object'
+          && typeof record.card.topic === 'string') {
+        topics.add(record.card.topic);
+      }
+    }
+    for (const topic of Object.keys(this.profile?._topicCardSeen || {})) topics.add(topic);
+    return topics;
+  },
+
+  /* Count of reviewed cards whose scheduled review has arrived. Only
+     actually-reviewed cards count; unreviewed seed cards are never "due". */
+  _dueReviewCount() {
+    const now = Date.now();
+    let due = 0;
+    for (const record of Object.values(this.profile?.cardHistory || {})) {
+      if (record && typeof record === 'object' && typeof record.nextReviewAt === 'number'
+          && record.nextReviewAt <= now) {
+        due++;
+      }
+    }
+    return due;
+  },
+
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
@@ -1203,17 +1239,18 @@ const APP = {
   },
 
   renderDeckStats() {
-    const total = SEED_CARDS.length;
+    const total = this._studiedCardIds().size;
     const reviewed = Object.keys(this.profile.cardHistory).length;
-    const due = SEED_CARDS.filter(c => {
-      const r = this.getCardReview(c.id);
-      return r.nextReviewAt <= Date.now();
-    }).length;
+    const due = this._dueReviewCount();
 
-    document.getElementById('stat-total').textContent = total;
-    document.getElementById('stat-reviewed').textContent = reviewed;
-    document.getElementById('stat-due').textContent = due;
-    document.getElementById('stat-streak').textContent = this.profile.streaks.current;
+    const statTotal = document.getElementById('stat-total');
+    if (statTotal) statTotal.textContent = total;
+    const statReviewed = document.getElementById('stat-reviewed');
+    if (statReviewed) statReviewed.textContent = reviewed;
+    const statDue = document.getElementById('stat-due');
+    if (statDue) statDue.textContent = due;
+    const statStreak = document.getElementById('stat-streak');
+    if (statStreak) statStreak.textContent = this.profile.streaks.current;
     this.renderGoal();
     // show resume button if session state exists
     const resumeBtn = document.getElementById('resume-btn');
@@ -1230,7 +1267,7 @@ const APP = {
     }
 
     // topic breakdown
-    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
+    const topics = [...this._studiedTopics()];
     const topicEl = document.getElementById('topic-breakdown');
     if (topicEl) {
       topicEl.innerHTML = topics.map(t => {
