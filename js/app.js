@@ -463,6 +463,35 @@ const APP = {
     return snapshot;
   },
 
+  /* Resolve a reviewed card's content by id: prefer the persisted snapshot,
+     else the matching seed card, else null (unresolvable). */
+  _resolveCardContent(id) {
+    const record = this.profile?.cardHistory?.[id];
+    if (record && typeof record === 'object' && record.card && typeof record.card === 'object') {
+      return { ...record.card, id };
+    }
+    const seed = SEED_CARDS.find(card => card.id === id);
+    return seed || null;
+  },
+
+  /* Cards whose scheduled review has arrived, oldest-due first, capped at cap.
+     The SRS ledger entry is the trigger for re-service — never the seen
+     fingerprint ledger. */
+  _dueReviewCards(cap) {
+    const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : 0;
+    const now = Date.now();
+    const due = [];
+    for (const [id, record] of Object.entries(this.profile?.cardHistory || {})) {
+      if (!record || typeof record !== 'object') continue;
+      if (typeof record.nextReviewAt !== 'number' || record.nextReviewAt > now) continue;
+      const card = this._resolveCardContent(id);
+      if (!card) continue;
+      due.push({ card, nextReviewAt: record.nextReviewAt });
+    }
+    due.sort((a, b) => a.nextReviewAt - b.nextReviewAt);
+    return due.slice(0, limit).map(entry => ({ ...entry.card, review: true }));
+  },
+
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
@@ -563,8 +592,16 @@ const APP = {
 
   async _generateSessionCards(count) {
     const requested = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8;
-    const plan = this._buildSessionPlan(requested);
     const session = [];
+    // Due reviews are served first, resolved from their stored content directly
+    // (bypassing the seen-fingerprint ledger). Within a single session, cards
+    // must still be fingerprint-distinct.
+    for (const card of this._dueReviewCards(requested)) {
+      if (session.length >= requested) break;
+      if (this._isDuplicateScenario(card.scenario, session)) continue;
+      session.push(card);
+    }
+    const plan = this._buildSessionPlan(requested);
     // Bound refill attempts so an unavailable generator cannot loop forever.
     const maxAttempts = 3;
     const maxFetches = requested * 3;
@@ -879,12 +916,13 @@ const APP = {
     this.sessionIndex++;
     this._cardStartTime = Date.now();
 
-    // try to use the prefetched card for next session slot
+    // try to use the prefetched card for next session slot, unless that slot is
+    // a due review (its SRS ledger entry is what triggers its re-service)
     if (this._nextCard) {
       const nextIdx = this.sessionIndex;
-      if (nextIdx < this.sessionCards.length) {
+      if (nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review) {
         this.sessionCards[nextIdx] = this._nextCard;
-      } else {
+      } else if (nextIdx >= this.sessionCards.length) {
         this.sessionCards.push(this._nextCard);
       }
       this._nextCard = null;
