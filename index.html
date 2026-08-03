@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>System Design Flashcards</title>
+<meta name="description" content="Practice system design by making architecture decisions: pick between trade-offs, read the reasoning, and let adaptive spaced repetition strengthen your weakest topics.">
+<meta property="og:title" content="System Design Flashcards">
+<meta property="og:description" content="Train system design intuition one decision at a time. Adaptive flash cards, AI-assisted generation, and spaced repetition.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://decked.pages.dev">
+<meta property="og:image" content="/icon-512.png">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/style.css">
@@ -22,11 +28,29 @@
       <p id="study-reminder" class="hidden" style="background:#fff3e0;padding:8px 16px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;">⏰ You haven't studied yet today. A quick session?</p>
       <p id="server-status" style="font-size:0.75rem;margin-bottom:8px;">Checking server...</p>
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h1 style="margin:0">System Design Flashcards</h1>
+        <h1 style="margin:0">System Design Flashcards<span class="status-badge" title="Stage: beta">Beta</span></h1>
         <button id="theme-toggle" class="btn btn-sm btn-outline" onclick="APP.toggleTheme()" style="font-size:0.8rem;padding:4px 10px;">🌙</button>
       </div>
       <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
     </div>
+    <section class="intro" aria-labelledby="intro-heading">
+      <h2 id="intro-heading">Train the decisions, not just the facts</h2>
+      <p>System design is about choosing between trade-offs. Each card drops you into a mini architecture problem between two nodes with a few plausible options — you pick the best wiring, then learn why it wins.</p>
+      <ol class="how-list">
+        <li><strong>Read the scenario.</strong> e.g. "A client pushes 1,000 events/s to a downstream service."</li>
+        <li><strong>Pick an approach.</strong> 2-4 options; one fits the constraints best.</li>
+        <li><strong>Learn the trade-offs.</strong> Every card explains why the winner wins and the rest fail.</li>
+        <li><strong>Study adaptively.</strong> Sessions target your weakest topics, and spaced repetition resurfaces cards before you forget.</li>
+      </ol>
+      <details class="about-details">
+        <summary>How cards are made</summary>
+        <p>Cards are generated on the fly with AI assistance and cached for instant reuse, so sessions start without waiting. Cards also stay available on your device for offline review, with seed cards as an offline fallback.</p>
+      </details>
+      <details class="about-details">
+        <summary>Privacy &amp; your data</summary>
+        <p>No account required. Your profile, progress, and created cards are stored locally in your browser and never uploaded. Sessions may request freshly generated cards through the server, but your personal data stays on your device.</p>
+      </details>
+    </section>
     <div id="achievement-toast" class="toast"></div>
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Cards</div></div>
@@ -206,6 +230,7 @@ if ('serviceWorker' in navigator) {
 </script>
 <footer>
   <p><a href="https://vinitasher.com">Back to vinitasher.com</a></p>
+  <p class="footer-status">System Design Flashcards · Beta</p>
 </footer>
 </body>
 </html>
