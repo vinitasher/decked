@@ -15,6 +15,7 @@ scripts=(
   server/generate-card.js
   server/server.js
   scripts/migrate-option-prerequisites.mjs
+  scripts/dump-production-card-cache.mjs
 )
 
 for script in "${scripts[@]}"; do

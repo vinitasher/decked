@@ -1,0 +1,466 @@
+{
+  "api-design:2": {
+    "id": "api-design-gen-1785309798717",
+    "topic": "api-design",
+    "difficulty": 2,
+    "scenario": "You are designing a REST API for a personalized content feed that serves 20,000 QPS with a p99 latency under 50ms. Each response is approximately 10KB. New content must appear in the feed within 500ms of publication. You must choose a caching strategy that balances latency, consistency, and cost.",
+    "nodes": [
+      "Cloudflare CDN",
+      "NGINX Load Balancer",
+      "Java Spring Boot Application",
+      "Redis Cluster",
+      "PostgreSQL Database"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Direct database reads: The API server queries PostgreSQL on every request without caching, relying on its B-tree indexes."
+      },
+      {
+        "id": "B",
+        "label": "Cache-aside with Redis: The API server reads from Redis; on content publication, it updates both Redis and PostgreSQL synchronously."
+      },
+      {
+        "id": "C",
+        "label": "Memcached with TTL: The API server caches feed responses in Memcached with a 1-second TTL; updates are written directly to PostgreSQL and asynchronously invalidate the cache."
+      },
+      {
+        "id": "D",
+        "label": "In-memory data grid with Hazelcast: All feed data is stored in Hazelcast maps, bypassing PostgreSQL entirely, with replication across nodes."
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails because direct database reads introduce disk I/O and query overhead that cannot meet the 50ms p99 latency target. Option C fails because asynchronous cache invalidation can result in stale reads that exceed the 500ms update window, violating consistency requirements. Option D fails due to the prohibitively high hardware and licensing costs of an in-memory data grid at 20k QPS. Option B succeeds by using Redis as a cache with synchronous writes to PostgreSQL, providing low latency, strong consistency, and reasonable cost.",
+    "prerequisiteTopics": []
+  },
+  "api-design:3": {
+    "id": "api-design-gen-1785308031333",
+    "topic": "api-design",
+    "difficulty": 3,
+    "scenario": "Design an API for a real-time news feed that must handle 10,000 QPS with peaks at 20,000 QPS. Each response is 50KB. Latency must be under 100ms. The system must trade off strong consistency for low latency due to high read volume.",
+    "nodes": [
+      "HAProxy",
+      "Node.js",
+      "Redis",
+      "PostgreSQL",
+      "RabbitMQ"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Use direct PostgreSQL queries for all requests, ensuring strong consistency."
+      },
+      {
+        "id": "B",
+        "label": "Implement Redis cache with write-through to PostgreSQL and async queue for updates."
+      },
+      {
+        "id": "C",
+        "label": "Deploy a monolithic server with Apache and MySQL on a single high-end instance."
+      },
+      {
+        "id": "D",
+        "label": "Use only Redis in-memory cache with no database persistence for maximum speed."
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails for latency due to slow disk I/O from direct PostgreSQL queries, causing bottlenecks at high QPS. Option C fails for cost as vertical scaling with a single server is expensive for peak loads. Option D fails for consistency because Redis without persistence loses data on restart. Option B wins by using Redis cache for low latency reads, PostgreSQL for durability, and async updates to balance consistency and performance.",
+    "prerequisiteTopics": []
+  },
+  "caching:1": {
+    "id": "caching-gen-1785366879678",
+    "topic": "caching",
+    "difficulty": 1,
+    "prerequisiteTopics": [
+      "api-design"
+    ],
+    "scenario": "Design a caching layer for a social media feed API. The API handles 5,000 QPS for feed reads. Each feed request aggregates 50 posts from a database of 100 million posts, and the database response time is 150ms. The latency requirement is under 50ms. The trade-off is between serving slightly stale cached data to reduce latency and the high cost of scaling the database to meet latency demands.",
+    "nodes": [
+      "MySQL Cluster",
+      "Redis Cache",
+      "HAProxy Load Balancer",
+      "Node.js Application Server",
+      "AWS CloudFront CDN"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Use a global CDN (CloudFront) to cache full feed responses with a long TTL (10 minutes). No backend cache."
+      },
+      {
+        "id": "B",
+        "label": "Use a Redis cluster for cache-aside caching with a short TTL of 60 seconds. Cache individual posts and aggregate in the app server."
+      },
+      {
+        "id": "C",
+        "label": "Scale the MySQL cluster with multiple read replicas to handle 5,000 QPS and use connection pooling."
+      },
+      {
+        "id": "D",
+        "label": "Use a write-through cache where every new post immediately updates the cache before responding to the client."
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails because a CDN cannot efficiently invalidate individual user feeds; long TTL leads to stale data, and high QPS of dynamic content makes CDN costly. Option C fails because even with replicas, the complex aggregation query takes >150ms, failing the latency requirement, and scaling replicas is expensive. Option D fails because write-through adds latency to every write operation, which may be unacceptable for a write-heavy social platform; also writes are more frequent than expected. Option B succeeds because cache-aside with a short TTL reduces database load and latency under 50ms for reads, while accepting minimal staleness within the TTL, which is acceptable for social feeds."
+  },
+  "caching:3": {
+    "cards": [
+      {
+        "id": "caching-gen-1785308045999",
+        "topic": "caching",
+        "difficulty": 3,
+        "scenario": "Your team is designing a caching layer for a social media feed system serving 10,000 requests per second (p99 < 200ms). Each feed is 50KB and generated from the latest posts from friends. There are 2,000 write requests per second for new posts. The feed must show recent content, and stale data is acceptable for up to 5 seconds. Your chief concern is minimizing caching infrastructure costs while meeting latency and freshness requirements.",
+        "nodes": [
+          "HAProxy Load Balancer",
+          "Express.js Web Servers",
+          "Redis Cluster",
+          "PostgreSQL Database",
+          "Apache Kafka"
+        ],
+        "options": [
+          {
+            "id": "A",
+            "label": "Write-through cache: new posts immediately update Redis before DB.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "B",
+            "label": "Write-behind cache: posts are written to Kafka and asynchronously update Redis.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "C",
+            "label": "Long TTL cache: feeds cached for 30 seconds, no invalidation on writes.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "D",
+            "label": "Massive Redis cluster: store all feeds with 100% hit rate, multiple replicas.",
+            "prerequisiteTopics": []
+          }
+        ],
+        "correct": "B",
+        "explanation": "Option A (write-through) fails because synchronous cache updates block writes, increasing p99 latency beyond the 200ms goal during write bursts. Option C (long TTL) violates the 5-second freshness constraint, serving stale feeds and degrading user experience. Option D (over-provisioning) uses too many nodes, incurring high infrastructure costs. Option B (write-behind with Kafka) decouples writes from reads, enabling low read latency and high write throughput while staying within budget. Its 5-second TTL meets freshness requirements, and the asynchronous update avoids write-time bottlenecks.",
+        "prerequisiteTopics": [
+          "api-design"
+        ]
+      }
+    ]
+  },
+  "consensus:3": {
+    "id": "consensus-gen-1785308144285",
+    "topic": "consensus",
+    "difficulty": 3,
+    "scenario": "Design the consensus layer for a distributed payment system that must process 20,000 transactions per second with p99 latency under 50ms. Each transaction is 2KB and requires strict serializability. The system operates across three data centers within a region (max RTT 10ms). You must choose a consensus protocol that balances performance and strong consistency.",
+    "nodes": [
+      "Payment SDK (GRPC client)",
+      "Load Balancer (Envoy)",
+      "Consensus Cluster (etcd/Raft)",
+      "State Machine (RocksDB)",
+      "Observability (Prometheus/Grafana)"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Classic Paxos with strict quorum across all data centers (5 nodes)"
+      },
+      {
+        "id": "B",
+        "label": "Raft with leader in one DC, batching, and pipeline replication"
+      },
+      {
+        "id": "C",
+        "label": "DynamoDB-style eventual consistency with conflict resolution"
+      },
+      {
+        "id": "D",
+        "label": "Byzantine Fault Tolerant (PBFT) with all nodes participating in each round"
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails due to high latency: Classic Paxos requires multiple phases (2 round trips) per consensus, and with cross-DC RTT of 10ms, it cannot meet 50ms p99 for high throughput. Option C fails consistency: eventual consistency does not guarantee strict serializability, violating correctness for financial transactions. Option D fails cost and performance: PBFT incurs high computational overhead (O(n²) messages) and requires 3f+1 replicas, leading to latency and resource waste beyond necessary. Option B succeeds because Raft with leader leases reduces round trips: a strong leader in one DC can batch writes and pipeline replication to followers, achieving low latency (<10ms replications within same DC) while maintaining strong linearizability. Batching amortizes overhead, and leader leases enable fast reads without extra consensus rounds.",
+    "prerequisiteTopics": [
+      "databases",
+      "storage"
+    ]
+  },
+  "databases:3": {
+    "cards": [
+      {
+        "id": "databases-gen-1785307992817",
+        "topic": "databases",
+        "difficulty": 3,
+        "scenario": "Design the database layer for a ride-sharing platform with 10 million daily active users and 10,000 ride requests per second. Each request requires reading and updating driver locations (500 bytes) and trip status (2KB) with P99 read latency under 100ms and strong consistency to prevent double-booking. The active dataset is 500GB. The team must choose a database solution that can handle this load reliably and cost-effectively.",
+        "nodes": [
+          "Load Balancer (HAProxy)",
+          "API Server (Node.js)",
+          "Database (CockroachDB)",
+          "Cache (Redis Cluster)",
+          "Monitoring (Prometheus)"
+        ],
+        "options": [
+          {
+            "id": "A",
+            "label": "Single MySQL master with read replicas and sharding at application layer",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "B",
+            "label": "Geo-distributed CockroachDB cluster with strong consistency",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "C",
+            "label": "MongoDB cluster with eventual consistency and sharding",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "D",
+            "label": "Amazon DynamoDB with DAX cache and strong consistency",
+            "prerequisiteTopics": []
+          }
+        ],
+        "correct": "B",
+        "explanation": "Option A fails due to write latency and bottleneck: a single MySQL master cannot sustain 10K writes/sec, and application sharding adds complexity without native support. Option C fails due to consistency: eventual consistency can lead to double-booking and stale reads in ride-matching. Option D fails due to cost: DynamoDB with strong consistency at this throughput requires high provisioned capacity and DAX, becoming prohibitively expensive. Option B wins because CockroachDB offers linearizable consistency, automatic horizontal scaling, and geo-distribution, keeping latency low while handling write throughput cost-effectively by adding nodes.",
+        "prerequisiteTopics": [
+          "api-design"
+        ]
+      }
+    ]
+  },
+  "databases:4": {
+    "id": "databases-gen-1785311496718",
+    "topic": "databases",
+    "difficulty": 4,
+    "prerequisiteTopics": [
+      "api-design"
+    ],
+    "scenario": "Design a database backend for a social media feed service that handles 1M QPS reads, 10K QPS writes (post creation), with p99 latency <20ms. Total data size is 10TB growing 1TB/month. The service requires strong consistency for read-after-write for user's own posts but can tolerate eventual consistency for others.",
+    "nodes": [
+      "Nginx Load Balancer",
+      "Redis Cache Cluster",
+      "Cassandra Cluster",
+      "Application Server",
+      "Prometheus Monitoring"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Single PostgreSQL instance with read replicas, using ephemeral caching"
+      },
+      {
+        "id": "B",
+        "label": "Distributed Cassandra cluster with local quorum consistency and a Redis cache for hot keys"
+      },
+      {
+        "id": "C",
+        "label": "Vertically scaled PostgreSQL with connection pooling and in-memory query cache"
+      },
+      {
+        "id": "D",
+        "label": "Multi-master MySQL setup with global transaction IDs and proxy layer"
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A fails due to cost: supporting 1M QPS reads with MySQL replicas would require a large number of high-cost instances, and replication lag can cause stale reads. Option C fails due to latency: a single PostgreSQL instance cannot serve 1M QPS within 20ms, causing queueing and timeouts. Option D fails due to consistency: multi-master MySQL introduces write conflicts and requires conflict resolution, which may violate the required read-after-write consistency for own posts. Option B uses Cassandra with tunable consistency (local quorum ensures strong consistency for own posts) and Redis cache to absorb read traffic, providing low latency and linear scalability at a reasonable cost."
+  },
+  "observability:1": {
+    "id": "observability-gen-1785307943173",
+    "topic": "observability",
+    "difficulty": 1,
+    "scenario": "A Kubernetes-based ridesharing platform handles 10,000 req/s; each request emits 500B of logs and 200B of traces. The SRE team needs to query across services with sub-2s latency for the past 24 hours while minimizing cost. The system includes Istio, NGINX, Kafka, and PostgreSQL.",
+    "nodes": [
+      "Kubernetes",
+      "Istio",
+      "NGINX",
+      "Kafka",
+      "PostgreSQL"
+    ],
+    "options": [
+      {
+        "id": "A",
+        "label": "Ingest all logs and traces into Datadog with full granularity."
+      },
+      {
+        "id": "B",
+        "label": "Self-hosted Prometheus + Thanos for metrics, Loki for logs, Jaeger for traces."
+      },
+      {
+        "id": "C",
+        "label": "Use AWS CloudWatch Logs and Metrics with default settings."
+      },
+      {
+        "id": "D",
+        "label": "Ship logs to Elasticsearch cluster and use correlation IDs for tracing."
+      }
+    ],
+    "correct": "B",
+    "explanation": "Option A is incorrect because fully managed services like Datadog charge per ingested GB, making it prohibitively expensive at ~$30,000/month for 600 GB/day of logs and traces. Option C relies on CloudWatch which has limited indexing, resulting in query latencies often exceeding 5 seconds, failing the sub-2s requirement. Option D uses a small Elasticsearch cluster that can lose logs under high throughput and lacks built-in distributed tracing, leading to inconsistent observability data. Option B wins by combining Prometheus with Thanos for efficient metric storage, Loki on S3 for cheap log storage, and Jaeger for structured tracing, all self-hosted to balance performance and cost."
+  },
+  "observability:3": {
+    "cards": [
+      {
+        "id": "observability-gen-1785703525081",
+        "topic": "observability",
+        "difficulty": 3,
+        "prerequisiteTopics": [
+          "api-design",
+          "head-based-sampling",
+          "trace-context-propagation",
+          "kafka-buffering",
+          "sampling-bias",
+          "span-storage-cost",
+          "hot-warm-tiering",
+          "trace-id-indexing",
+          "metric-cardinality",
+          "tail-based-sampling",
+          "consistent-hashing",
+          "probabilistic-sampling",
+          "latency-filtering",
+          "query-latency",
+          "correlation-ids"
+        ],
+        "scenario": "A microservices checkout platform handles 50k requests/s at p99 100ms. Each request generates ~15 spans, so the tracing pipeline receives 750k spans/s. The team wants 30-day trace retention and sub-second trace queries, but the storage budget is only $10k/month. Design an observability pipeline that balances trace fidelity, query latency, and cost.",
+        "nodes": [
+          "OpenTelemetry Collector",
+          "Apache Kafka",
+          "Jaeger",
+          "Prometheus",
+          "Grafana"
+        ],
+        "options": [
+          {
+            "id": "A",
+            "label": "Distributed head-based sampling with 1% trace-ID consistent rate, Kafka transport, Jaeger storage, 30-day retention.",
+            "prerequisiteTopics": [
+              "head-based-sampling",
+              "trace-context-propagation",
+              "kafka-buffering",
+              "sampling-bias"
+            ]
+          },
+          {
+            "id": "B",
+            "label": "No sampling; ship every span through Kafka to Jaeger with 30-day hot storage and full-fidelity metrics.",
+            "prerequisiteTopics": [
+              "span-storage-cost",
+              "hot-warm-tiering",
+              "trace-id-indexing",
+              "metric-cardinality"
+            ]
+          },
+          {
+            "id": "C",
+            "label": "Tail-based sampling at OpenTelemetry Collector with consistent hash by trace ID, error-aware dynamic rate, 7-day hot storage plus derived metrics.",
+            "prerequisiteTopics": [
+              "tail-based-sampling",
+              "consistent-hashing",
+              "trace-id-indexing",
+              "metric-cardinality"
+            ]
+          },
+          {
+            "id": "D",
+            "label": "Edge/ingest-time probabilistic sampling of last 10% volume and keep only spans >50ms; query traces directly in Jaeger, no derived metrics.",
+            "prerequisiteTopics": [
+              "probabilistic-sampling",
+              "latency-filtering",
+              "query-latency",
+              "correlation-ids"
+            ]
+          }
+        ],
+        "correct": "C",
+        "explanation": "A fails because head-based sampling decides before seeing trace outcomes, so rare p99 error/latency traces are systematically undersampled and trace completeness becomes inconsistent. B stores every span for 30 days, which at 750k spans/s creates multiple PB of storage and blows through the $10k/month budget. D focuses on slow spans and probabilistic edge sampling, which biases the data and forces Jaeger to scan raw spans for query workloads, producing multi-second query latency. C wins because tail-based sampling with consistent hashing keeps complete traces for important events while dynamically adjusting sample rates, and derived Prometheus metrics keep query latency low while 7-day hot storage bounds cost."
+      }
+    ]
+  },
+  "queues:2": {
+    "cards": [
+      {
+        "id": "queues-gen-1785309937957",
+        "topic": "queues",
+        "difficulty": 2,
+        "scenario": "Design a system to process 1,000 orders per second (each 1 KB) with at-least-once delivery and a maximum processing latency of 500 ms. Traffic spikes up to 2,000 QPS are expected. The system must avoid duplicate processing while keeping costs reasonable.",
+        "nodes": [
+          "NGINX Load Balancer",
+          "Order API (Spring Boot)",
+          "Queue System",
+          "Worker Pool (Python Celery)",
+          "Order Database (PostgreSQL)"
+        ],
+        "options": [
+          {
+            "id": "A",
+            "label": "Use a Redis List as a simple queue with multiple workers polling for new orders.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "B",
+            "label": "Use AWS SQS with a Dead Letter Queue and auto‑scaling workers.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "C",
+            "label": "Use Apache Kafka with a single consumer group and one topic per order type.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "D",
+            "label": "Use a PostgreSQL table as a queue with row‑level locking and a worker checking for new rows.",
+            "prerequisiteTopics": []
+          }
+        ],
+        "correct": "B",
+        "explanation": "Option A (Redis List) risks losing orders if Redis crashes without persistence, violating at‑least‑once delivery. Option C (Kafka) can achieve at‑least‑once, but its typical tail latency at moderate QPS often exceeds 500 ms, and the cost and complexity of running a Kafka cluster are higher than needed. Option D (PostgreSQL as queue) creates a scalability bottleneck; as traffic spikes, row contention and lock waiting increase latency and cost. Option B (AWS SQS) provides reliable at‑least‑once delivery, built‑in dead letter handling, and auto‑scaling workers can handle spikes without manual intervention, all at a reasonable cost for this workload.",
+        "prerequisiteTopics": [
+          "api-design"
+        ]
+      }
+    ]
+  },
+  "queues:3": {
+    "cards": [
+      {
+        "id": "queues-gen-1785307791427",
+        "topic": "queues",
+        "difficulty": 3,
+        "scenario": "Design a real-time order processing system for a food delivery app handling 10,000 orders/sec (5KB each). The system must deliver orders to restaurants in order per restaurant and ensure no duplicate orders. You have a 2-second SLA. Choose a queuing solution that balances throughput, ordering, and durability.",
+        "nodes": [
+          "AWS Application Load Balancer",
+          "Apache Kafka (with per-restaurant partitions)",
+          "Redis (for deduplication cache)",
+          "Order Processing Workers (Golang)",
+          "PostgreSQL (persistent storage)"
+        ],
+        "options": [
+          {
+            "id": "A",
+            "label": "Use RabbitMQ with direct exchanges for each restaurant (1 queue per restaurant).",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "B",
+            "label": "Use Apache Kafka with partitions keyed by restaurant ID, combined with idempotent producers.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "C",
+            "label": "Use Amazon SQS FIFO queues, one per restaurant.",
+            "prerequisiteTopics": []
+          },
+          {
+            "id": "D",
+            "label": "Use Redis Pub/Sub with sharding by restaurant ID, and a Redis Cluster for persistence.",
+            "prerequisiteTopics": []
+          }
+        ],
+        "correct": "B",
+        "explanation": "Option A fails because managing thousands of queues in RabbitMQ becomes a bottleneck, increasing latency beyond the SLA due to poor scalability. Option C fails due to cost and throughput limitations: SQS FIFO only supports 300 TPS, requiring many queues and increasing complexity. Option D fails because Redis Pub/Sub does not guarantee message persistence or at-least-once delivery, risking order loss. Option B wins as Kafka provides high throughput (100k+/sec), strict partition-level ordering, and persistence via replication, meeting all requirements.",
+        "prerequisiteTopics": [
+          "api-design"
+        ]
+      }
+    ]
+  }
+}
