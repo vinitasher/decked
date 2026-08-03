@@ -841,6 +841,7 @@ const APP = {
     review.interval = SRS.nextInterval(grade, review.stability, review.difficulty);
     review.nextReviewAt = Date.now() + review.interval * 86400000;
     review.card = this._cardSnapshot(card);
+    if (typeof review._createdAt !== 'number') review._createdAt = Date.now();
     this.saveCardReview(card.id, review);
 
     // update topic score + mastery tracking
@@ -1004,47 +1005,41 @@ const APP = {
   showStats() {
     this.renderStudyCalendar();
     this.renderMasteryChart();
-    const total = SEED_CARDS.length;
+    const total = this._studiedCardIds().size;
     const mastered = Object.keys(this.profile.topicScores).filter(t => this.isTopicMastered(t)).length;
-    const totalTopics = [...new Set(SEED_CARDS.map(c => c.topic))].length;
-    document.getElementById('stats-global').innerHTML = `
-      <strong>Overall Progress</strong><br>
-      Cards: ${this.profile.totalAnswered} answered, ${Math.round(100 * this.profile.totalCorrect / Math.max(1, this.profile.totalAnswered))}% correct<br>
-      Topics: ${mastered} / ${totalTopics} mastered (${Math.round(100 * mastered / totalTopics)}%)<br>
-      Sessions: ${this.profile.totalSessions}<br>
-      Best streak: ${this.profile.streaks.best} days
-    `;
+    const totalTopics = this._studiedTopics().size;
+    const statsEl = document.getElementById('stats-global');
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <strong>Overall Progress</strong><br>
+        Cards: ${total} studied, ${this.profile.totalAnswered} answered, ${Math.round(100 * this.profile.totalCorrect / Math.max(1, this.profile.totalAnswered))}% correct<br>
+        Topics: ${mastered} / ${totalTopics} mastered (${Math.round(100 * mastered / totalTopics)}%)<br>
+        Sessions: ${this.profile.totalSessions}<br>
+        Best streak: ${this.profile.streaks.best} days
+      `;
+    }
     this.showScreen('stats');
   },
 
   renderStudyCalendar() {
     const el = document.getElementById('study-calendar');
+    if (!el) return;
     el.innerHTML = '';
     const today = new Date();
     const dayMs = 86400000;
+    // count reviews on each calendar day from the persisted review timestamps,
+    // covering every reviewed card (generated and seed alike)
+    const reviewsByDay = {};
+    for (const review of Object.values(this.profile.cardHistory)) {
+      if (!review || typeof review !== 'object') continue;
+      const key = new Date(review._createdAt || Date.now()).toISOString().split('T')[0];
+      reviewsByDay[key] = (reviewsByDay[key] || 0) + 1;
+    }
     // show last 49 days
     for (let i = 48; i >= 0; i--) {
       const d = new Date(today.getTime() - i * dayMs);
       const key = d.toISOString().split('T')[0];
-      const day = d.getDate();
-      const weekday = d.getDay();
-      // only show weekdays-ish (Mon-Fri) to keep it compact
-      const intensity = [...Array(250)].map((_, j) => {
-        const check = new Date(today.getTime() - (i + j) * dayMs);
-        const ck = check.toISOString().split('T')[0];
-      });
-      // simpler: count reviews on that day from card history
-      let reviewsOnDay = 0;
-      for (const cid of Object.keys(this.profile.cardHistory)) {
-        const card = SEED_CARDS.find(c => c.id === cid);
-        if (!card) continue;
-        const review = this.profile.cardHistory[cid];
-        // approximate: check when the review occurred (we only store the last review time as nextReviewAt)
-        // use the nextReviewAt as a proxy for when it was done
-        const reviewDate = new Date(review._createdAt || Date.now()).toISOString().split('T')[0];
-        if (reviewDate === key) reviewsOnDay++;
-      }
-      // fallback: use session-based tracking
+      const reviewsOnDay = reviewsByDay[key] || 0;
       const color = reviewsOnDay === 0 ? '#f0f0f0' :
         reviewsOnDay <= 1 ? '#c8e6c9' :
         reviewsOnDay <= 3 ? '#81c784' :
@@ -1058,7 +1053,8 @@ const APP = {
 
   renderMasteryChart() {
     const el = document.getElementById('mastery-chart');
-    const topics = [...new Set(SEED_CARDS.map(c => c.topic))];
+    if (!el) return;
+    const topics = [...this._studiedTopics()];
     const topicLabels = {
       caching: 'Caching', queues: 'Queues', databases: 'DB', consensus: 'Consensus',
       'api-design': 'API', loadbalancing: 'LB', storage: 'Storage',
@@ -1073,18 +1069,21 @@ const APP = {
       return `<div class="topic-row"><span>${label}</span><div class="topic-bar"><div class="topic-fill${mastered ? ' mastered-fill' : ''}" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
     }).join('');
 
-    // topic coverage heatmap
+    // topic coverage heatmap over the studied set (seed + reviewed cards)
     const heatEl = document.createElement('div');
     heatEl.innerHTML = '<h2>Coverage Heatmap</h2><div class="heatmap">';
     for (const t of topics) {
-      const cardsInTopic = SEED_CARDS.filter(c => c.topic === t).length;
+      const cardsInTopic = [...this._studiedCardIds()].filter(id => {
+        const card = this._resolveCardContent(id);
+        return card && card.topic === t;
+      }).length;
       const level = cardsInTopic <= 2 ? 'low' : cardsInTopic <= 4 ? 'med' : 'high';
       const colors = { low: '#ffcdd2', med: '#fff9c4', high: '#c8e6c9', mastered: '#a5d6a7' };
       const mastered = this.isTopicMastered(t);
       const color = mastered ? colors.mastered : colors[level];
       heatEl.innerHTML += `<div class="heatmap-cell" style="background:${color}" title="${t}: ${cardsInTopic} cards${mastered ? ' ✓mastered' : ''}">${t.substring(0, 3)}</div>`;
     }
-    heatEl.innerHTML += '<div class="heatmap-label">Topic coverage by seed card count & mastery</div></div>';
+    heatEl.innerHTML += '<div class="heatmap-label">Topic coverage by studied card count & mastery</div></div>';
     el.parentNode.insertBefore(heatEl, el.nextSibling);
   },
 
