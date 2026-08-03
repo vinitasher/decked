@@ -1208,10 +1208,7 @@ const APP = {
 
   sendNudge() {
     if ('Notification' in window && Notification.permission === 'granted') {
-      const due = SEED_CARDS.filter(c => {
-        const r = this.getCardReview(c.id);
-        return r.nextReviewAt <= Date.now();
-      }).length;
+      const due = this._dueReviewCount();
       if (due > 0) {
         new Notification('📚 System Design Flashcards', {
           body: `${due} card${due > 1 ? 's' : ''} due for review! A quick session?`,
