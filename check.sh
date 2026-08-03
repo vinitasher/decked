@@ -12,6 +12,7 @@ scripts=(
   sw.js
   functions/api/generate.js
   functions/api/cache-stats.js
+  functions/shared/production-option-prerequisites.js
   server/generate-card.js
   server/server.js
   scripts/migrate-option-prerequisites.mjs
