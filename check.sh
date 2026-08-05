@@ -9,6 +9,7 @@ scripts=(
   js/cards.js
   js/render.js
   js/srs.js
+  js/wiki.js
   sw.js
   functions/api/generate.js
   functions/api/cache-stats.js
@@ -17,6 +18,7 @@ scripts=(
   server/server.js
   scripts/migrate-option-prerequisites.mjs
   scripts/dump-production-card-cache.mjs
+  scripts/generate-wiki.mjs
 )
 
 for script in "${scripts[@]}"; do

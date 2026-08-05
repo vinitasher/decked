@@ -638,25 +638,23 @@ const APP = {
       session.push(card);
     }
     const plan = this._buildSessionPlan(requested);
-    // Bound refill attempts so an unavailable generator cannot loop forever.
-    const maxAttempts = 3;
+    // Generate one card at a time, in up to 3 refill rounds, so an
+    // unavailable generator cannot loop forever (bounded at requested*3
+    // fetches) but every slot still gets retries with the accumulated
+    // session exclusions. Never fires concurrent generation requests.
+    const maxRounds = 3;
     const maxFetches = requested * 3;
-    let attempts = 0;
     let fetches = 0;
-    while (session.length < requested && attempts < maxAttempts && fetches < maxFetches) {
-      attempts++;
-      const batch = plan.slice(session.length);
-      const results = await Promise.all(batch.map(async item => {
+    for (let round = 0; round < maxRounds && session.length < requested && fetches < maxFetches; round++) {
+      for (const item of plan) {
+        if (session.length >= requested || fetches >= maxFetches) break;
+        fetches++;
         let card = null;
         try {
           card = await this.fetchCard(item.topic, item.difficulty, session);
         } catch (error) {
           card = null;
         }
-        return { card, item };
-      }));
-      fetches += batch.length;
-      for (const { card, item } of results) {
         if (!card) continue;
         if (this._isDuplicateScenario(card.scenario, session)) continue;
         if (card.topic !== item.topic) continue;
@@ -725,8 +723,8 @@ const APP = {
     document.getElementById('scenario').textContent = card.scenario;
     const prerequisites = normalizeCardPrerequisites(card).prerequisiteTopics;
     const prerequisiteEl = document.getElementById('card-prerequisites');
-    prerequisiteEl.textContent = prerequisites.length
-      ? `Know first: ${prerequisites.map(formatPrerequisiteLabel).join(', ')}`
+    prerequisiteEl.innerHTML = prerequisites.length
+      ? `Know first: ${prerequisites.map(topic => this._wikiLink(topic)).join(', ')}`
       : 'Foundational topic';
 
     // retrieval practice: hide diagram until answered (user can toggle to peek)
@@ -746,7 +744,7 @@ const APP = {
       btn.className = 'option-btn';
       const keyNum = idx + 1;
       const optionPrerequisites = opt.prerequisiteTopics
-        .map(formatPrerequisiteLabel)
+        .map(topic => this._wikiLink(topic))
         .join(', ');
       btn.innerHTML = `<span class="option-letter">${opt.id}<span style="display:block;font-size:0.55rem;opacity:0.5;">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${opt.label}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
       btn.setAttribute('role', 'radio');
@@ -773,6 +771,7 @@ const APP = {
   },
 
   answer(selectedId) {
+    this.closeWikiModal();
     const card = this.currentCard;
     this._selectedId = selectedId;
     this._cardCorrect = selectedId === card.correct;
@@ -1414,6 +1413,87 @@ const APP = {
       </section>
     `).join('');
     this.showScreen('learning-path');
+  },
+
+  /* ——— Concept Wiki ——— */
+
+  _escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  showWiki() {
+    const entries = Object.values(WIKI || {}).sort((a, b) => a.title.localeCompare(b.title));
+    const sidebar = document.getElementById('wiki-sidebar');
+    if (sidebar) {
+      sidebar.innerHTML = entries.map(entry =>
+        `<button class="wiki-topic" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openWiki('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
+      ).join('');
+    }
+    this.openWiki(entries[0]?.topic || '');
+    this.showScreen('wiki');
+  },
+
+  openWiki(topic) {
+    const entry = (WIKI || {})[topic];
+    const el = document.getElementById('wiki-content');
+    if (!el) return;
+    document.querySelectorAll('.wiki-topic').forEach(button =>
+      button.classList.toggle('active', button.dataset.topic === topic)
+    );
+    el.innerHTML = entry
+      ? this._wikiEntryHtml(entry, 'openWiki')
+      : '<p>No wiki entry yet for this concept.</p>';
+  },
+
+  openWikiModal(topic) {
+    const entry = (WIKI || {})[topic];
+    const modal = document.getElementById('wiki-modal');
+    const body = document.getElementById('wiki-modal-body');
+    if (!modal || !body) return;
+    body.innerHTML = entry
+      ? this._wikiEntryHtml(entry, 'openWikiModal')
+      : '<p>No wiki entry yet for this concept.</p>';
+    modal.classList.remove('hidden');
+  },
+
+  closeWikiModal() {
+    const modal = document.getElementById('wiki-modal');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  /* Inline know-first link: opens the wiki modal; unknown concepts render as
+     plain text so sessions never depend on wiki coverage. */
+  _wikiLink(topic) {
+    const entry = (WIKI || {})[topic];
+    if (!entry) {
+      return `<span class="wiki-link-missing">${this._escapeHtml(formatPrerequisiteLabel(topic))}</span>`;
+    }
+    const open = `event.stopPropagation();APP.openWikiModal('${this._escapeHtml(topic)}')`;
+    return `<span class="wiki-link" role="link" tabindex="0" data-topic="${this._escapeHtml(topic)}" onclick="${open}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">${this._escapeHtml(entry.title)}</span>`;
+  },
+
+  _wikiEntryHtml(entry, openHandler) {
+    const related = (entry.related_topics || []).map(t => {
+      const rel = (WIKI || {})[t];
+      return rel
+        ? `<button class="btn btn-sm btn-outline" onclick="APP.${openHandler}('${this._escapeHtml(t)}')">${this._escapeHtml(rel.title)}</button>`
+        : `<span class="wiki-rel-missing">${this._escapeHtml(t)}</span>`;
+    }).join('');
+    return `
+      <h2>${this._escapeHtml(entry.title)}</h2>
+      <p class="wiki-summary">${this._escapeHtml(entry.summary)}</p>
+      <h3>Why it matters</h3>
+      <p>${this._escapeHtml(entry.why_it_matters)}</p>
+      <h3>Key points</h3>
+      <ul>${(entry.key_points || []).map(point => `<li>${this._escapeHtml(point)}</li>`).join('')}</ul>
+      <h3>Common pitfalls</h3>
+      <ul>${(entry.common_pitfalls || []).map(pitfall => `<li>${this._escapeHtml(pitfall)}</li>`).join('')}</ul>
+      ${related ? `<h3>Related concepts</h3><div class="wiki-related">${related}</div>` : ''}`;
   },
 
   /* ——— Radar Chart (Canvas) ——— */

@@ -127,6 +127,25 @@ function parseExclusions(searchParams) {
   return exclusions;
 }
 
+/* Server-side diagnostic log: one KV entry per request (collision-free random
+   key) plus one entry per failed provider attempt. Readable with
+   `bash /home/pi/bin/decked-logs`. Tolerates a missing binding so preview
+   environments without GEN_LOG keep working. */
+function logEntry(context, entry) {
+  const { env } = context;
+  if (!env.GEN_LOG) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `genlog:${day}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const write = env.GEN_LOG.put(key, JSON.stringify(entry), { expirationTtl: 604800 });
+  // waitUntil keeps the write alive after the response is returned; a bare
+  // fire-and-forget promise gets cancelled when the request completes.
+  if (typeof context.waitUntil === 'function') {
+    context.waitUntil(write);
+  } else {
+    write.catch(() => {});
+  }
+}
+
 function validateGeneratedCard(generatedCard, designatedCorrect) {
   const required = ['id', 'topic', 'difficulty', 'prerequisiteTopics', 'scenario', 'nodes', 'options', 'correct', 'explanation'];
   for (const field of required) {
@@ -168,6 +187,7 @@ export async function onRequest(context) {
   const cacheKey = `${topic}:${difficulty}`;
   const exclusions = parseExclusions(url.searchParams);
   const forceGeneration = url.searchParams.get('force') === '1';
+  const startedAt = Date.now();
   let pool = { cards: [] };
   let storedValue = null;
   let cacheNeedsRewrite = false;
@@ -191,6 +211,10 @@ export async function onRequest(context) {
       if (cacheNeedsRewrite) {
         await env.CARD_CACHE.put(cacheKey, JSON.stringify(pool));
       }
+      logEntry(context, {
+        event: 'request', outcome: 'cached', topic, difficulty,
+        ms: Date.now() - startedAt
+      });
       return new Response(JSON.stringify({
         cached: true,
         card,
@@ -270,18 +294,35 @@ export async function onRequest(context) {
         aiResponse.status,
         providerError.slice(0, 500)
       );
+      logEntry(context, {
+        event: 'attempt_failed', topic, difficulty,
+        attempt: attempt + 1, model: models[attempt],
+        status: aiResponse.status, ms: Date.now() - startedAt
+      });
       lastError = new Error('Card generation provider is temporarily unavailable');
       if (aiResponse.status !== 503) break;
       await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
     }
 
-    if (!card) throw lastError;
+    if (!card) {
+      logEntry(context, {
+        event: 'request', outcome: 'failed', topic, difficulty,
+        attempts: models.length, ms: Date.now() - startedAt,
+        error: lastError.message
+      });
+      throw lastError;
+    }
 
     pool = { cards: deduplicatePool([...pool.cards, card]) };
 
     if (env.CARD_CACHE) {
       await env.CARD_CACHE.put(cacheKey, JSON.stringify(pool));
     }
+
+    logEntry(context, {
+      event: 'request', outcome: 'generated', topic, difficulty,
+      ms: Date.now() - startedAt
+    });
 
     return new Response(JSON.stringify({
       cached: false,

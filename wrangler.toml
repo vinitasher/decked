@@ -7,3 +7,9 @@ compatibility_date = "2025-06-01"
 binding = "CARD_CACHE"
 id = "8a88d82378dc4d9483c154ac5a358063"
 preview_id = "d4cc1b79a6cd406dae2010f5636bf4c0"
+
+# Server-side diagnostic log for generation events (readable via decked-logs).
+[[kv_namespaces]]
+binding = "GEN_LOG"
+id = "a505b2ddd586473abadb6e226481fd47"
+preview_id = "a505b2ddd586473abadb6e226481fd47"
