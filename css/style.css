@@ -126,7 +126,6 @@ footer a:hover { color: var(--primary); }
 .wiki-content li { margin: 4px 0; font-size: 0.9rem; line-height: 1.45; }
 .wiki-summary { font-size: 0.95rem; line-height: 1.5; color: var(--fg); }
 .wiki-related { display: flex; flex-wrap: wrap; gap: 8px; }
-.wiki-rel-missing { color: var(--muted-text); font-size: 0.8rem; }
 @media (max-width: 640px) {
   .wiki-layout { flex-direction: column; }
   .wiki-sidebar { width: 100%; max-height: 30vh; display: flex; flex-wrap: wrap; gap: 4px; overflow-y: auto; }

@@ -90,7 +90,19 @@ async function callModel(prompt, timeoutMs = 45000) {
 }
 
 /* ---- Schema validation ---- */
+const TOPIC_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REQUIRED = ['topic', 'title', 'summary', 'why_it_matters', 'key_points', 'common_pitfalls', 'related_topics'];
+
+/* Fold any casing/separator variant onto the canonical kebab-case key so
+   related topics like "Eventual Consistency" or "Database" become valid
+   concept names the client can match against existing entries. */
+function normalizeTopicName(name) {
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function validate(entry, topic) {
   for (const field of REQUIRED) {
     if (entry[field] === undefined || entry[field] === null) throw new Error(`missing ${field}`);
@@ -104,8 +116,9 @@ function validate(entry, topic) {
   if (!Array.isArray(entry.related_topics)) throw new Error('related_topics not array');
   return {
     ...entry,
-    related_topics: [...new Set(entry.related_topics)]
-      .filter(t => typeof t === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(t))
+    related_topics: [...new Set(entry.related_topics
+      .map(name => typeof name === 'string' ? normalizeTopicName(name) : '')
+      .filter(name => TOPIC_RE.test(name)))]
       .slice(0, 4)
   };
 }

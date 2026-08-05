@@ -47,6 +47,30 @@ function normalizeProfileData(profile) {
   return normalized;
 }
 
+/* Cheap concept-name matching: fold any casing/separator variant
+   ("Eventual Consistency", "eventual-consistency", "Eventual_Consistency")
+   onto the canonical kebab-case topic key, plus a naive singular/plural
+   fallback ("database" -> "databases", "load-balancing" -> "loadbalancing"
+   is handled when the normalized form collides via the existing key set). */
+function normalizeConceptName(name) {
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function matchWikiTopic(name, knownKeys = Object.keys(WIKI || {})) {
+  const known = new Set(knownKeys);
+  const normalized = normalizeConceptName(name);
+  if (!normalized) return null;
+  if (known.has(normalized)) return normalized;
+  if (normalized.endsWith('s') && normalized.length > 1 && known.has(normalized.slice(0, -1))) {
+    return normalized.slice(0, -1);
+  }
+  if (known.has(`${normalized}s`)) return `${normalized}s`;
+  return null;
+}
+
 function shuffledOptions(options, rng = Math.random) {
   const shuffled = [...options];
   for (let index = shuffled.length - 1; index > 0; index--) {
@@ -1464,7 +1488,7 @@ const APP = {
     el.innerHTML = '<p>Loading wiki entry…</p>';
     this._ensureWiki(topic)
       .then(entry => {
-        el.innerHTML = this._wikiEntryHtml(entry, 'openWiki');
+        el.innerHTML = this._wikiEntryHtml(entry);
         this.renderWikiSidebar();
       })
       .catch(error => {
@@ -1481,7 +1505,7 @@ const APP = {
     modal.classList.remove('hidden');
     try {
       const entry = await this._ensureWiki(topic);
-      body.innerHTML = this._wikiEntryHtml(entry, 'openWikiModal');
+      body.innerHTML = this._wikiEntryHtml(entry);
       this.renderWikiSidebar();
     } catch (error) {
       console.error('Wiki render failed for', topic, error);
@@ -1494,23 +1518,23 @@ const APP = {
     if (modal) modal.classList.add('hidden');
   },
 
-  /* Inline know-first link: opens the wiki modal. Missing concepts are still
-     clickable — the entry is generated lazily (or shown as unavailable if the
-     server cannot produce it). */
+  /* Inline know-first link: opens the wiki modal. The name is first resolved
+     against existing concepts via cheap matching so "Database" / "Databases"
+     land on the same entry; unresolved concepts are still clickable — the
+     entry is generated lazily (or shown as unavailable if the server cannot
+     produce it). */
   _wikiLink(topic) {
-    const entry = (WIKI || {})[topic];
-    const open = `event.stopPropagation();APP.openWikiModal('${this._escapeHtml(topic)}')`;
-    const label = this._escapeHtml(entry ? entry.title : formatPrerequisiteLabel(topic));
-    return `<span class="wiki-link${entry ? '' : ' wiki-link-pending'}" role="link" tabindex="0" data-topic="${this._escapeHtml(topic)}" onclick="${open}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">${label}</span>`;
+    const canonical = matchWikiTopic(topic) || normalizeConceptName(topic);
+    const entry = (WIKI || {})[canonical];
+    const open = `event.stopPropagation();APP.openWikiModal('${this._escapeHtml(canonical)}')`;
+    const label = this._escapeHtml(entry ? entry.title : formatPrerequisiteLabel(canonical));
+    return `<span class="wiki-link${entry ? '' : ' wiki-link-pending'}" role="link" tabindex="0" data-topic="${this._escapeHtml(canonical)}" onclick="${open}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">${label}</span>`;
   },
 
-  _wikiEntryHtml(entry, openHandler) {
-    const related = (entry.related_topics || []).map(t => {
-      const rel = (WIKI || {})[t];
-      return rel
-        ? `<button class="btn btn-sm btn-outline" onclick="APP.${openHandler}('${this._escapeHtml(t)}')">${this._escapeHtml(rel.title)}</button>`
-        : `<span class="wiki-rel-missing">${this._escapeHtml(t)}</span>`;
-    }).join('');
+  _wikiEntryHtml(entry) {
+    const related = (entry.related_topics || [])
+      .map(t => this._wikiLink(t))
+      .join('');
     return `
       <h2>${this._escapeHtml(entry.title)}</h2>
       <p class="wiki-summary">${this._escapeHtml(entry.summary)}</p>

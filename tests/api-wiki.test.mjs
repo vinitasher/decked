@@ -118,6 +118,31 @@ test('wiki endpoint rejects an entry that violates the schema without caching', 
   }
 });
 
+test('wiki endpoint normalizes related topic names into kebab-case', async () => {
+  const originalFetch = globalThis.fetch;
+  const variants = { ...goodEntry, related_topics: ['Eventual Consistency', 'Database', 'Cache_Eviction', '  ', 42, 'cache-eviction'] };
+  let cached;
+  globalThis.fetch = async () => Response.json({
+    choices: [{ message: { content: JSON.stringify(variants) } }]
+  });
+  try {
+    const response = await onRequest({
+      request: new Request('https://example.com/api/wiki?topic=hot-key-handling'),
+      env: env({
+        WIKI_CACHE: { get: async () => null, put: async (key, value) => { cached = { key, value }; } }
+      })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      (await response.json()).related_topics,
+      ['eventual-consistency', 'database', 'cache-eviction']
+    );
+    assert.deepEqual(JSON.parse(cached.value).related_topics, ['eventual-consistency', 'database', 'cache-eviction']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('wiki endpoint fails clearly when the server-side key is missing', async () => {
   const response = await onRequest({
     request: new Request('https://example.com/api/wiki?topic=hot-key-handling'),
