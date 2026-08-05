@@ -211,7 +211,7 @@ export async function onRequest(context) {
       'deepseek-v4-flash',
       'deepseek-v4-flash',
       'deepseek-v4-flash',
-      'deepseek-v4-pro'
+      'deepseek-v4-flash'
     ];
     const distinctFrom = new Set([
       ...pool.cards.map(candidate => scenarioFingerprint(candidate.scenario)),
@@ -234,8 +234,10 @@ export async function onRequest(context) {
           model: models[attempt],
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 4096,
-          temperature: 0.7
-        })
+          temperature: 0.7,
+          thinking: { type: 'disabled' }
+        }),
+        signal: AbortSignal.timeout(45000)
       });
 
       if (aiResponse.ok) {
