@@ -84,6 +84,73 @@ function shuffledOptions(options, rng = Math.random) {
   return shuffled;
 }
 
+/* ——— Feedback helpers (filed as GitHub issues, mirrors the system-design
+       playground feedback flow: Turnstile + device id + runtime config) ——— */
+
+let feedbackSiteKey = '';
+let turnstileToken = '';
+let turnstileWidgetId = null;
+
+function getOrCreateDeviceId() {
+  let id = localStorage.getItem('sdf_device_id');
+  if (!id) {
+    id = (crypto.randomUUID && crypto.randomUUID()) || `dev-${Math.random().toString(36).slice(2, 14)}`;
+    localStorage.setItem('sdf_device_id', id);
+  }
+  return id;
+}
+
+async function loadFeedbackConfig() {
+  try {
+    const response = await fetch(`${SERVER_BASE}/api/feedback/config`);
+    const body = await response.json().catch(() => ({}));
+    feedbackSiteKey = body.turnstileSiteKey || '';
+  } catch (_) {
+    feedbackSiteKey = '';
+  }
+}
+
+function renderTurnstile() {
+  const container = document.getElementById('feedback-turnstile');
+  if (!container || !feedbackSiteKey || turnstileWidgetId) return;
+  const loadWidget = () => {
+    if (!container || typeof window === 'undefined' || !window.turnstile || turnstileWidgetId) return;
+    if (turnstileWidgetId) window.turnstile.remove(turnstileWidgetId);
+    turnstileWidgetId = window.turnstile.render(container, {
+      sitekey: feedbackSiteKey,
+      theme: 'light',
+      callback: token => { turnstileToken = token; },
+      'expired-callback': () => { turnstileToken = ''; },
+      'error-callback': () => { turnstileToken = ''; }
+    });
+  };
+  const scriptId = 'feedback-turnstile-script';
+  let script = document.getElementById(scriptId);
+  if (!script) {
+    script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.addEventListener('load', loadWidget, { once: true });
+    document.head.appendChild(script);
+  } else if (window.turnstile) {
+    loadWidget();
+  }
+}
+
+function resetTurnstile(remove) {
+  turnstileToken = '';
+  if (turnstileWidgetId && typeof window !== 'undefined' && window.turnstile) {
+    if (remove) {
+      window.turnstile.remove(turnstileWidgetId);
+      turnstileWidgetId = null;
+    } else {
+      window.turnstile.reset(turnstileWidgetId);
+    }
+  }
+}
+
 const APP = {
   profile: null,
   currentCard: null,
@@ -1709,6 +1776,92 @@ const APP = {
     } else {
       el.setAttribute('data-theme', 'high-contrast');
       localStorage.setItem('sdf_contrast', 'high');
+    }
+  },
+
+  /* ——— Feedback ——— */
+
+  openFeedbackModal() {
+    const modal = document.getElementById('feedback-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    const titleEl = document.getElementById('feedback-title');
+    if (titleEl) titleEl.focus();
+    loadFeedbackConfig().then(() => renderTurnstile());
+  },
+
+  closeFeedbackModal() {
+    const modal = document.getElementById('feedback-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    const status = document.getElementById('feedback-status');
+    if (status) status.textContent = '';
+    resetTurnstile(true);
+  },
+
+  async submitFeedback(event) {
+    if (event?.preventDefault) event.preventDefault();
+    const titleEl = document.getElementById('feedback-title');
+    const textEl = document.getElementById('feedback-text');
+    const statusEl = document.getElementById('feedback-status');
+    const submitEl = document.getElementById('feedback-submit');
+    if (!titleEl || !textEl || !statusEl) return false;
+    const title = (titleEl.value || '').trim();
+    const details = (textEl.value || '').trim();
+    if (!title || !details) {
+      statusEl.textContent = 'Please fill in both a title and details.';
+      statusEl.style.color = 'var(--danger)';
+      return false;
+    }
+    if (feedbackSiteKey && !turnstileToken) {
+      statusEl.textContent = 'Complete the verification challenge before submitting.';
+      statusEl.style.color = 'var(--danger)';
+      return false;
+    }
+    if (submitEl) {
+      submitEl.disabled = true;
+      submitEl.textContent = 'Submitting...';
+    }
+    statusEl.textContent = '';
+    try {
+      const category = document.getElementById('feedback-category')?.value || 'other';
+      const contact = document.getElementById('feedback-contact')?.value || '';
+      const response = await fetch(`${SERVER_BASE}/api/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category,
+          title,
+          details,
+          contact,
+          pagePath: window.location.pathname || '/',
+          userId: getOrCreateDeviceId(),
+          turnstileToken
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        statusEl.textContent = body.error || 'Could not submit feedback. Please try again.';
+        statusEl.style.color = 'var(--danger)';
+        return false;
+      }
+      statusEl.textContent = body.issueUrl
+        ? 'Thanks — your feedback was filed as an issue in the project repo.'
+        : 'Thanks — your feedback was recorded and will be reviewed.';
+      statusEl.style.color = 'var(--success)';
+      titleEl.value = '';
+      textEl.value = '';
+      resetTurnstile(false);
+      return true;
+    } catch (_) {
+      statusEl.textContent = 'Network error — check your connection and try again.';
+      statusEl.style.color = 'var(--danger)';
+      return false;
+    } finally {
+      if (submitEl) {
+        submitEl.disabled = false;
+        submitEl.textContent = 'Submit';
+      }
     }
   }
 };

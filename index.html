@@ -241,6 +241,38 @@
   </div>
 </div>
 
+<!-- Feedback Modal (filed as a GitHub issue in the project repository) -->
+<div id="feedback-modal" class="wiki-modal hidden" role="dialog" aria-modal="true" aria-label="Send feedback">
+  <div class="wiki-modal-box">
+    <div class="wiki-modal-header">
+      <h2>Send Feedback</h2>
+      <button class="btn btn-sm btn-outline" onclick="APP.closeFeedbackModal()">✕ Close</button>
+    </div>
+    <p class="feedback-intro">Found a confusing card, a bug, or a feature you'd love? Your note becomes an issue in the project repository so it can be fixed.</p>
+    <form id="feedback-form" onsubmit="return APP.submitFeedback(event)">
+      <label class="feedback-label" for="feedback-title">Title <span class="feedback-required">*</span></label>
+      <input id="feedback-title" class="feedback-field" type="text" maxlength="120" required placeholder="Short summary, e.g. \"Cache eviction card is wrong\"">
+      <label class="feedback-label" for="feedback-text">Details <span class="feedback-required">*</span></label>
+      <textarea id="feedback-text" class="feedback-field" rows="5" maxlength="10000" required placeholder="What should we improve?"></textarea>
+      <label class="feedback-label" for="feedback-category">Category</label>
+      <select id="feedback-category" class="feedback-field">
+        <option value="ux">UX</option>
+        <option value="bug">Bug</option>
+        <option value="idea">Idea</option>
+        <option value="content">Content</option>
+        <option value="other">Other</option>
+      </select>
+      <label class="feedback-label" for="feedback-contact">Contact (optional)</label>
+      <input id="feedback-contact" class="feedback-field" type="text" maxlength="120" autocomplete="off" placeholder="Email, GitHub username, or leave blank">
+      <div id="feedback-turnstile" class="feedback-turnstile"></div>
+      <div class="feedback-actions">
+        <button class="btn btn-primary" type="submit" id="feedback-submit">Submit</button>
+        <span id="feedback-status" role="status" class="feedback-status"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="js/cards.js"></script>
 <script src="js/wiki.js"></script>
 <script src="js/srs.js"></script>
@@ -254,7 +286,7 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 <footer>
-  <p><a href="https://vinitasher.com">Back to vinitasher.com</a></p>
+  <p><button type="button" class="footer-btn" onclick="APP.openFeedbackModal()">💬 Send feedback</button></p>
   <p class="footer-status">System Design Flashcards · Beta</p>
 </footer>
 </body>

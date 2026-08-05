@@ -114,6 +114,10 @@ function handleRequest(req, res) {
       }
     });
 
+  } else if (pathname === '/api/feedback' && req.method === 'POST') {
+    res.writeHead(501, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Feedback is only available in the deployed app' }));
+
   } else {
     // serve static files for the PWA
     const filePath = path.join(STATIC_ROOT, pathname === '/' ? 'index.html' : pathname);

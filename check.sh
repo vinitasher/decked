@@ -14,7 +14,13 @@ scripts=(
   functions/api/generate.js
   functions/api/cache-stats.js
   functions/api/wiki.js
+  functions/api/feedback.js
+  functions/api/feedback/diagnostic.js
+  functions/api/feedback/config.js
   functions/shared/production-option-prerequisites.js
+  functions/shared/server-logger.js
+  functions/shared/feedback-security.js
+  functions/shared/feedback-diagnostics.js
   server/generate-card.js
   server/server.js
   scripts/migrate-option-prerequisites.mjs
