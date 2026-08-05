@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const source = await readFile(new URL('../functions/api/wiki.js', import.meta.url), 'utf8');
-const { onRequest } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+import { onRequest } from '../functions/api/wiki.js';
 
 const goodEntry = {
   topic: 'hot-key-handling',

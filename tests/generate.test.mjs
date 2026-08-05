@@ -3,15 +3,14 @@ import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const source = await readFile(new URL('../functions/api/generate.js', import.meta.url), 'utf8');
-const {
+import {
   buildPrompt,
   deduplicatePool,
   normalizeCacheValue,
   onRequest,
   scenarioFingerprint,
   selectCorrectLetter
-} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+} from '../functions/api/generate.js';
 const require = createRequire(import.meta.url);
 const localGenerator = require('../server/generate-card.js');
 
@@ -453,7 +452,7 @@ test('malformed cache recovers through generation with one pool write', async ()
         OPENCODE_API_KEY: 'test-key',
         CARD_CACHE: {
           get: async () => '{broken',
-          put: async (_key, value) => { writes++; stored = JSON.parse(value); }
+          put: async (key, value) => { if (key === 'queues:2') { writes++; stored = JSON.parse(value); } }
         }
       }
     });

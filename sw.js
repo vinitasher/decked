@@ -1,5 +1,5 @@
 /* Service worker — offline cache for PWA */
-const CACHE = 'sdf-v10';
+const CACHE = 'sdf-v11';
 const STATIC = ['/', '/index.html', '/css/style.css', '/js/app.js', '/js/srs.js', '/js/render.js', '/js/cards.js', '/js/wiki.js', '/manifest.json', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/favicon.ico'];
 
 self.addEventListener('install', (e) => {

@@ -23,7 +23,7 @@ const generateSource = await readFile(
   new URL('../functions/api/generate.js', import.meta.url),
   'utf8'
 );
-const { normalizeCard } = await import(`data:text/javascript,${encodeURIComponent(generateSource)}`);
+const { normalizeCard } = await import('../functions/api/generate.js');
 
 function cardsIn(value) {
   if (Array.isArray(value?.cards)) return value.cards;

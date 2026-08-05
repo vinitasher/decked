@@ -1,0 +1,71 @@
+# Pro monetization setup (Supabase + Stripe)
+
+The app's monetization: everyone gets a free tier (10 freshly generated cards
+and 10 wiki entries per day, UTC), and Pro removes the limits. Quotas are
+enforced server-side in the Cloudflare Pages Functions; Stripe Checkout sells
+the Pro subscription; the Stripe webhook grants Pro by writing the user's
+entitlement into KV. No database is required — KV is the source of truth.
+
+## 1. Supabase (accounts)
+
+1. Create a project at https://supabase.com (free tier is fine).
+2. Enable sign-in providers under **Authentication → Providers**:
+   - **Google**: create OAuth credentials in Google Cloud Console (Authorized
+     redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`), paste
+     the client id + secret.
+   - **GitHub** (optional): create an OAuth app in GitHub → paste id/secret.
+3. Copy from **Project Settings → API**:
+   - Project URL → `SUPABASE_URL`
+   - `anon` public key → `SUPABASE_ANON_KEY` (public, safe for the client)
+   - `JWT Secret` → `SUPABASE_JWT_SECRET` (server-side only, secret)
+
+No tables are needed. Accounts exist purely so Pro can be attached to a
+stable identity; entitlements live in Cloudflare KV.
+
+## 2. Stripe (payments)
+
+1. Create an account at https://stripe.com (or use test mode first).
+2. **Products → Add product**: name "Deck Pro — System Design Flashcards",
+   recurring price, e.g. $7.00 / month. Copy the price id (`price_...`).
+3. **Developers → Webhooks → Add endpoint**:
+   - URL: `https://decked.pages.dev/api/billing/webhook`
+   - Events: `checkout.session.completed`,
+     `customer.subscription.created`, `customer.subscription.updated`,
+     `customer.subscription.deleted`
+   - Copy the signing secret (`whsec_...`).
+
+## 3. Cloudflare Pages environment variables
+
+| Variable | Value | Secret? |
+|---|---|---|
+| `SUPABASE_URL` | project URL | no |
+| `SUPABASE_ANON_KEY` | anon key | no |
+| `SUPABASE_JWT_SECRET` | JWT secret | **yes** |
+| `STRIPE_SECRET_KEY` | `sk_...` (test `sk_test_...` first) | **yes** |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...` | **yes** |
+| `STRIPE_PRICE_ID` | `price_...` | no |
+| `FREE_DAILY_CARD_LIMIT` | optional, default `10` | no |
+| `FREE_DAILY_WIKI_LIMIT` | optional, default `10` | no |
+
+Saving environment variables triggers a redeploy.
+
+## 4. Verify
+
+- `GET /api/config` returns `supabaseUrl`, `supabaseAnonKey`, and
+  `stripePriceId`.
+- `GET /api/quota` (with `X-Device-Id` header) returns today's usage.
+- Signing in with Google updates the account bar; "Upgrade" opens Stripe
+  Checkout; after paying, the webhook flips the plan to Pro and `GET
+  /api/quota` reports `plan: "pro"` with unlimited generation.
+- Quota counters live in KV under `quota:cards:<identity>:<date>` and
+  `quota:wiki:<identity>:<date>` (expire after ~3 days); billing records
+  under `billing:<identity>`. Cache hits never consume quota — only fresh
+  AI generation does.
+
+## Notes
+
+- Anonymous users get the free tier too, keyed by `X-Device-Id` (fallback:
+  client IP). This is advisory, not tamper-proof; signed-in free users are
+  keyed by their Supabase user id.
+- Test the whole flow in Stripe test mode before going live, then swap in the
+  live keys and re-verify with a test purchase.

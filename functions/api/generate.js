@@ -1,5 +1,7 @@
 /* Cloudflare Pages Function — generate flash cards using OpenCode Go */
 
+import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+
 const TOPIC_PREREQUISITES = {
   'api-design': [],
   dns: [],
@@ -231,6 +233,26 @@ export async function onRequest(context) {
       throw new Error('Card generation is not configured');
     }
 
+    const entitlement = await resolveEntitlement(env, request, 'cards');
+    if (!entitlement.pro && entitlement.used >= entitlement.limit) {
+      logEntry(context, {
+        event: 'request', outcome: 'quota_exceeded', topic, difficulty,
+        identity: entitlement.identity, used: entitlement.used, limit: entitlement.limit,
+        ms: Date.now() - startedAt
+      });
+      return new Response(JSON.stringify({
+        error: 'Daily card limit reached — upgrade to Pro for unlimited cards',
+        code: 'quota_exceeded',
+        kind: 'cards',
+        used: entitlement.used,
+        limit: entitlement.limit,
+        remaining: 0
+      }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+
     const models = [
       'deepseek-v4-flash',
       'deepseek-v4-flash',
@@ -314,6 +336,10 @@ export async function onRequest(context) {
     }
 
     pool = { cards: deduplicatePool([...pool.cards, card]) };
+
+    if (!entitlement.pro) {
+      await consumeQuota(env, entitlement.identity, 'cards');
+    }
 
     if (env.CARD_CACHE) {
       await env.CARD_CACHE.put(cacheKey, JSON.stringify(pool));

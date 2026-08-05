@@ -27,11 +27,14 @@
     <div class="welcome-header">
       <p id="study-reminder" class="hidden" style="background:#fff3e0;padding:8px 16px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;">⏰ You haven't studied yet today. A quick session?</p>
       <p id="server-status" style="font-size:0.75rem;margin-bottom:8px;">Checking server...</p>
+      <div id="account-bar" class="account-bar hidden"></div>
+      <div id="upgrade-banner" class="upgrade-banner hidden"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <h1 style="margin:0">System Design Flashcards<span class="status-badge" title="Stage: beta">Beta</span></h1>
         <button id="theme-toggle" class="btn btn-sm btn-outline" onclick="APP.toggleTheme()" style="font-size:0.8rem;padding:4px 10px;">🌙</button>
       </div>
       <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
+      <div id="quota-bar" class="quota-bar hidden"></div>
     </div>
     <section class="intro" aria-labelledby="intro-heading">
       <h2 id="intro-heading">Train the decisions, not just the facts</h2>
@@ -277,6 +280,7 @@
 <script src="js/wiki.js"></script>
 <script src="js/srs.js"></script>
 <script src="js/render.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

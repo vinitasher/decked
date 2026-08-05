@@ -17,10 +17,15 @@ scripts=(
   functions/api/feedback.js
   functions/api/feedback/diagnostic.js
   functions/api/feedback/config.js
+  functions/api/quota.js
+  functions/api/config.js
+  functions/api/billing/checkout.js
+  functions/api/billing/webhook.js
   functions/shared/production-option-prerequisites.js
   functions/shared/server-logger.js
   functions/shared/feedback-security.js
   functions/shared/feedback-diagnostics.js
+  functions/shared/entitlement.js
   server/generate-card.js
   server/server.js
   scripts/migrate-option-prerequisites.mjs

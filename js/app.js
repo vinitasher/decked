@@ -151,6 +151,104 @@ function resetTurnstile(remove) {
   }
 }
 
+/* ——— Accounts, free-tier quotas, and Pro billing ——— */
+
+let appConfig = { supabaseUrl: '', supabaseAnonKey: '', stripePriceId: '', freeDailyCardLimit: 10, freeDailyWikiLimit: 10 };
+let supabaseClient = null;
+let currentSession = null;
+let currentPlan = 'free';
+
+function escHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+}
+
+async function loadAppConfig() {
+  try {
+    const response = await fetch(`${SERVER_BASE}/api/config`);
+    const body = await response.json().catch(() => ({}));
+    appConfig = { ...appConfig, ...body };
+  } catch (_) { /* config unavailable — anonymous local mode continues */ }
+}
+
+function apiHeaders() {
+  const headers = {};
+  try {
+    headers['X-Device-Id'] = getOrCreateDeviceId();
+  } catch (_) { /* storage unavailable — omit the device id */ }
+  if (currentSession?.access_token) headers.Authorization = `Bearer ${currentSession.access_token}`;
+  return headers;
+}
+
+async function initAccount() {
+  await loadAppConfig();
+  if (!appConfig.supabaseUrl || !appConfig.supabaseAnonKey) {
+    renderQuotaBar();
+    return;
+  }
+  try {
+    supabaseClient = window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey);
+  } catch (_) {
+    renderQuotaBar();
+    return;
+  }
+  const { data } = await supabaseClient.auth.getSession();
+  currentSession = data.session;
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    currentSession = session;
+    renderAccountBar();
+    renderQuotaBar();
+  });
+  renderAccountBar();
+  renderQuotaBar();
+  handleUpgradeReturn();
+}
+
+function renderAccountBar() {
+  const bar = document.getElementById('account-bar');
+  if (!bar) return;
+  const signedIn = Boolean(currentSession?.user);
+  const email = currentSession?.user?.email || '';
+  bar.classList.remove('hidden');
+  bar.innerHTML = signedIn
+    ? `<span class="account-chip">👤 <span class="account-email">${escHtml(email)}</span>${currentPlan === 'pro' ? ' <span class="plan-badge plan-pro">PRO</span>' : ' <span class="plan-badge">Free</span>'}</span> <button class="btn btn-sm btn-outline" onclick="APP.signOut()">Sign out</button>`
+    : `<span class="account-chip">Free tier: ${appConfig.freeDailyCardLimit} cards &amp; ${appConfig.freeDailyWikiLimit} wiki entries per day</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGoogle()">🔑 Sign in</button>`;
+}
+
+async function renderQuotaBar() {
+  const bar = document.getElementById('quota-bar');
+  if (!bar) return;
+  try {
+    const response = await fetch(`${SERVER_BASE}/api/quota`, { headers: apiHeaders() });
+    if (!response.ok) return;
+    const data = await response.json();
+    currentPlan = data.plan || 'free';
+    bar.classList.remove('hidden');
+    if (data.plan === 'pro') {
+      bar.innerHTML = '<span class="quota-text">♾️ Unlimited cards &amp; wiki — Pro</span>';
+    } else {
+      bar.innerHTML = `<span class="quota-text">Today: <strong>${data.cards.used}/${data.cards.limit}</strong> cards · <strong>${data.wiki.used}/${data.wiki.limit}</strong> wiki</span> <button class="btn btn-sm btn-outline" onclick="APP.upgradeToPro()">Upgrade</button>`;
+    }
+  } catch (_) { /* offline — keep the bar hidden */ }
+}
+
+function handleUpgradeReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const banner = document.getElementById('upgrade-banner');
+  if (!banner) return;
+  if (params.get('upgrade') === 'success') {
+    banner.classList.remove('hidden');
+    banner.innerHTML = '✅ Upgrade complete — you are on Pro. Thanks for supporting the app!';
+    window.history.replaceState({}, '', window.location.pathname);
+    renderQuotaBar();
+  } else if (params.get('upgrade') === 'cancelled') {
+    banner.classList.remove('hidden');
+    banner.innerHTML = 'Upgrade cancelled — the free tier is always available.';
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+}
+
 const APP = {
   profile: null,
   currentCard: null,
@@ -176,6 +274,7 @@ const APP = {
     this._initTheme();
     this._initSwipe();
     this._requestNotificationPermission();
+    initAccount();
     // auto-resume prompt: show button if session was interrupted
     if (localStorage.getItem('sdf_resume')) {
       const btn = document.getElementById('resume-btn');
@@ -342,7 +441,12 @@ const APP = {
     try {
       const params = new URLSearchParams({ topic, difficulty: String(difficulty) });
       for (const fingerprint of excludedFingerprints) params.append('exclude', fingerprint);
-      const res = await fetch(`${SERVER_BASE}/api/generate?${params}`);
+      const res = await fetch(`${SERVER_BASE}/api/generate?${params}`, { headers: apiHeaders() });
+      if (res.status === 429) {
+        const quotaBody = await res.json().catch(() => ({}));
+        if (quotaBody.code === 'quota_exceeded') this.showQuotaNotice('cards');
+        throw new Error(`server returned ${res.status}`);
+      }
       if (!res.ok) throw new Error(`server returned ${res.status}`);
       const data = await res.json();
       const card = normalizeCardPrerequisites(data?.card);
@@ -1537,7 +1641,12 @@ const APP = {
      the sidebar and links pick it up, and return it. */
   async _ensureWiki(topic) {
     if ((WIKI || {})[topic]) return WIKI[topic];
-    const response = await fetch(`${SERVER_BASE}/api/wiki?topic=${encodeURIComponent(topic)}`);
+    const response = await fetch(`${SERVER_BASE}/api/wiki?topic=${encodeURIComponent(topic)}`, { headers: apiHeaders() });
+    if (response.status === 429) {
+      const quotaBody = await response.json().catch(() => ({}));
+      if (quotaBody.code === 'quota_exceeded') this.showQuotaNotice('wiki');
+      throw new Error(`wiki fetch failed with ${response.status}`);
+    }
     if (!response.ok) throw new Error(`wiki fetch failed with ${response.status}`);
     const entry = await response.json();
     if (!entry || !entry.topic || entry.topic !== topic) throw new Error('wiki server returned an invalid entry');
@@ -1863,6 +1972,51 @@ const APP = {
         submitEl.textContent = 'Submit';
       }
     }
+  },
+
+  /* ——— Accounts & Pro ——— */
+
+  signInGoogle() {
+    if (!supabaseClient) return;
+    supabaseClient.auth.signInWithOAuth({ provider: 'google' });
+  },
+
+  signOut() {
+    if (supabaseClient) supabaseClient.auth.signOut();
+  },
+
+  async upgradeToPro() {
+    const banner = document.getElementById('upgrade-banner');
+    if (!currentSession?.access_token) {
+      if (banner) {
+        banner.classList.remove('hidden');
+        banner.innerHTML = '🔑 Sign in first, then upgrade.';
+      }
+      return;
+    }
+    try {
+      const response = await fetch(`${SERVER_BASE}/api/billing/checkout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentSession.access_token}` }
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'checkout failed');
+      window.location.href = body.url;
+    } catch (_) {
+      if (banner) {
+        banner.classList.remove('hidden');
+        banner.innerHTML = 'Could not start checkout. Please try again.';
+      }
+    }
+  },
+
+  showQuotaNotice(kind) {
+    const banner = document.getElementById('upgrade-banner');
+    if (!banner) return;
+    banner.classList.remove('hidden');
+    banner.innerHTML = kind === 'cards'
+      ? '📊 Daily card limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited cards.'
+      : '📖 Daily wiki limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited entries.';
   }
 };
 

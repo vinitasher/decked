@@ -1,0 +1,211 @@
+import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import test from 'node:test';
+
+import {
+  onRequest as webhookOnRequest,
+  verifyStripeSignature
+} from '../functions/api/billing/webhook.js';
+import { onRequest as checkoutOnRequest } from '../functions/api/billing/checkout.js';
+import { onRequest as quotaOnRequest } from '../functions/api/quota.js';
+
+const enc = new TextEncoder();
+
+function kvStore() {
+  const store = new Map();
+  return {
+    get: async (key, type) => store.get(key)?.value ?? null,
+    put: async (key, value, options) => { store.set(key, { value, options }); },
+    delete: async key => { store.delete(key); },
+    store
+  };
+}
+
+function stripeSignature(secret, body, timestamp = Math.floor(Date.now() / 1000)) {
+  const digest = createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+  return `t=${timestamp},v1=${digest}`;
+}
+
+async function signJwt(claims) {
+  const base64url = bytes => Buffer.from(bytes).toString('base64url');
+  const header = base64url(enc.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+  const payload = base64url(enc.encode(JSON.stringify({ sub: 'user-42', email: 'pro@example.com', exp: Math.floor(Date.now() / 1000) + 3600, ...claims })));
+  const key = await crypto.subtle.importKey('raw', enc.encode('jwt-secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
+  return `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
+}
+
+test('verifyStripeSignature accepts a valid signature and rejects bad ones', async () => {
+  const body = JSON.stringify({ type: 'checkout.session.completed' });
+  const signature = stripeSignature('whsec_test', body);
+  assert.equal(await verifyStripeSignature('whsec_test', signature, body), true);
+  assert.equal(await verifyStripeSignature('whsec_other', signature, body), false);
+  assert.equal(await verifyStripeSignature('whsec_test', 'garbage', body), false);
+  assert.equal(await verifyStripeSignature('', signature, body), false);
+  const oldTimestamp = Math.floor(Date.now() / 1000) - 400;
+  const stale = stripeSignature('whsec_test', body, oldTimestamp);
+  assert.equal(await verifyStripeSignature('whsec_test', stale, body), false, 'timestamps older than 5 minutes are rejected');
+});
+
+test('checkout.session.completed grants Pro to the client_reference_id user', async () => {
+  const store = kvStore();
+  const event = JSON.stringify({
+    type: 'checkout.session.completed',
+    data: { object: { id: 'cs_123', client_reference_id: 'user-42', customer: 'cus_1', subscription: 'sub_1' } }
+  });
+  const response = await webhookOnRequest({
+    request: new Request('https://example.com/api/billing/webhook', {
+      method: 'POST',
+      headers: { 'Stripe-Signature': stripeSignature('whsec_test', event) },
+      body: event
+    }),
+    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
+  });
+  assert.equal(response.status, 200);
+  const record = JSON.parse(store.store.get('billing:user:user-42').value);
+  assert.equal(record.plan, 'pro');
+  assert.equal(record.status, 'active');
+  assert.ok(store.store.has('stripe:customer:cus_1'));
+  assert.ok(store.store.has('stripe:sub:sub_1'));
+});
+
+test('customer.subscription.deleted revokes Pro', async () => {
+  const store = kvStore();
+  store.store.set('stripe:sub:sub_9', { value: 'user-7' });
+  const event = JSON.stringify({
+    type: 'customer.subscription.deleted',
+    data: { object: { id: 'sub_9', customer: 'cus_9', status: 'canceled' } }
+  });
+  const response = await webhookOnRequest({
+    request: new Request('https://example.com/api/billing/webhook', {
+      method: 'POST',
+      headers: { 'Stripe-Signature': stripeSignature('whsec_test', event) },
+      body: event
+    }),
+    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
+  });
+  assert.equal(response.status, 200);
+  assert.equal(store.store.has('billing:user:user-7'), false, 'billing record removed on cancellation');
+});
+
+test('customer.subscription.updated with a non-active status revokes Pro', async () => {
+  const store = kvStore();
+  store.store.set('stripe:customer:cus_3', { value: 'user-3' });
+  store.store.set('billing:user:user-3', { value: JSON.stringify({ plan: 'pro', status: 'active' }) });
+  const event = JSON.stringify({
+    type: 'customer.subscription.updated',
+    data: { object: { id: 'sub_3', customer: 'cus_3', status: 'past_due' } }
+  });
+  await webhookOnRequest({
+    request: new Request('https://example.com/api/billing/webhook', {
+      method: 'POST',
+      headers: { 'Stripe-Signature': stripeSignature('whsec_test', event) },
+      body: event
+    }),
+    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
+  });
+  assert.equal(store.store.has('billing:user:user-3'), false);
+});
+
+test('webhook rejects requests with an invalid signature', async () => {
+  const store = kvStore();
+  const event = JSON.stringify({ type: 'checkout.session.completed', data: { object: {} } });
+  const response = await webhookOnRequest({
+    request: new Request('https://example.com/api/billing/webhook', {
+      method: 'POST',
+      headers: { 'Stripe-Signature': 't=1,v1=deadbeef' },
+      body: event
+    }),
+    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
+  });
+  assert.equal(response.status, 400);
+  assert.equal([...store.store.keys()].length, 0, 'nothing written on invalid signature');
+});
+
+test('checkout requires a signed-in user', async () => {
+  const response = await checkoutOnRequest({
+    request: new Request('https://example.com/api/billing/checkout', { method: 'POST' }),
+    env: { SUPABASE_JWT_SECRET: 'jwt-secret', STRIPE_PRICE_ID: 'price_1' }
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, 'Sign in to upgrade to Pro.');
+});
+
+test('checkout creates a Stripe session with the user as client_reference_id', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestSeen = null;
+  globalThis.fetch = async (url, options) => {
+    requestSeen = { url, options, body: new URLSearchParams(options.body) };
+    return Response.json({ id: 'cs_99', url: 'https://checkout.stripe.com/c/pay/cs_99' }, { status: 200 });
+  };
+  try {
+    const token = await signJwt({});
+    const response = await checkoutOnRequest({
+      request: new Request('https://decked.pages.dev/api/billing/checkout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      }),
+      env: { SUPABASE_JWT_SECRET: 'jwt-secret', STRIPE_SECRET_KEY: 'sk_test', STRIPE_PRICE_ID: 'price_1' }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.url, 'https://checkout.stripe.com/c/pay/cs_99');
+    assert.equal(requestSeen.url, 'https://api.stripe.com/v1/checkout/sessions');
+    assert.equal(requestSeen.body.get('client_reference_id'), 'user-42');
+    assert.equal(requestSeen.body.get('line_items[0][price]'), 'price_1');
+    assert.equal(requestSeen.body.get('mode'), 'subscription');
+    assert.equal(requestSeen.body.get('customer_email'), 'pro@example.com');
+    assert.match(requestSeen.body.get('success_url'), /decked\.pages\.dev\/\?upgrade=success/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('checkout reports 503 when the price is not configured', async () => {
+  const token = await signJwt({});
+  const response = await checkoutOnRequest({
+    request: new Request('https://example.com/api/billing/checkout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+    env: { SUPABASE_JWT_SECRET: 'jwt-secret' }
+  });
+  assert.equal(response.status, 503);
+});
+
+test('quota endpoint reports usage, limits, and plan', async () => {
+  const store = kvStore();
+  store.store.set('billing:user:user-42', { value: JSON.stringify({ plan: 'pro', status: 'active' }) });
+  const token = await signJwt({});
+  const response = await quotaOnRequest({
+    request: new Request('https://example.com/api/quota', {
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+    env: { CARD_CACHE: store, SUPABASE_JWT_SECRET: 'jwt-secret' }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.signedIn, true);
+  assert.equal(body.plan, 'pro');
+  assert.equal(body.cards.limit, 10);
+  assert.equal(body.cards.remaining, 10);
+  assert.equal(body.wiki.limit, 10);
+});
+
+test('quota endpoint tracks anonymous device usage and rejects non-GET', async () => {
+  const store = kvStore();
+  const response = await quotaOnRequest({
+    request: new Request('https://example.com/api/quota', { headers: { 'X-Device-Id': 'dev-1' } }),
+    env: { CARD_CACHE: store }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.signedIn, false);
+  assert.equal(body.plan, 'free');
+
+  const post = await quotaOnRequest({
+    request: new Request('https://example.com/api/quota', { method: 'POST' }),
+    env: { CARD_CACHE: store }
+  });
+  assert.equal(post.status, 405);
+});

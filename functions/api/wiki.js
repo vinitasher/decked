@@ -2,6 +2,8 @@
    topic on demand, caching it in KV. Mirrors the schema and provider settings
    of scripts/generate-wiki.mjs so bulk and lazy entries are interchangeable. */
 
+import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+
 const TOPIC_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REQUIRED = ['topic', 'title', 'summary', 'why_it_matters', 'key_points', 'common_pitfalls', 'related_topics'];
 
@@ -78,6 +80,19 @@ export async function onRequest(context) {
     return jsonResponse({ error: 'Card generation is not configured' }, 500);
   }
 
+  const entitlement = await resolveEntitlement(env, request, 'wiki');
+  if (!entitlement.pro && entitlement.used >= entitlement.limit) {
+    console.error('Wiki generation quota exceeded', topic, entitlement.used, entitlement.limit);
+    return jsonResponse({
+      error: 'Daily wiki limit reached — upgrade to Pro for unlimited wiki entries',
+      code: 'quota_exceeded',
+      kind: 'wiki',
+      used: entitlement.used,
+      limit: entitlement.limit,
+      remaining: 0
+    }, 429);
+  }
+
   let entry = null;
   let lastError = null;
   for (let attempt = 0; attempt < 2 && !entry; attempt++) {
@@ -121,6 +136,10 @@ export async function onRequest(context) {
   if (!entry) {
     console.error('Wiki generation failed', topic, lastError?.message);
     return jsonResponse({ error: 'Wiki generation is temporarily unavailable' }, 503);
+  }
+
+  if (!entitlement.pro) {
+    await consumeQuota(env, entitlement.identity, 'wiki');
   }
 
   if (env.WIKI_CACHE) {
