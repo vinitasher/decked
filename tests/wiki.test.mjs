@@ -87,6 +87,8 @@ test('know-first links render wiki anchors for known topics and plain text other
   assert.match(known, /stopPropagation/);
   assert.ok(!known.includes('<script'));
   const unknown = app._wikiLink('brand-new-concept');
-  assert.ok(!unknown.includes('wiki-link"'));
+  assert.match(unknown, /class="wiki-link /);
+  assert.match(unknown, /wiki-link-pending/);
+  assert.match(unknown, /APP\.openWikiModal\('brand-new-concept'\)/);
   assert.match(unknown, /Brand New Concept/);
 });

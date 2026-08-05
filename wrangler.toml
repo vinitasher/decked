@@ -13,3 +13,8 @@ preview_id = "d4cc1b79a6cd406dae2010f5636bf4c0"
 binding = "GEN_LOG"
 id = "a505b2ddd586473abadb6e226481fd47"
 preview_id = "a505b2ddd586473abadb6e226481fd47"
+# Lazily generated wiki entries (created on demand by /api/wiki).
+[[kv_namespaces]]
+binding = "WIKI_CACHE"
+id = "289412793f78409ebcf31f88ee7460fc"
+preview_id = "289412793f78409ebcf31f88ee7460fc"

@@ -13,6 +13,7 @@ scripts=(
   sw.js
   functions/api/generate.js
   functions/api/cache-stats.js
+  functions/api/wiki.js
   functions/shared/production-option-prerequisites.js
   server/generate-card.js
   server/server.js

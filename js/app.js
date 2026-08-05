@@ -1427,38 +1427,66 @@ const APP = {
   },
 
   showWiki() {
-    const entries = Object.values(WIKI || {}).sort((a, b) => a.title.localeCompare(b.title));
-    const sidebar = document.getElementById('wiki-sidebar');
-    if (sidebar) {
-      sidebar.innerHTML = entries.map(entry =>
-        `<button class="wiki-topic" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openWiki('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
-      ).join('');
-    }
-    this.openWiki(entries[0]?.topic || '');
+    this.renderWikiSidebar();
+    this.openWiki(Object.keys(WIKI || {})[0] || '');
     this.showScreen('wiki');
   },
 
+  renderWikiSidebar() {
+    const sidebar = document.getElementById('wiki-sidebar');
+    if (!sidebar) return;
+    const active = this._activeWikiTopic || '';
+    const entries = Object.values(WIKI || {}).sort((a, b) => a.title.localeCompare(b.title));
+    sidebar.innerHTML = entries.map(entry =>
+      `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openWiki('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
+    ).join('');
+  },
+
+  /* Lazy wiki: fetch a missing entry from /api/wiki, merge it into WIKI so
+     the sidebar and links pick it up, and return it. */
+  async _ensureWiki(topic) {
+    if ((WIKI || {})[topic]) return WIKI[topic];
+    const response = await fetch(`${SERVER_BASE}/api/wiki?topic=${encodeURIComponent(topic)}`);
+    if (!response.ok) throw new Error(`wiki fetch failed with ${response.status}`);
+    const entry = await response.json();
+    if (!entry || !entry.topic || entry.topic !== topic) throw new Error('wiki server returned an invalid entry');
+    WIKI[topic] = entry;
+    return entry;
+  },
+
   openWiki(topic) {
-    const entry = (WIKI || {})[topic];
     const el = document.getElementById('wiki-content');
     if (!el) return;
+    this._activeWikiTopic = topic;
     document.querySelectorAll('.wiki-topic').forEach(button =>
       button.classList.toggle('active', button.dataset.topic === topic)
     );
-    el.innerHTML = entry
-      ? this._wikiEntryHtml(entry, 'openWiki')
-      : '<p>No wiki entry yet for this concept.</p>';
+    el.innerHTML = '<p>Loading wiki entry…</p>';
+    this._ensureWiki(topic)
+      .then(entry => {
+        el.innerHTML = this._wikiEntryHtml(entry, 'openWiki');
+        this.renderWikiSidebar();
+      })
+      .catch(error => {
+        console.error('Wiki render failed for', topic, error);
+        el.innerHTML = `<p>No wiki entry yet for ${this._escapeHtml(formatPrerequisiteLabel(topic))}.</p>`;
+      });
   },
 
-  openWikiModal(topic) {
-    const entry = (WIKI || {})[topic];
+  async openWikiModal(topic) {
     const modal = document.getElementById('wiki-modal');
     const body = document.getElementById('wiki-modal-body');
     if (!modal || !body) return;
-    body.innerHTML = entry
-      ? this._wikiEntryHtml(entry, 'openWikiModal')
-      : '<p>No wiki entry yet for this concept.</p>';
+    body.innerHTML = '<p>Loading wiki entry…</p>';
     modal.classList.remove('hidden');
+    try {
+      const entry = await this._ensureWiki(topic);
+      body.innerHTML = this._wikiEntryHtml(entry, 'openWikiModal');
+      this.renderWikiSidebar();
+    } catch (error) {
+      console.error('Wiki render failed for', topic, error);
+      body.innerHTML = `<p>Wiki entry not available yet for ${this._escapeHtml(formatPrerequisiteLabel(topic))}.</p>`;
+    }
   },
 
   closeWikiModal() {
@@ -1466,15 +1494,14 @@ const APP = {
     if (modal) modal.classList.add('hidden');
   },
 
-  /* Inline know-first link: opens the wiki modal; unknown concepts render as
-     plain text so sessions never depend on wiki coverage. */
+  /* Inline know-first link: opens the wiki modal. Missing concepts are still
+     clickable — the entry is generated lazily (or shown as unavailable if the
+     server cannot produce it). */
   _wikiLink(topic) {
     const entry = (WIKI || {})[topic];
-    if (!entry) {
-      return `<span class="wiki-link-missing">${this._escapeHtml(formatPrerequisiteLabel(topic))}</span>`;
-    }
     const open = `event.stopPropagation();APP.openWikiModal('${this._escapeHtml(topic)}')`;
-    return `<span class="wiki-link" role="link" tabindex="0" data-topic="${this._escapeHtml(topic)}" onclick="${open}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">${this._escapeHtml(entry.title)}</span>`;
+    const label = this._escapeHtml(entry ? entry.title : formatPrerequisiteLabel(topic));
+    return `<span class="wiki-link${entry ? '' : ' wiki-link-pending'}" role="link" tabindex="0" data-topic="${this._escapeHtml(topic)}" onclick="${open}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">${label}</span>`;
   },
 
   _wikiEntryHtml(entry, openHandler) {

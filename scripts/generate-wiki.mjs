@@ -111,7 +111,7 @@ function validate(entry, topic) {
 }
 
 function buildPrompt(topic, titleHint) {
-  return `Write a concise system-design wiki entry for the concept "${topic}"${titleHint ? ` (display title "${titleHint}")` : ''}. It will be viewed inside a flashcard app by engineers learning system design, alongside cards that list this concept as a prerequisite.
+  return `Write a concise system-design wiki entry for the concept "${topic}"${titleHint ? ` (display title "${titleHint}")` : ''}. It is a BACKEND / DISTRIBUTED-SYSTEMS engineering concept (caching, databases, queues, networking, consensus, API design, observability) — it is NOT a user-interface, keyboard, or mobile-app feature. It will be viewed inside a flashcard app by engineers learning system design, alongside cards that list this concept as a prerequisite.
 
 Return a JSON object with exactly these keys:
 - topic: "${topic}"
