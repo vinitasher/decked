@@ -84,6 +84,30 @@ decision-based practice with adaptive difficulty.
 }
 ```
 
+## Concept wiki
+
+Every option lists prerequisite topics, and the card's Know First list
+aggregates them. Each concept name is a clickable wiki link that opens a wiki
+side panel/modal with a concise system-design explainer (title, summary, key
+points, common pitfalls, and related topics) for that concept.
+
+- A committed snapshot of **80 wiki entries** ships in `js/wiki.js` and loads
+  with the app like the card data, so the most common concepts work instantly
+  and offline.
+- Concepts missing from the snapshot are **lazily generated on demand** by
+  `functions/api/wiki.js` (`GET /api/wiki?topic=<kebab-case-concept>`) using
+  the same OpenCode Go provider and schema as the card generator. Results are
+  cached in the `WIKI_CACHE` Cloudflare KV binding with a **30-day TTL**
+  (2592000 s) and merged into the in-app snapshot, so each concept is
+  generated at most once per cache window.
+- The snapshot can be regenerated in bulk with
+  `OPENCODE_API_KEY=... node scripts/generate-wiki.mjs [--limit N]`, which
+  walks the topic universe derived from the card catalog, every card/option
+  prerequisite, and the production card cache.
+
+The wiki UI — the sidebar index and the link affordance on Know First topics
+in card question headers — lives in `js/app.js`.
+
 ## Suggested tech stack
 
 - **Backend:** Python (FastAPI) + PostgreSQL + SQLAlchemy
