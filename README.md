@@ -84,6 +84,14 @@ decision-based practice with adaptive difficulty.
 }
 ```
 
+**Concept Wiki:**
+- Every know-first topic opens a Concept Wiki screen with a clickable topic
+  side panel for each concept
+- Entries are bundled with the app as `js/wiki.js` in a fixed schema
+  (`topic`, `title`, `summary`, `why_it_matters`, `key_points`,
+  `common_pitfalls`, `related_topics`) and shown inline on cards via the Know
+  First links and a modal
+
 ## Concept wiki
 
 Every option lists prerequisite topics, and the card's Know First list
@@ -103,7 +111,12 @@ points, common pitfalls, and related topics) for that concept.
 - The snapshot can be regenerated in bulk with
   `OPENCODE_API_KEY=... node scripts/generate-wiki.mjs [--limit N]`, which
   walks the topic universe derived from the card catalog, every card/option
-  prerequisite, and the production card cache.
+  prerequisite, and the production card cache. Generation runs **3-at-a-time
+  with one retry per topic** and every entry is validated against the wiki
+  schema before it is written.
+- `bash check.sh` already syntax-checks `js/wiki.js`,
+  `functions/api/wiki.js`, and `scripts/generate-wiki.mjs`, and runs
+  `tests/wiki.test.mjs` and `tests/api-wiki.test.mjs`.
 
 The wiki UI — the sidebar index and the link affordance on Know First topics
 in card question headers — lives in `js/app.js`.
@@ -197,6 +210,13 @@ deployment and keeps the latest successful responses for offline use. Feedback
 controls remain navigable when browser progress storage is unavailable.
 The question-header back control returns to the dashboard without discarding
 the current session, which remains available through Resume Unfinished Session.
+
+Unknown wiki topics are **lazily generated on first view** by
+`functions/api/wiki.js` and cached in the `WIKI_CACHE` Cloudflare KV binding
+for ~30 days (2592000 s), mirroring the `generate-wiki.mjs` schema and
+provider settings (`deepseek-v4-flash`, thinking disabled). Cached entries are
+served without a generation call, so each concept is generated at most once
+per cache window.
 
 ```sh
 bash check.sh
