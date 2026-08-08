@@ -44,6 +44,8 @@ export async function onRequestPost(context) {
     'line_items[0][price]': priceId,
     'line_items[0][quantity]': '1',
     client_reference_id: claims.sub,
+    'metadata[user_id]': claims.sub,
+    'subscription_data[metadata][user_id]': claims.sub,
     success_url: `${baseUrl(request)}/?upgrade=success`,
     cancel_url: `${baseUrl(request)}/?upgrade=cancelled`
   });

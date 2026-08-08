@@ -71,10 +71,10 @@ test('checkout.session.completed grants Pro to the client_reference_id user', as
 
 test('customer.subscription.deleted revokes Pro', async () => {
   const store = kvStore();
-  store.store.set('stripe:sub:sub_9', { value: 'user-7' });
+  store.store.set('billing:user:user-7', { value: JSON.stringify({ plan: 'pro', status: 'active' }) });
   const event = JSON.stringify({
     type: 'customer.subscription.deleted',
-    data: { object: { id: 'sub_9', customer: 'cus_9', status: 'canceled' } }
+    data: { object: { id: 'sub_9', customer: 'cus_9', status: 'canceled', metadata: { user_id: 'user-7' } } }
   });
   const response = await webhookOnRequest({
     request: new Request('https://example.com/api/billing/webhook', {
@@ -90,11 +90,10 @@ test('customer.subscription.deleted revokes Pro', async () => {
 
 test('customer.subscription.updated with a non-active status revokes Pro', async () => {
   const store = kvStore();
-  store.store.set('stripe:customer:cus_3', { value: 'user-3' });
   store.store.set('billing:user:user-3', { value: JSON.stringify({ plan: 'pro', status: 'active' }) });
   const event = JSON.stringify({
     type: 'customer.subscription.updated',
-    data: { object: { id: 'sub_3', customer: 'cus_3', status: 'past_due' } }
+    data: { object: { id: 'sub_3', customer: 'cus_3', status: 'past_due', metadata: { user_id: 'user-3' } } }
   });
   await webhookOnRequest({
     request: new Request('https://example.com/api/billing/webhook', {
@@ -152,6 +151,8 @@ test('checkout creates a Stripe session with the user as client_reference_id', a
     assert.equal(body.url, 'https://checkout.stripe.com/c/pay/cs_99');
     assert.equal(requestSeen.url, 'https://api.stripe.com/v1/checkout/sessions');
     assert.equal(requestSeen.body.get('client_reference_id'), 'user-42');
+    assert.equal(requestSeen.body.get('metadata[user_id]'), 'user-42');
+    assert.equal(requestSeen.body.get('subscription_data[metadata][user_id]'), 'user-42');
     assert.equal(requestSeen.body.get('line_items[0][price]'), 'price_1');
     assert.equal(requestSeen.body.get('mode'), 'subscription');
     assert.equal(requestSeen.body.get('customer_email'), 'pro@example.com');
