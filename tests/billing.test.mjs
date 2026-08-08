@@ -13,10 +13,18 @@ const enc = new TextEncoder();
 
 function kvStore() {
   const store = new Map();
+  let now = Date.now();
   return {
-    get: async (key, type) => store.get(key)?.value ?? null,
-    put: async (key, value, options) => { store.set(key, { value, options }); },
+    get: async key => {
+      const entry = store.get(key);
+      if (!entry || (entry.expiresAt && entry.expiresAt <= now)) return null;
+      return entry.value;
+    },
+    put: async (key, value, options) => {
+      store.set(key, { value, options, expiresAt: options?.expirationTtl ? now + options.expirationTtl * 1000 : null });
+    },
     delete: async key => { store.delete(key); },
+    advanceDays: days => { now += days * 24 * 3600 * 1000; },
     store
   };
 }
@@ -33,6 +41,16 @@ async function signJwt(claims) {
   const key = await crypto.subtle.importKey('raw', enc.encode('jwt-secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const signature = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
   return `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
+}
+
+async function postWebhook(store, event) {
+  const body = JSON.stringify(event);
+  return webhookOnRequest({
+    request: new Request('https://example.com/api/billing/webhook', {
+      method: 'POST', headers: { 'Stripe-Signature': stripeSignature('whsec_test', body) }, body
+    }),
+    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
+  });
 }
 
 test('verifyStripeSignature accepts a valid signature and rejects bad ones', async () => {
@@ -67,6 +85,34 @@ test('checkout.session.completed grants Pro to the client_reference_id user', as
   assert.equal(record.status, 'active');
   assert.ok(store.store.has('stripe:customer:cus_1'));
   assert.ok(store.store.has('stripe:sub:sub_1'));
+  assert.equal(store.store.get('stripe:customer:cus_1').options, undefined);
+  assert.equal(store.store.get('stripe:sub:sub_1').options, undefined);
+});
+
+test('subscription.created writes a durable subscription mapping', async () => {
+  const store = kvStore();
+  await postWebhook(store, { type: 'checkout.session.completed', data: { object: { client_reference_id: 'user-8', customer: 'cus_8' } } });
+  await postWebhook(store, { type: 'customer.subscription.created', data: { object: { id: 'sub_8', customer: 'cus_8', status: 'active' } } });
+  assert.equal(store.store.get('stripe:sub:sub_8').value, 'user-8');
+  assert.equal(store.store.get('stripe:sub:sub_8').options, undefined);
+});
+
+test('subscription.deleted revokes Pro after eight days without metadata', async () => {
+  const store = kvStore();
+  await postWebhook(store, { type: 'checkout.session.completed', data: { object: { client_reference_id: 'user-9', customer: 'cus_9' } } });
+  store.advanceDays(8);
+  const response = await postWebhook(store, { type: 'customer.subscription.deleted', data: { object: { id: 'sub_9', customer: 'cus_9', status: 'canceled' } } });
+  assert.equal(response.status, 200);
+  assert.equal(store.store.has('billing:user:user-9'), false);
+});
+
+test('non-active subscription.updated revokes Pro after eight days without metadata', async () => {
+  const store = kvStore();
+  await postWebhook(store, { type: 'checkout.session.completed', data: { object: { client_reference_id: 'user-10', customer: 'cus_10' } } });
+  store.advanceDays(8);
+  const response = await postWebhook(store, { type: 'customer.subscription.updated', data: { object: { id: 'sub_10', customer: 'cus_10', status: 'past_due' } } });
+  assert.equal(response.status, 200);
+  assert.equal(store.store.has('billing:user:user-10'), false);
 });
 
 test('customer.subscription.deleted revokes Pro', async () => {

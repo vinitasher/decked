@@ -112,10 +112,10 @@ async function handleEvent(env, event, log) {
     if (userId) {
       await setPlan(env, userId, 'pro');
       if (env.CARD_CACHE && session.customer) {
-        await env.CARD_CACHE.put(`stripe:customer:${session.customer}`, userId, { expirationTtl: 7 * 24 * 3600 });
+        await env.CARD_CACHE.put(`stripe:customer:${session.customer}`, userId);
       }
       if (env.CARD_CACHE && session.subscription) {
-        await env.CARD_CACHE.put(`stripe:sub:${session.subscription}`, userId, { expirationTtl: 7 * 24 * 3600 });
+        await env.CARD_CACHE.put(`stripe:sub:${session.subscription}`, userId);
       }
       logServerEvent(log, 'Pro granted from checkout', { userId });
     }
@@ -147,7 +147,7 @@ async function handleEvent(env, event, log) {
     if (userId) {
       await setPlan(env, userId, 'pro');
       if (env.CARD_CACHE) {
-        await env.CARD_CACHE.put(`stripe:sub:${subscription.id}`, userId, { expirationTtl: 7 * 24 * 3600 });
+        await env.CARD_CACHE.put(`stripe:sub:${subscription.id}`, userId);
       }
       logServerEvent(log, 'Pro granted from subscription created', { userId });
     }

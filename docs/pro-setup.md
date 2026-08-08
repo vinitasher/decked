@@ -62,6 +62,10 @@ Saving environment variables triggers a redeploy.
   under `billing:<identity>`. Cache hits never consume quota — only fresh
   AI generation does.
 
+Stripe customer and subscription identity mappings (`stripe:customer:*` and
+`stripe:sub:*`) are durable KV records so delayed webhooks can still resolve a
+user. Expired historical mappings are not backfilled.
+
 ## Notes
 
 - Anonymous users get the free tier too, keyed by `X-Device-Id` (fallback:
