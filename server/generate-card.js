@@ -21,7 +21,7 @@ The card must be a single JSON object with these exact keys:
 - id: "${topicName}-gen-${now}"
 - topic: "${topicName}"
 - difficulty: ${cardDifficulty}
-- scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches.
+- scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches. The scenario must contain exactly ${cardDifficulty} distinct requirements (quantified SLAs, throughput targets, latency budgets, data volumes, consistency guarantees, or deadlines).
 - nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
 - options: exactly 4 objects {id, label, prerequisiteTopics} with ids A, B, C, D, where ${designatedCorrect} is correct. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topicName}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
 - prerequisiteTopics: the deduplicated union of all four options' prerequisiteTopics.
@@ -50,7 +50,7 @@ function callModel(prompt) {
   );
 }
 
-function extractAndValidate(stdout, designatedCorrect) {
+function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements = () => ({ count: 1, requirements: [] }), difficultyFromScenario = () => 1) {
   // try parsing JSON from stdout
   const cleaned = stdout.replace(/```json?/gi, '').replace(/```/g, '').trim();
   const start = cleaned.indexOf('{');
@@ -85,6 +85,7 @@ function extractAndValidate(stdout, designatedCorrect) {
 
   const errors = [];
   if (!/\d{2,}/.test(card.scenario)) errors.push('scenario lacks concrete numbers');
+  if (countScenarioRequirements(card.scenario).count < 1) errors.push('scenario has no concrete requirements');
   if (card.nodes.length < 3) errors.push('need at least 3 nodes');
   if (
     card.options.length !== OPTION_IDS.length ||
@@ -108,7 +109,9 @@ function extractAndValidate(stdout, designatedCorrect) {
   }
 
   card.topic = topic;
-  card.difficulty = parseInt(difficulty) || 2;
+  /* The difficulty is never taken from the request argument: it is derived
+     deterministically from the scenario's requirement count. */
+  card.difficulty = difficultyFromScenario(card.scenario);
   const normalizeTopics = topics => [...new Set(Array.isArray(topics) ? topics : [])]
     .filter(value =>
       typeof value === 'string' &&
@@ -126,13 +129,23 @@ function extractAndValidate(stdout, designatedCorrect) {
   return card;
 }
 
-function run() {
+async function run() {
   let lastErr;
+  let classifier;
+  try {
+    classifier = await import('../functions/shared/requirement-count.js');
+  } catch (err) {
+    classifier = {
+      countScenarioRequirements: () => ({ count: 1, requirements: [] }),
+      difficultyFromScenario: () => 1
+    };
+  }
+  const { countScenarioRequirements, difficultyFromScenario } = classifier;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const designatedCorrect = selectCorrectLetter();
       const stdout = callModel(buildPrompt(topic, difficulty, designatedCorrect));
-      const card = extractAndValidate(stdout, designatedCorrect);
+      const card = extractAndValidate(stdout, designatedCorrect, countScenarioRequirements, difficultyFromScenario);
       console.log(JSON.stringify(card));
       return 0;
     } catch (err) {
@@ -148,5 +161,5 @@ function run() {
 module.exports = { buildPrompt, extractAndValidate, selectCorrectLetter };
 
 if (require.main === module) {
-  process.exit(run());
+  run().then(code => process.exit(code));
 }

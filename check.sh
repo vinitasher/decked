@@ -26,17 +26,20 @@ scripts=(
   functions/shared/feedback-security.js
   functions/shared/feedback-diagnostics.js
   functions/shared/entitlement.js
+  functions/shared/requirement-count.js
   server/generate-card.js
   server/server.js
   scripts/migrate-option-prerequisites.mjs
   scripts/dump-production-card-cache.mjs
   scripts/generate-wiki.mjs
+  scripts/audit-card-difficulties.mjs
 )
 
 for script in "${scripts[@]}"; do
   node --check "$script"
 done
 
+node scripts/audit-card-difficulties.mjs
 node --test tests/*.test.mjs
 bash -n build.sh
 bash -n deploy.sh

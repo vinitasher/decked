@@ -2,7 +2,7 @@
   "api-design:2": {
     "id": "api-design-gen-1785309798717",
     "topic": "api-design",
-    "difficulty": 2,
+    "difficulty": 4,
     "scenario": "You are designing a REST API for a personalized content feed that serves 20,000 QPS with a p99 latency under 50ms. Each response is approximately 10KB. New content must appear in the feed within 500ms of publication. You must choose a caching strategy that balances latency, consistency, and cost.",
     "nodes": [
       "Cloudflare CDN",
@@ -36,7 +36,7 @@
   "api-design:3": {
     "id": "api-design-gen-1785308031333",
     "topic": "api-design",
-    "difficulty": 3,
+    "difficulty": 4,
     "scenario": "Design an API for a real-time news feed that must handle 10,000 QPS with peaks at 20,000 QPS. Each response is 50KB. Latency must be under 100ms. The system must trade off strong consistency for low latency due to high read volume.",
     "nodes": [
       "HAProxy",
@@ -70,7 +70,7 @@
   "caching:1": {
     "id": "caching-gen-1785366879678",
     "topic": "caching",
-    "difficulty": 1,
+    "difficulty": 5,
     "prerequisiteTopics": [
       "api-design"
     ],
@@ -108,7 +108,7 @@
       {
         "id": "caching-gen-1785308045999",
         "topic": "caching",
-        "difficulty": 3,
+        "difficulty": 5,
         "scenario": "Your team is designing a caching layer for a social media feed system serving 10,000 requests per second (p99 < 200ms). Each feed is 50KB and generated from the latest posts from friends. There are 2,000 write requests per second for new posts. The feed must show recent content, and stale data is acceptable for up to 5 seconds. Your chief concern is minimizing caching infrastructure costs while meeting latency and freshness requirements.",
         "nodes": [
           "HAProxy Load Balancer",
@@ -150,7 +150,7 @@
   "consensus:3": {
     "id": "consensus-gen-1785308144285",
     "topic": "consensus",
-    "difficulty": 3,
+    "difficulty": 5,
     "scenario": "Design the consensus layer for a distributed payment system that must process 20,000 transactions per second with p99 latency under 50ms. Each transaction is 2KB and requires strict serializability. The system operates across three data centers within a region (max RTT 10ms). You must choose a consensus protocol that balances performance and strong consistency.",
     "nodes": [
       "Payment SDK (GRPC client)",
@@ -189,7 +189,7 @@
       {
         "id": "databases-gen-1785307992817",
         "topic": "databases",
-        "difficulty": 3,
+        "difficulty": 5,
         "scenario": "Design the database layer for a ride-sharing platform with 10 million daily active users and 10,000 ride requests per second. Each request requires reading and updating driver locations (500 bytes) and trip status (2KB) with P99 read latency under 100ms and strong consistency to prevent double-booking. The active dataset is 500GB. The team must choose a database solution that can handle this load reliably and cost-effectively.",
         "nodes": [
           "Load Balancer (HAProxy)",
@@ -231,7 +231,7 @@
   "databases:4": {
     "id": "databases-gen-1785311496718",
     "topic": "databases",
-    "difficulty": 4,
+    "difficulty": 5,
     "prerequisiteTopics": [
       "api-design"
     ],
@@ -267,7 +267,7 @@
   "observability:1": {
     "id": "observability-gen-1785307943173",
     "topic": "observability",
-    "difficulty": 1,
+    "difficulty": 5,
     "scenario": "A Kubernetes-based ridesharing platform handles 10,000 req/s; each request emits 500B of logs and 200B of traces. The SRE team needs to query across services with sub-2s latency for the past 24 hours while minimizing cost. The system includes Istio, NGINX, Kafka, and PostgreSQL.",
     "nodes": [
       "Kubernetes",
@@ -302,7 +302,7 @@
       {
         "id": "observability-gen-1785703525081",
         "topic": "observability",
-        "difficulty": 3,
+        "difficulty": 5,
         "prerequisiteTopics": [
           "api-design",
           "head-based-sampling",
@@ -380,7 +380,7 @@
       {
         "id": "queues-gen-1785309937957",
         "topic": "queues",
-        "difficulty": 2,
+        "difficulty": 5,
         "scenario": "Design a system to process 1,000 orders per second (each 1 KB) with at-least-once delivery and a maximum processing latency of 500 ms. Traffic spikes up to 2,000 QPS are expected. The system must avoid duplicate processing while keeping costs reasonable.",
         "nodes": [
           "NGINX Load Balancer",
@@ -424,7 +424,7 @@
       {
         "id": "queues-gen-1785307791427",
         "topic": "queues",
-        "difficulty": 3,
+        "difficulty": 5,
         "scenario": "Design a real-time order processing system for a food delivery app handling 10,000 orders/sec (5KB each). The system must deliver orders to restaurants in order per restaurant and ensure no duplicate orders. You have a 2-second SLA. Choose a queuing solution that balances throughput, ordering, and durability.",
         "nodes": [
           "AWS Application Load Balancer",

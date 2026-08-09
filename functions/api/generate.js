@@ -1,6 +1,7 @@
 /* Cloudflare Pages Function — generate flash cards using OpenCode Go */
 
 import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+import { countScenarioRequirements, difficultyFromScenario } from '../shared/requirement-count.js';
 
 const TOPIC_PREREQUISITES = {
   'api-design': [],
@@ -42,7 +43,7 @@ Return a JSON object with these exact keys:
 - topic: "${topic}"
 - difficulty: ${difficulty}
 - prerequisiteTopics: the aggregate list of topics needed to understand the whole question.
-- scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off.
+- scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off. The scenario must contain exactly ${difficulty} distinct requirements (quantified SLAs, throughput targets, latency budgets, data volumes, consistency guarantees, or deadlines).
 - nodes: array of 4-5 system components with real technology names.
 - options: array of exactly 4 objects {id, label, prerequisiteTopics}, with ids A, B, C, D. Each option needs 2-4 prerequisite concepts required to evaluate its trade-off. Use specific lowercase kebab-case concepts such as "cache-invalidation", "replication-lag", or "message-ordering"; never use a technology/product name merely because it appears in the option, and avoid broad categories such as "databases", "caching", or "api-design". Do not include "${topic}". Option ${designatedCorrect} is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
 - prerequisiteTopics must include the union of all four options' prerequisiteTopics.
@@ -77,7 +78,10 @@ export function normalizeCard(card, topic, difficulty) {
   return {
     ...card,
     topic,
-    difficulty,
+    /* The true difficulty is derived from the scenario's requirement count,
+       never taken from the request: a card cached under any key keeps its
+       honest rating no matter which difficulty bucket served it. */
+    difficulty: difficultyFromScenario(card?.scenario),
     prerequisiteTopics,
     options
   };
@@ -148,7 +152,7 @@ function logEntry(context, entry) {
   }
 }
 
-function validateGeneratedCard(generatedCard, designatedCorrect) {
+export function validateGeneratedCard(generatedCard, designatedCorrect) {
   const required = ['id', 'topic', 'difficulty', 'prerequisiteTopics', 'scenario', 'nodes', 'options', 'correct', 'explanation'];
   for (const field of required) {
     if (generatedCard[field] === undefined || generatedCard[field] === null) {
@@ -178,6 +182,9 @@ function validateGeneratedCard(generatedCard, designatedCorrect) {
   }
   if (generatedCard.correct !== designatedCorrect) {
     throw new Error(`Invalid field: correct must match designated option ${designatedCorrect}`);
+  }
+  if (countScenarioRequirements(generatedCard.scenario).count < 1) {
+    throw new Error('Scenario must contain at least one concrete requirement');
   }
 }
 

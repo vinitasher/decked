@@ -64,6 +64,8 @@ function createContext() {
       for (const option of card.options) option.prerequisiteTopics ??= [];
       return card;
     },
+    countScenarioRequirements: () => ({ count: 0, requirements: [] }),
+    difficultyFromScenario: () => 1,
     formatPrerequisiteLabel(value) { return value; },
     TOPIC_CATALOG: { queues: { label: 'Queues' } },
     SEED_CARDS: [], fetch() { throw new Error('unexpected fetch'); },

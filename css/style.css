@@ -50,6 +50,7 @@ footer a:hover { color: var(--primary); }
 .session-dashboard-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--card-border); border-radius: 6px; background: var(--card-bg); color: var(--primary); cursor: pointer; font-size: 1.1rem; font-weight: 700; }
 .session-dashboard-btn:hover, .session-dashboard-btn:focus-visible { border-color: var(--primary); outline: 2px solid var(--primary-bg); }
 .card-meta { display: flex; gap: 12px; }
+.card-requirements { color: var(--muted); font-size: 0.78rem; font-weight: 400; max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-prerequisites { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--primary); background: var(--primary-bg); border-radius: 0 6px 6px 0; color: var(--fg); font-size: 0.8rem; }
 .option-content { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
 .option-prerequisites { color: var(--muted); font-size: 0.72rem; font-weight: 400; }

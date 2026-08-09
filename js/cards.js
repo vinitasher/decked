@@ -102,9 +102,147 @@ function normalizeCardPrerequisites(card) {
   return card;
 }
 
+/* ——— Difficulty classification ———
+   Mirror of functions/shared/requirement-count.js (canonical server copy).
+   A card's difficulty equals the number of distinct requirements in its
+   scenario, clamped to the 1-5 scale. Keep both copies in lockstep. */
+
+const CLAUSE_SPLIT = /(?<=[.!?])\s+|\s*;\s*/;
+const HAS_DIGIT = /\d/;
+
+const DIRECTIVE_START = new RegExp(
+  '^(?:you|we|your team|the (?:team|system|service|developer|engineer|sre team))\\s+' +
+  '(?:are (?:designing|building|creating|choosing)|' +
+  '(?:must|should|need(?:s)? to)\\s+(?:choose|select|pick|decide|balance|justify|recommend|trade)|' +
+  'choose|select|pick|decide|balance|justify|recommend|trade)|' +
+  '^(?:design|build|choose|select|pick|decide|create|make|the trade[- ]?off)',
+  'i'
+);
+
+const THROUGHPUT = /\d[\d,]*(?:\.\d+)?\s*[KMGTP]?\s*(?:booking |concurrent |read[- ]heavy |write[- ]heavy |read |write )?(?:qps|tps|rps|req\/s|requests\/s|req\/sec|requests\/sec|orders?\/s|orders?\/sec|spans?\/s|msg\/s|rpm|rph|req\/min)\b|\d[\d,]*(?:\.\d+)?\s*[KMGTP]?\s*(?:new |concurrent |booking |read[- ]heavy |write[- ]heavy |read |write )?(?:requests?|transactions?|charges?|queries?|posts?|events?|reads?|writes?|messages?|bookings?|orders?) per (?:second|minute|hour|day)\b/gi;
+
+const VOLUME = /\d+(?:\.\d+)?\s*(?:[KMGTP]?i?B\b(?!\s*(?:per (?:month|day|week|year)|\/month))|bytes?|kilobytes?|megabytes?|gigabytes?|terabytes?)/gi;
+
+const TIME = /\d+(?:\.\d+)?\s*(?:ms|msecs?|milliseconds?|seconds?|secs?|minutes?|hours?|days?)\b|\d+[- ](?:second|minute|hour|day)\b|sub[- ]?(?:\d+[- ]?)?s(?:econds?)?\b/gi;
+
+const SCALE = /\d[\d,]*(?:\.\d+)?\s*(?:millions?|thousands?|billions?)\b|\b(?:millions?|thousands?|billions?)\b|\d[\d,]*(?:\.\d+)?\s*[KMGTP]?\s*(?:concurrent |total |simultaneous |registered |daily )?(?:users?|seats?|readers?|nodes?|devices?|posts?|articles?|messages?|subscribers?|customers?|drivers?|riders?|services?)\b/gi;
+
+const SHARE = /\d+(?:\.\d+)?%/gi;
+
+const CONSISTENCY = /\b(?:read[- ]after[- ]write(?:\s+consisten[ct]y)?|strong consistency|eventual consistency|consisten[ct]y|serializ\w+|lineariz\w+|atomicity|exactly[- ]once|at[- ]least[- ]once|in order|in the order|order received|ordering\b|no duplicate|duplicate processing|double[- ]bookings?|split[- ]brain|quorum|idempoten\w+|must agree)\b/gi;
+
+const SCALING = /\b(?:spikes?|peaks?|bursts?|grow(?:s|ing)?|surges?)\b(?!\s*\d+x)|\d+x\b/gi;
+
+const COST = /\b(?:cost\w*|budget\w*)\b/gi;
+
+const DISTRIBUTION = /\b(?:data centers?|datacenters?|regions?|availability zones?|rtt|geo[- ]?distributed|multi[- ]?region)\b/gi;
+
+const RELIABILITY = /\b(?:availab\w+|failover|durab\w+|redundan\w+|resilien\w+|no data loss|recover\w+|survive\w+|backup\w+|retry|retries|retried)\b/gi;
+
+const FRESHNESS = /\b(?:fresh\w*|stale\w*|publish\w*|appear\w*|deadline\w*|confirm\w*|retention|real[- ]?time|sla)\b|past\s+\d+|within\s+\d+/i;
+const LATENCY_CONTEXT = /\b(?:latenc\w*|response|rtt|p99|p95|budget|under|below|max)\b/i;
+const LATENCY_WINDOW = /\b(?:latenc\w*|response)\b/i;
+const SLA_AFTER_SHARE = /\b(?:availab\w*|durab\w*|uptime)\b/i;
+
+function collectMatches(regex, clause) {
+  return [...clause.matchAll(new RegExp(regex.source, 'gi'))];
+}
+
+function countScenarioRequirements(scenario) {
+  const requirements = [];
+  if (typeof scenario !== 'string' || !scenario.trim()) {
+    return { count: 0, requirements };
+  }
+  for (const rawClause of scenario.split(CLAUSE_SPLIT)) {
+    const clause = rawClause.trim();
+    if (!clause) continue;
+    if (DIRECTIVE_START.test(clause) && !HAS_DIGIT.test(clause)) continue;
+
+    const local = new Set();
+    let clauseCount = 0;
+    const add = (type, value) => {
+      const key = `${type}:${value.toLowerCase()}`;
+      if (local.has(key)) return;
+      local.add(key);
+      requirements.push({ type, value });
+      clauseCount++;
+    };
+
+    const throughputMatches = collectMatches(THROUGHPUT, clause);
+    for (const match of throughputMatches.slice(0, 3)) add('Throughput', match[0].trim());
+
+    const volumeMatches = collectMatches(VOLUME, clause);
+    for (const match of volumeMatches.slice(0, 3)) add('Data volume', match[0].trim());
+
+    const timeMatches = collectMatches(TIME, clause);
+    for (const match of timeMatches) {
+      const before = clause.slice(Math.max(0, match.index - 28), match.index);
+      const isLatency = LATENCY_CONTEXT.test(before);
+      const isFreshness = FRESHNESS.test(clause);
+      add(isLatency || !isFreshness ? 'Latency' : 'Deadline', match[0].trim());
+    }
+
+    const scaleMatches = collectMatches(SCALE, clause);
+    for (const match of scaleMatches.slice(0, 3)) add('Scale', match[0].trim());
+
+    for (const match of collectMatches(SHARE, clause)) {
+      if (SLA_AFTER_SHARE.test(clause.slice(match.index + match[0].length, match.index + match[0].length + 14))) continue;
+      add('Share', match[0].trim());
+    }
+
+    const consistencyMatches = collectMatches(CONSISTENCY, clause);
+    for (const match of consistencyMatches.slice(0, 3)) add('Consistency', match[0].trim());
+
+    const unitIndexes = [
+      ...throughputMatches,
+      ...scaleMatches,
+      ...volumeMatches,
+      ...timeMatches
+    ].map(match => match.index);
+    for (const match of collectMatches(SCALING, clause)) {
+      if (/\d+x\b/i.test(match[0])) {
+        add('Scaling', match[0].trim());
+        continue;
+      }
+      const gap = Math.max(0, match.index + match[0].length);
+      const absorbed = unitIndexes.some(index => {
+        const distance = index - gap;
+        return distance >= 0 && distance <= 12;
+      });
+      if (!absorbed) add('Scaling', match[0].trim());
+    }
+
+    for (const match of collectMatches(COST, clause)) {
+      const before = clause.slice(Math.max(0, match.index - 14), match.index);
+      if (LATENCY_WINDOW.test(before)) continue;
+      add('Cost', match[0].trim());
+    }
+
+    const distributionMatches = collectMatches(DISTRIBUTION, clause);
+    if (distributionMatches.length > 0) add('Distribution', distributionMatches[0][0].trim());
+
+    for (const match of collectMatches(RELIABILITY, clause).slice(0, 2)) add('Reliability', match[0].trim());
+
+    if (clauseCount === 0 && FRESHNESS.test(clause)) {
+      const freshnessMatch = clause.match(FRESHNESS);
+      add('Deadline', freshnessMatch ? freshnessMatch[0] : 'real-time updates');
+    }
+  }
+  return { count: requirements.length, requirements };
+}
+
+function difficultyFromScenario(scenario) {
+  return Math.max(1, Math.min(5, countScenarioRequirements(scenario).count));
+}
+
+function requirementsLabel(scenario) {
+  return countScenarioRequirements(scenario).requirements
+    .map(item => item.value).join(' · ');
+}
+
 const SEED_CARDS = [
   {
-    id: "fallback-cache-001", topic: "caching", difficulty: 2,
+    id: "fallback-cache-001", topic: "caching", difficulty: 3,
     prerequisiteTopics: ["api-design", "dns", "databases", "storage"],
     scenario: "A news website serves articles to millions of daily readers. The most popular 100 articles generate 80% of traffic.",
     nodes: ["Web Client", "API Server", "Cache Layer", "Database"],
@@ -132,7 +270,7 @@ const SEED_CARDS = [
     explanation: "A decouples the HTTP request from the slow bank call; workers scale independently. B still ties up connections for 1-5s at 500/s. C doesn't solve the blocking problem. D adds up to 60 seconds of latency."
   },
   {
-    id: "fallback-db-001", topic: "databases", difficulty: 3,
+    id: "fallback-db-001", topic: "databases", difficulty: 2,
     prerequisiteTopics: ["api-design", "caching", "consensus", "storage"],
     scenario: "A social media app stores user posts. Users view their timeline (latest 50 posts) and a global trending feed. Writes spike 10x during events.",
     nodes: ["Mobile App", "API Server", "Primary DB", "Read Replica", "Cache"],
@@ -146,7 +284,7 @@ const SEED_CARDS = [
     explanation: "B handles both patterns: timeline is user-specific and benefits from a write-through cache; trending can be pre-computed asynchronously. A reads timeline from primary — doesn't scale. C puts all load on one node. D adds unnecessary complexity for this use case."
   },
   {
-    id: "fallback-consensus-001", topic: "consensus", difficulty: 4,
+    id: "fallback-consensus-001", topic: "consensus", difficulty: 2,
     prerequisiteTopics: ["databases", "storage", "messaging"],
     scenario: "A distributed config service stores cluster membership for 5 nodes. All nodes must agree on who is in the cluster.",
     nodes: ["Node A", "Node B", "Node C", "Node D", "Node E"],

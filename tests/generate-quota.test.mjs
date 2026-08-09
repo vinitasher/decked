@@ -10,7 +10,7 @@ const card = {
   topic: 'queues',
   difficulty: 2,
   prerequisiteTopics: ['api-design'],
-  scenario: 'A producer sends more work than a consumer can process.',
+  scenario: 'A producer sends 5,000 messages per second while a single consumer can process only 1,000 messages per second.',
   nodes: ['producer', 'queue', 'consumer', 'database'],
   options: [
     { id: 'A', label: 'Call the consumer synchronously', prerequisiteTopics: ['api-design', 'real-time'] },

@@ -11,6 +11,7 @@ import {
   scenarioFingerprint,
   selectCorrectLetter
 } from '../functions/api/generate.js';
+import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
 const require = createRequire(import.meta.url);
 const localGenerator = require('../server/generate-card.js');
 
@@ -19,7 +20,7 @@ const card = {
   topic: 'queues',
   difficulty: 2,
   prerequisiteTopics: ['api-design'],
-  scenario: 'A producer sends more work than a consumer can process.',
+  scenario: 'A producer sends 5,000 messages per second while a single consumer can process only 1,000 messages per second.',
   nodes: ['producer', 'queue', 'consumer', 'database'],
   options: [
     {
@@ -297,7 +298,7 @@ test('pool helpers fingerprint, normalize, deduplicate, and retain the newest ca
   assert.equal(normalized.cards.at(-1).id, 'newest-duplicate');
   assert.equal(normalized.cards[0].id, 'card-2');
   assert.ok(normalized.cards.every(candidate => candidate.topic === 'caching'));
-  assert.ok(normalized.cards.every(candidate => candidate.difficulty === 4));
+  assert.ok(normalized.cards.every(candidate => candidate.difficulty === difficultyFromScenario(candidate.scenario)));
   assert.deepEqual(deduplicatePool([{ scenario: '' }, { scenario: null }]), []);
   assert.deepEqual(normalizeCacheValue({ cards: 'invalid' }, 'queues', 2), { cards: [] });
 });
@@ -333,7 +334,7 @@ test('exhausted exclusions generate and append a distinct card', async () => {
   // Arrange
   const originalFetch = globalThis.fetch;
   const existing = { ...card, id: 'existing', scenario: 'Existing scenario' };
-  const generated = { ...card, id: 'generated', scenario: 'Brand new scenario' };
+  const generated = { ...card, id: 'generated', scenario: 'Brand new scenario handles 5,000 requests per second' };
   let stored;
   globalThis.fetch = async () => Response.json({
     choices: [{ message: { content: JSON.stringify(generated) } }]
@@ -367,7 +368,7 @@ test('exhausted exclusions generate and append a distinct card', async () => {
 test('force generation skips an available cached card', async () => {
   // Arrange
   const originalFetch = globalThis.fetch;
-  const generated = { ...card, id: 'forced', scenario: 'Forced distinct scenario' };
+  const generated = { ...card, id: 'forced', scenario: 'Forced distinct scenario handles 5,000 requests per second' };
   let providerCalls = 0;
   globalThis.fetch = async () => {
     providerCalls++;
@@ -402,7 +403,7 @@ test('duplicate generated scenarios are retried and never appended', async () =>
   // Arrange
   const originalFetch = globalThis.fetch;
   const existing = { ...card, id: 'existing', scenario: 'Same scenario' };
-  const distinct = { ...card, id: 'distinct', scenario: 'Different scenario' };
+  const distinct = { ...card, id: 'distinct', scenario: 'Different scenario handles 5,000 requests per second' };
   let providerCalls = 0;
   let stored;
   globalThis.fetch = async () => {

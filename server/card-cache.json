@@ -2,7 +2,7 @@
   "caching:2": {
     "id": "caching-gen-1785292361000",
     "topic": "caching",
-    "difficulty": 2,
+    "difficulty": 4,
     "scenario": "You are designing a product catalog API for an e-commerce flash-sale platform serving 15,000 QPS. Each product response (15 KB) includes price, inventory count, and description stored in Postgres. Prices and inventory change in real time during flash sales. The latency budget is 50 ms. The team must choose a caching strategy that balances freshness, latency, and operational cost.",
     "nodes": [
       "Mobile App",
@@ -68,7 +68,7 @@
   "queues:3": {
     "id": "queues-gen-1785292786255",
     "topic": "queues",
-    "difficulty": 3,
+    "difficulty": 5,
     "scenario": "You are designing the booking engine for a concert ticketing platform. During on-sale events, 500,000 concurrent users submit 50,000 booking requests per second for 20,000 total seats. Each request must be processed in order per seat category and confirmed within 500 ms. Double-bookings are unacceptable. The team must choose a queuing architecture that balances ordering guarantees, throughput, and operational complexity.",
     "nodes": [
       "Web Client (React)",

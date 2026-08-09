@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { buildSnapshot } from '../scripts/dump-production-card-cache.mjs';
+import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
 
 const snapshot = JSON.parse(
   await readFile(new URL('../server/production-card-cache.json', import.meta.url), 'utf8')
@@ -71,7 +72,11 @@ test('every card carries the stored fields and four options', () => {
       assert.ok(Array.isArray(card.nodes) && card.nodes.length >= 3, `${key}/${card.id} nodes look wrong`);
       assert.ok(Array.isArray(card.options) && card.options.length === 4, `${key}/${card.id} options look wrong`);
       assert.equal(card.topic, key.split(':')[0], `${key}/${card.id} topic does not match its key`);
-      assert.equal(card.difficulty, Number(key.split(':')[1]), `${key}/${card.id} difficulty does not match its key`);
+      assert.equal(
+        card.difficulty,
+        difficultyFromScenario(card.scenario),
+        `${key}/${card.id} difficulty does not match its scenario's requirement count`
+      );
     }
   }
 });

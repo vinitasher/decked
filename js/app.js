@@ -912,8 +912,16 @@ const APP = {
     document.getElementById('card-topic').textContent =
       TOPIC_CATALOG[card.topic]?.label || card.topic;
 
-    const diffStars = '★'.repeat(card.difficulty) + '☆'.repeat(5 - card.difficulty);
+    const difficulty = difficultyFromScenario(card.scenario);
+    const diffStars = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
     document.getElementById('card-difficulty').textContent = diffStars;
+    const requirementInfo = countScenarioRequirements(card.scenario);
+    const requirementsEl = document.getElementById('card-requirements');
+    if (requirementsEl) {
+      requirementsEl.textContent = requirementInfo.count > 0
+        ? `${requirementInfo.count} requirement${requirementInfo.count === 1 ? '' : 's'}: ${requirementInfo.requirements.map(item => item.value).join(' · ')}`
+        : '';
+    }
 
     document.getElementById('scenario').textContent = card.scenario;
     const prerequisites = normalizeCardPrerequisites(card).prerequisiteTopics;
