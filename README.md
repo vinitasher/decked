@@ -92,6 +92,12 @@ decision-based practice with adaptive difficulty.
   `common_pitfalls`, `related_topics`) and shown inline on cards via the Know
   First links and a modal
 
+**Generated content and quotas:**
+- Cards are generated on demand with AI, cached for reuse, and supported by an
+  offline seed-card fallback.
+- The default free tier is 10 freshly generated cards and 10 wiki entries per UTC
+  day. Pro removes those limits, and cache hits do not consume quota.
+
 ## Concept wiki
 
 Every option lists prerequisite topics, and the card's Know First list
@@ -128,18 +134,18 @@ in card question headers — lives in `js/app.js`.
 - **Auth:** optional / email magic link for MVP
 - **Deck algorithm:** custom spaced repetition (FSRS-inspired or SM-2 variant)
   adapted for multi-option decisions rather than binary recall
-- **No AI dependency for v1** — cards are hand-authored; AI-assisted card
-  generation can come later
+- **AI generation:** cards are generated on demand, with cached results reused
+  and bundled seed cards available as an offline fallback
 
 ## Content strategy
 
-- Seed with ~50 hand-authored cards covering 10 core topics
+- Seed with ~50 curated fallback cards covering 10 core topics
 - Cards are 2-4 options each; one clearly correct, others capturing common
   wrong intuitions
 - Explanations are the real value — not just "A is right" but "B fails
   because X, C fails because Y, A wins because Z"
-- Future: community-submitted cards with review; AI-generated cards vetted
-  by community; curated packs for specific companies / domains
+- Future: community-submitted cards with review; curated packs for specific
+  companies / domains
 
 ## Why this fits mamaLab
 
@@ -147,7 +153,9 @@ in card question headers — lives in `js/app.js`.
 - **Best user experience:** adaptive difficulty means the app never feels too
   hard or too easy — it meets the user where they are
 - **Profitable:** subscription ($8/mo or $60/yr) for full deck + progress
-  tracking; free tier for 10 cards/week
+  tracking; the free tier provides 10 freshly generated cards and 10 wiki
+  entries per UTC day, while Pro removes those limits. Cache hits do not
+  consume quota.
 - **Community:** user-submitted cards with voting; community-ranked "best
   explanations" for each card
 - **Force for good:** democratises system design education; transparent about
