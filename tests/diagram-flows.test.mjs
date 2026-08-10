@@ -7,6 +7,7 @@ const cardsSource = await readFile(new URL('../js/cards.js', import.meta.url), '
 const renderSource = await readFile(new URL('../js/render.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const serviceWorker = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
 
 const context = vm.createContext({
   console, Math, Date, JSON
@@ -230,6 +231,49 @@ test('compare mode is wired to a toggle button in the app', () => {
   assert.match(appSource, /showCompareDiagram\(\) \{/);
   assert.match(appSource, /compare: true/);
   assert.match(appSource, /this\._compareMode = false;/);
+});
+
+test('mermaid definition maps flows onto a flowchart with per-edge styling', () => {
+  const card = {
+    id: 'm', topic: 'queues', difficulty: 2, correct: 'B',
+    nodes: ['Web App', 'API Server', 'Queue', 'Worker'],
+    options: [
+      { id: 'A', label: 'A', flows: [
+        { from: 'Web App', to: 'API Server', verb: 'posts', kind: 'sync' },
+        { from: 'API Server', to: 'Queue', verb: 'enqueues', kind: 'async' },
+        { from: 'API Server', to: 'Worker', verb: 'calls directly', kind: 'sync' } // not in B → red
+      ] },
+      { id: 'B', label: 'B', flows: [
+        { from: 'Web App', to: 'API Server', verb: 'posts', kind: 'sync' },
+        { from: 'API Server', to: 'Queue', verb: 'enqueues', kind: 'async' },
+        { from: 'Queue', to: 'Worker', verb: 'delivers', kind: 'async' },
+        { from: 'Worker', to: 'Web App', verb: 'posts result', kind: 'callback' }
+      ] }
+    ]
+  };
+  const reveal = context.RenderForTest._mermaidDefinition(card, { reveal: true, option: card.options[0] });
+  assert.match(reveal.definition, /^flowchart TB$/m);
+  assert.match(reveal.definition, /n0\["Web App"\]/);
+  assert.match(reveal.definition, /n0 -->\|posts\| n1/); // sync solid
+  assert.match(reveal.definition, /n1 -\.->\|enqueues\| n2/); // async dotted
+  assert.match(reveal.definition, /linkStyle 0 stroke:#43a047/); // shared edge: green
+  assert.match(reveal.definition, /linkStyle 2 stroke:#e53935/); // chosen-only edge: red
+
+  const compare = context.RenderForTest._mermaidDefinition(card, { reveal: true, compare: true });
+  assert.match(compare.definition, /enqueues \(A, B\)/); // shared edge lists both options
+  assert.match(compare.definition, /n3 -\.->\|posts result \(B\)\| n0/); // callback back-edge
+  assert.match(compare.definition, /linkStyle 0 stroke:#1976d2/); // option A color
+  assert.match(compare.definition, /linkStyle 3 stroke:#2e7d32,stroke-width:3px/); // correct option thicker
+  assert.match(compare.legendHtml, /B ✓/);
+});
+
+test('diagram prefers mermaid and falls back to the custom renderer', () => {
+  assert.match(renderSource, /window\.mermaid && typeof window\.mermaid\.render === 'function'/);
+  assert.match(renderSource, /_renderMermaid\(card, el, opts\)\.catch\(\(\) => this\._renderCustom/);
+  assert.match(renderSource, /async _renderMermaid/);
+  assert.match(renderSource, /mermaid\.initialize\(\{ startOnLoad: false, theme/);
+  assert.match(html, /cdn\.jsdelivr\.net\/npm\/mermaid@11\/dist\/mermaid\.min\.js/);
+  assert.match(serviceWorker, /mermaid@11\/dist\/mermaid\.min\.js/);
 });
 
 test('rateConfidence passes the chosen option to the diagram renderer', () => {

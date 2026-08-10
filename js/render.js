@@ -174,6 +174,121 @@ const Render = {
   /* Per-option wiring colors for the compare view. */
   OPTION_COLORS: { A: '#1976d2', B: '#2e7d32', C: '#e65100', D: '#7b1fa2' },
 
+  /* Entry point: render the card's flows as a Mermaid flowchart when the
+     library is available (each edge gets its own clean routed line), falling
+     back to the bundled custom renderer when it is not (e.g. offline before
+     the first service-worker cache). */
+  diagram(card, containerId, opts = {}) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (typeof opts !== 'object') opts = { reveal: !!opts };
+    if (typeof window !== 'undefined' && window.mermaid && typeof window.mermaid.render === 'function') {
+      this._renderMermaid(card, el, opts).catch(() => this._renderCustom(card, el, opts));
+    } else {
+      this._renderCustom(card, el, opts);
+    }
+  },
+
+  _esc(label) { return String(label ?? '').replace(/"/g, '&quot;'); },
+
+  /* Pure mapping of card flows onto a Mermaid flowchart definition plus
+     per-edge linkStyle overrides and the compare legend. */
+  _mermaidDefinition(card, opts = {}) {
+    const reveal = !!opts.reveal;
+    const compare = !!opts.compare;
+    const chosenOption = opts.option;
+    const correctOption = (card?.options || []).find(option => option?.id === card.correct);
+
+    let edges;
+    if (compare) {
+      const byKey = new Map();
+      for (const option of card?.options || []) {
+        for (const flow of option?.flows || []) {
+          const key = this._edgeKey(flow);
+          let group = byKey.get(key);
+          if (!group) {
+            group = { ...flow, options: [] };
+            byKey.set(key, group);
+          }
+          group.options.push(option.id);
+        }
+      }
+      edges = [...byKey.values()];
+    } else {
+      edges = ((chosenOption?.flows && chosenOption.flows.length) ? chosenOption.flows : null)
+        || ((correctOption?.flows && correctOption.flows.length) ? correctOption.flows : null)
+        || card?.flows || [];
+      edges = edges.map(flow => ({ ...flow, options: [] }));
+    }
+
+    const def = ['flowchart TB'];
+    (card?.nodes || []).forEach((name, i) => {
+      def.push(`n${i}["${this._esc(name)}"]`);
+    });
+
+    const correctKeys = new Set((correctOption?.flows || []).map(this._edgeKey));
+    const chosenKeys = new Set((chosenOption?.flows || []).map(this._edgeKey));
+    const revealHighlight = reveal && chosenOption && chosenOption.flows && chosenOption.flows.length;
+    const nodeIds = new Map((card?.nodes || []).map((name, i) => [name, `n${i}`]));
+
+    const linkStyles = [];
+    let linkIndex = 0;
+    for (const edge of edges) {
+      const from = nodeIds.get(edge.from);
+      const to = nodeIds.get(edge.to);
+      if (from === undefined || to === undefined || from === to) continue;
+      const dotted = edge.kind === 'async' || edge.kind === 'callback';
+      let label = edge.verb || '';
+      if (compare && edge.options && edge.options.length) {
+        label = label ? `${label} (${edge.options.join(', ')})` : `(${edge.options.join(', ')})`;
+      }
+      def.push(`${from} ${dotted ? '-.->' : '-->'}|${this._esc(label)}| ${to}`);
+      let style = null;
+      if (compare) {
+        const first = edge.options?.[0];
+        const isCorrectEdge = edge.options && edge.options.includes(card.correct);
+        style = `stroke:${this.OPTION_COLORS[first] || '#888'},stroke-width:${isCorrectEdge ? 3 : 2}px`;
+      } else if (revealHighlight) {
+        const inCorrect = correctKeys.has(this._edgeKey(edge));
+        const inChosen = chosenKeys.has(this._edgeKey(edge));
+        if (inCorrect) style = 'stroke:#43a047,stroke-width:3px';
+        else if (inChosen) style = 'stroke:#e53935,stroke-width:3px,stroke-dasharray:6 4';
+      } else if (reveal) {
+        style = 'stroke:#43a047,stroke-width:2.5px';
+      } else {
+        style = 'stroke:#90a4ae,stroke-width:1.8px,stroke-dasharray:5 4';
+      }
+      linkStyles.push(`linkStyle ${linkIndex} ${style}`);
+      linkIndex++;
+    }
+    def.push(...linkStyles);
+
+    let legendHtml = '';
+    if (compare) {
+      legendHtml = '<div class="diagram-legend" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-top:8px;font-size:0.72rem;color:var(--muted-text);">';
+      for (const option of card?.options || []) {
+        const hasWiring = Array.isArray(option?.flows) && option.flows.length;
+        const color = this.OPTION_COLORS[option.id] || '#888';
+        const isCorrect = option.id === card.correct;
+        legendHtml += `<span style="opacity:${hasWiring ? 1 : 0.45};" title="${hasWiring ? '' : 'no wiring data'}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
+      }
+      legendHtml += '</div>';
+    }
+
+    return { definition: def.join('\n'), linkStyles, legendHtml };
+  },
+
+  async _renderMermaid(card, el, opts) {
+    const { definition, legendHtml } = this._mermaidDefinition(card, opts);
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'neutral';
+    if (typeof window.mermaid.initialize === 'function') {
+      window.mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
+    }
+    const id = 'mermaid-' + Math.random().toString(36).slice(2, 8);
+    const { svg } = await window.mermaid.render(id, definition);
+    el.innerHTML = svg + (legendHtml || '');
+  },
+
   /* SVG path + arrowhead for one edge with the given control points. */
   _edgeSvg(edge, c1x, c1y, c2x, c2y, color, width, dash, opacity) {
     const path = `M${edge.x1},${edge.y1} C${c1x},${c1y} ${c2x},${c2y} ${edge.x2},${edge.y2}`;
@@ -184,10 +299,7 @@ const Render = {
     return html;
   },
 
-  diagram(card, containerId, opts = {}) {
-    const el = document.getElementById(containerId);
-    if (!el) return;
-    if (typeof opts !== 'object') opts = { reveal: !!opts };
+  _renderCustom(card, el, opts = {}) {
     const reveal = !!opts.reveal;
     const compare = !!opts.compare;
     const chosenOption = opts.option;
