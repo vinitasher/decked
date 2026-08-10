@@ -3,6 +3,10 @@
 const SERVER_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:3456' : '';
 
+/* Screens that are URL-addressable via hash routes (#/welcome, #/search, ...).
+   Wiki topics are addressable per-entry: #/wiki/<topic>. */
+const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'wiki', 'stats'];
+
 function normalizeProfileData(profile) {
   const normalized = profile && typeof profile === 'object' ? profile : {};
   normalized.topicScores = normalized.topicScores && typeof normalized.topicScores === 'object'
@@ -266,7 +270,8 @@ const APP = {
     this._loadCustomCards();
     this.renderPrerequisiteOptions();
     this.renderDeckStats();
-    this.showScreen('welcome');
+    window.addEventListener('hashchange', () => this._handleHashChange());
+    this._handleHashChange();
     this._setupKeyboard();
     this._setupConfidenceButtons();
     this._setupSessionControls();
@@ -1430,10 +1435,59 @@ const APP = {
 
   /* ——— UI ——— */
 
+  /* URL routing: every screen has its own address (#/search, #/wiki, ...).
+     The hash is the source of truth for navigation; direct links, refresh,
+     and the browser back/forward buttons all restore the right screen. */
+
+  _currentRoute() {
+    const match = String(window.location.hash || '').match(/^#\/([\w-]+)/);
+    return match && SCREEN_ROUTES.includes(match[1]) ? match[1] : null;
+  },
+
+  _navigate(path) {
+    const target = '#/' + path;
+    if ((window.location.hash || '') !== target) {
+      window.location.hash = target;
+    }
+  },
+
+  _syncScreen(route) {
+    if (this._currentRoute() !== route) this._navigate(route);
+  },
+
+  _handleHashChange() {
+    let route = this._currentRoute() || 'welcome';
+    if ((route === 'session' || route === 'session-end') && this.sessionCards.length === 0) {
+      route = 'welcome';
+    }
+    this.showScreen(route);
+    if (route === 'wiki') {
+      const topicMatch = String(window.location.hash || '').match(/^#\/wiki\/([\w-]+)/);
+      const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : Object.keys(WIKI || {})[0];
+      this.showWiki(topic);
+    } else if (route === 'welcome') {
+      this.renderDeckStats();
+    } else if (route === 'create') {
+      this.showCreateCard();
+    } else if (route === 'search') {
+      this.filterCards();
+    } else if (route === 'bookmarks') {
+      this.renderBookmarks();
+    } else if (route === 'learning-path') {
+      this.showLearningPath();
+    } else if (route === 'stats') {
+      this.showStats();
+    } else if (route === 'history') {
+      this.showHistory();
+    }
+  },
+
   showScreen(id) {
     document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
     const el = document.getElementById('screen-' + id);
     if (el) el.classList.remove('hidden');
+    if (SCREEN_ROUTES.includes(id)) this._syncScreen(id);
+    window.scrollTo?.(0, 0);
   },
 
   renderDeckStats() {
@@ -1629,9 +1683,9 @@ const APP = {
       .replace(/'/g, '&#39;');
   },
 
-  showWiki() {
+  showWiki(topic) {
     this.renderWikiSidebar();
-    this.openWiki(Object.keys(WIKI || {})[0] || '');
+    this.openWiki(topic || Object.keys(WIKI || {})[0] || '');
     this.showScreen('wiki');
   },
 
@@ -1666,6 +1720,7 @@ const APP = {
     const el = document.getElementById('wiki-content');
     if (!el) return;
     this._activeWikiTopic = topic;
+    this._navigate('wiki/' + encodeURIComponent(topic));
     document.querySelectorAll('.wiki-topic').forEach(button =>
       button.classList.toggle('active', button.dataset.topic === topic)
     );

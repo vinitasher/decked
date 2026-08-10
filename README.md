@@ -42,6 +42,9 @@ decision-based practice with adaptive difficulty.
   Know First list aggregates the prerequisites from every option
 - A navigable topic map shows prerequisites, dependent topics, mastery, and
   focused practice actions without locking advanced content
+- Every screen is URL-addressable via hash routes (`#/search`, `#/wiki`,
+  `#/stats`, `#/wiki/<concept>`, ...), so any page can be bookmarked, shared,
+  or deep-linked and survives refresh and back/forward navigation
 
 **User profile:**
 - Tracked per topic: load balancers, caching, databases, queues, consensus,

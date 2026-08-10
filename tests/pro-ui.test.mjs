@@ -64,5 +64,5 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
 });
 
 test('service worker cache version is bumped for the account assets', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v11'/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v12'/);
 });
