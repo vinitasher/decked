@@ -47,7 +47,10 @@ test('app.js handles quota-exceeded responses with an upgrade notice', () => {
 
 test('app.js wires sign-in, sign-out, and the checkout flow', () => {
   assert.match(app, /signInGoogle\(\) \{\s*if \(!supabaseClient\) return;/);
-  assert.match(app, /signInWithOAuth\(\{ provider: 'google' \}\)/);
+  assert.match(app, /signInWithOAuth\(\{ provider: 'google', redirectTo: window\.location\.origin \}\)/);
+  assert.match(app, /signInGithub\(\) \{\s*if \(!supabaseClient\) return;/);
+  assert.match(app, /signInWithOAuth\(\{ provider: 'github', redirectTo: window\.location\.origin \}\)/);
+  assert.match(app, /Sign in with GitHub/);
   assert.match(app, /signOut\(\) \{\s*if \(supabaseClient\) supabaseClient\.auth\.signOut\(\);/);
   assert.match(app, /api\/billing\/checkout/);
   assert.match(app, /window\.location\.href = body\.url;/);
