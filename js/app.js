@@ -32,6 +32,14 @@ function normalizeProfileData(profile) {
     ? [...new Set(normalized.seenScenarioFingerprints.filter(value => typeof value === 'string' && value))]
     : [];
 
+  normalized.topicAccuracy = normalized.topicAccuracy && typeof normalized.topicAccuracy === 'object'
+    ? normalized.topicAccuracy : {};
+  for (const [topic, entries] of Object.entries(normalized.topicAccuracy)) {
+    normalized.topicAccuracy[topic] = Array.isArray(entries)
+      ? entries.filter(entry => entry && typeof entry === 'object' && typeof entry.correct === 'boolean').slice(-10)
+      : [];
+  }
+
   for (const score of Object.values(normalized.topicScores)) {
     score.daysSpanned = Array.isArray(score.daysSpanned) ? [...new Set(score.daysSpanned)] : [];
   }
@@ -264,6 +272,8 @@ const APP = {
   _isGenerating: false,
   _optionRng: Math.random,
   _displayedOptions: [],
+  _retriedCardIds: new Set(),
+  _sessionResults: {},
 
   init() {
     this.loadProfile();
@@ -674,9 +684,9 @@ const APP = {
     return seed || null;
   },
 
-  /* Cards whose scheduled review has arrived, oldest-due first, capped at cap.
-     The SRS ledger entry is the trigger for re-service — never the seen
-     fingerprint ledger. */
+  /* Cards whose scheduled review has arrived, ordered by predicted-recall
+     risk (most likely to be forgotten first), capped at cap. The SRS ledger
+     entry is the trigger for re-service — never the seen fingerprint ledger. */
   _dueReviewCards(cap) {
     const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : 0;
     const now = Date.now();
@@ -686,10 +696,19 @@ const APP = {
       if (typeof record.nextReviewAt !== 'number' || record.nextReviewAt > now) continue;
       const card = this._resolveCardContent(id);
       if (!card) continue;
-      due.push({ card, nextReviewAt: record.nextReviewAt });
+      due.push({ card, recall: this._predictedRecall(record, now) });
     }
-    due.sort((a, b) => a.nextReviewAt - b.nextReviewAt);
+    due.sort((a, b) => a.recall - b.recall);
     return due.slice(0, limit).map(entry => ({ ...entry.card, review: true }));
+  },
+
+  /* Approximate the FSRS recall probability R = e^(-t/S) from the stored
+     stability and the time elapsed since the last review. */
+  _predictedRecall(record, now = Date.now()) {
+    const stability = Math.max(0.1, record.stability || 0.1);
+    const lastReviewedAt = (record.nextReviewAt || now) - (record.interval || 0) * 86400000;
+    const elapsedDays = Math.max(0, (now - lastReviewedAt) / 86400000);
+    return Math.exp(-elapsedDays / stability);
   },
 
   /* Distinct card ids in the studied set: every seed card plus every card the
@@ -736,18 +755,22 @@ const APP = {
     startButton.disabled = true;
     startButton.textContent = 'Preparing session...';
     try {
-      const { cards, requested } = await this._generateSessionCards(count);
+      const { cards, requested, mixShortfall } = await this._generateSessionCards(count);
       if (cards.length === 0) {
         alert('No cards available! Check back later.');
         return;
       }
-      if (cards.length < requested && !this._confirmShortSession(requested, cards.length)) {
+      // A mix-ratio shortfall is expected (fresh capped when reviews are
+      // scarce); only a generation failure needs confirmation.
+      if (cards.length < requested && !mixShortfall && !this._confirmShortSession(requested, cards.length)) {
         return;
       }
       this.sessionCards = cards;
       this.sessionIndex = 0;
       this.sessionStart = Date.now();
       this._nextCard = null;
+      this._retriedCardIds = new Set();
+      this._sessionResults = {};
       this.profile.totalSessions++;
       this._startTimer();
       this.saveProfile();
@@ -777,6 +800,8 @@ const APP = {
     this.sessionIndex = 0;
     this.sessionStart = Date.now();
     this._nextCard = null;
+    this._retriedCardIds = new Set();
+    this._sessionResults = {};
     this.profile.totalSessions++;
     this._startTimer();
     this.saveProfile();
@@ -787,12 +812,20 @@ const APP = {
   /* Full-catalog session planning: every topic at its mastery-derived target
      difficulty, ranked by adaptive weight with the existing random tie-break.
      Never-studied topics start at the easiest level, so new users ramp from
-     lower difficulty up as mastery grows. */
+     lower difficulty up as mastery grows; recent answers steer difficulty
+     toward the 60-80% accuracy band. */
   _rankedSessionTopics() {
     const topics = Object.keys(TOPIC_CATALOG || {});
     return topics.map(topic => {
       const mastery = this.profile.topicScores[topic]?.raw ?? 0;
-      const difficulty = Math.min(5, 1 + Math.round(mastery * 4));
+      let difficulty = Math.min(5, 1 + Math.round(mastery * 4));
+      // Desirable-difficulty pacing: with enough recent answers, difficulty
+      // adjusts so accuracy stays in the 60-80% band (below → easier).
+      const recent = this._topicRecentAccuracy(topic);
+      if (recent !== null) {
+        if (recent > 0.8) difficulty = Math.min(5, difficulty + 1);
+        else if (recent < 0.6) difficulty = Math.max(1, difficulty - 1);
+      }
       return {
         topic,
         difficulty,
@@ -828,6 +861,27 @@ const APP = {
     return plan;
   },
 
+  /* Deterministic topological ordering of catalog topics (prerequisite topics
+     before dependents), so within a difficulty tier sessions serve
+     foundational cards first. */
+  _topicTopoOrder() {
+    let pool = Object.keys(TOPIC_CATALOG || {});
+    const placed = new Set();
+    const order = [];
+    while (pool.length) {
+      const ready = pool.filter(topic =>
+        (TOPIC_CATALOG[topic]?.prerequisites || []).every(pre => placed.has(pre))
+      );
+      const batch = ready.length ? ready : pool;
+      for (const topic of batch) {
+        order.push(topic);
+        placed.add(topic);
+      }
+      pool = pool.filter(topic => !placed.has(topic));
+    }
+    return order;
+  },
+
   async _generateSessionCards(count) {
     const requested = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8;
     const session = [];
@@ -840,17 +894,22 @@ const APP = {
       session.push(card);
     }
     const dueCount = session.length;
-    const plan = this._buildSessionPlan(requested);
+    // Anki-style mix ratio: fresh cards are capped at half the session so
+    // scheduled reviews keep their slots and new content never dominates.
+    const freshCap = Math.max(2, Math.ceil(requested / 2));
+    const freshBudget = Math.max(0, Math.min(requested - dueCount, freshCap));
+    const mixShortfall = dueCount + freshBudget < requested;
+    const plan = this._buildSessionPlan(freshBudget);
     // Generate one card at a time, in up to 3 refill rounds, so an
-    // unavailable generator cannot loop forever (bounded at requested*3
+    // unavailable generator cannot loop forever (bounded at freshBudget*3
     // fetches) but every slot still gets retries with the accumulated
     // session exclusions. Never fires concurrent generation requests.
     const maxRounds = 3;
-    const maxFetches = requested * 3;
+    const maxFetches = Math.max(1, freshBudget * 3);
     let fetches = 0;
-    for (let round = 0; round < maxRounds && session.length < requested && fetches < maxFetches; round++) {
+    for (let round = 0; round < maxRounds && session.length < dueCount + freshBudget && fetches < maxFetches; round++) {
       for (const item of plan) {
-        if (session.length >= requested || fetches >= maxFetches) break;
+        if (session.length >= dueCount + freshBudget || fetches >= maxFetches) break;
         fetches++;
         let card = null;
         try {
@@ -864,11 +923,18 @@ const APP = {
         session.push(card);
       }
     }
-    // Progressive difficulty ramp: within a session, fresh cards play easy →
-    // hard. Due reviews (already-learned cards) keep their first position; the
-    // adaptive plan order remains the stable tie-break within each difficulty.
-    const fresh = session.slice(dueCount).sort((a, b) => a.difficulty - b.difficulty);
-    return { cards: [...session.slice(0, dueCount), ...fresh], requested };
+    // Progressive difficulty ramp with prerequisite-first ordering: fresh
+    // cards play easy → hard, and within a difficulty tier foundational topics
+    // come before the topics that build on them. Due reviews (already-learned
+    // cards) keep their first position; the adaptive plan order remains the
+    // stable tie-break within each difficulty.
+    const topo = this._topicTopoOrder();
+    const topoRank = new Map(topo.map((topic, index) => [topic, index]));
+    const fresh = session.slice(dueCount).sort((a, b) =>
+      a.difficulty - b.difficulty ||
+      (topoRank.get(a.topic) ?? 0) - (topoRank.get(b.topic) ?? 0)
+    );
+    return { cards: [...session.slice(0, dueCount), ...fresh], requested, mixShortfall };
   },
 
   /* Surface a real shortfall instead of silently starting an underfilled
@@ -890,6 +956,34 @@ const APP = {
     const challenge = card.difficulty / 5;
     // adaptive difficulty: lower mastery → higher weight, but also prefer harder cards for strong topics
     return (1 - mastery) * (0.3 + challenge * 0.7);
+  },
+
+  /* Rolling recent-answer window per topic (last 10 answers, newest last),
+     used to pace difficulty toward the 60-80% accuracy band. */
+  _recordTopicAnswer(topic, correct) {
+    if (!topic) return;
+    const windows = this.profile.topicAccuracy || (this.profile.topicAccuracy = {});
+    const list = windows[topic] || (windows[topic] = []);
+    list.push({ correct: !!correct, ts: Date.now() });
+    if (list.length > 10) list.splice(0, list.length - 10);
+    this.saveProfile();
+  },
+
+  /* Recent accuracy for a topic, or null when there is not enough data yet. */
+  _topicRecentAccuracy(topic) {
+    const list = this.profile?.topicAccuracy?.[topic] || [];
+    if (list.length < 3) return null;
+    return list.filter(entry => entry.correct).length / list.length;
+  },
+
+  /* Delayed repetition: a card answered wrong returns at the end of the
+     session so the learner gets a second chance while the mistake is fresh
+     (once per card per session). */
+  _maybeScheduleRetry(card) {
+    if (card?.id && !this._retriedCardIds.has(card.id) && Array.isArray(this.sessionCards)) {
+      this._retriedCardIds.add(card.id);
+      this.sessionCards.push({ ...card, review: true, retry: true });
+    }
   },
 
   /* Cache warming: pre-generate cards for likely next topics in background */
@@ -919,7 +1013,7 @@ const APP = {
     this._confidenceSubmitted = false;
 
     document.getElementById('card-counter').textContent =
-      `${this.sessionIndex + 1} / ${this.sessionCards.length}`;
+      `${this.sessionIndex + 1} / ${this.sessionCards.length}${card.retry ? ' · retry' : ''}`;
 
     document.getElementById('card-topic').textContent =
       TOPIC_CATALOG[card.topic]?.label || card.topic;
@@ -1061,6 +1155,12 @@ const APP = {
     // update topic score + mastery tracking
     this.updateTopicScore(card.topic, correct, 1);
     this._recordTopicReview(card.topic, card.id, correct);
+    this._recordTopicAnswer(card.topic, correct);
+
+    // track per-card outcomes for this session (mistake review + retries)
+    this._sessionResults = this._sessionResults || {};
+    this._sessionResults[card.id] = correct;
+    if (!correct) this._maybeScheduleRetry(card);
 
     // update global stats + streak
     this.profile.totalAnswered++;
@@ -1168,10 +1268,11 @@ const APP = {
     this._cardStartTime = Date.now();
 
     // try to use the prefetched card for next session slot, unless that slot is
-    // a due review (its SRS ledger entry is what triggers its re-service)
+    // a due review or retry (their SRS ledger entry / failure is what triggers
+    // their re-service)
     if (this._nextCard) {
       const nextIdx = this.sessionIndex;
-      if (nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review) {
+      if (nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review && !this.sessionCards[nextIdx]?.retry) {
         this.sessionCards[nextIdx] = this._nextCard;
       } else if (nextIdx >= this.sessionCards.length) {
         this.sessionCards.push(this._nextCard);
@@ -1613,6 +1714,19 @@ const APP = {
 
   /* ——— Session Review ——— */
 
+  /* Session-end mistake review: cards answered wrong in this session, with
+     the correct answer and explanation. Retried cards that were answered
+     correctly on the retry are excluded. */
+  _mistakesHtml() {
+    const mistakes = this.sessionCards.filter(card => this._sessionResults?.[card.id] === false);
+    if (!mistakes.length) return '';
+    return '<h2>Review your mistakes</h2>' + mistakes.map(card => `
+      <details class="mistake-item" style="background:var(--card-bg);border-radius:6px;margin:4px 0;border-left:3px solid var(--danger);padding:8px;">
+        <summary style="font-size:0.8rem;"><strong>${this._escapeHtml(card.topic)}</strong>: ${this._escapeHtml(String(card.scenario || '').substring(0, 90))}…</summary>
+        <p style="font-size:0.8rem;margin:6px 0 0;">The answer was <strong>${this._escapeHtml(card.correct)}</strong> — ${this._escapeHtml(card.explanation)}</p>
+      </details>`).join('');
+  },
+
   showSessionReview() {
     const el = document.getElementById('session-summary');
     const correct = this.profile.totalCorrect;
@@ -1632,6 +1746,7 @@ const APP = {
       </div>`;
     }
     html += '</div>';
+    html += this._mistakesHtml();
     el.innerHTML = html;
   },
 

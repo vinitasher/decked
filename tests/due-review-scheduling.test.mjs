@@ -165,7 +165,7 @@ test('past-due cards appear first with content matching the snapshot', async () 
   const { cards, requested } = await app._generateSessionCards(8);
 
   assert.equal(requested, 8);
-  assert.equal(cards.length, 8);
+  assert.equal(cards.length, 5); // 1 due review + up to 4 fresh (mix ratio)
   assert.equal(cards[0].id, 'gen-due-1');
   assert.equal(cards[0].scenario, due.scenario);
   assert.equal(cards[0].correct, 'B');
@@ -205,8 +205,8 @@ test('future-due cards are not included in a session', async () => {
   const { cards } = await app._generateSessionCards(8);
 
   assert.equal(cards.some(card => card.id === 'gen-future'), false);
-  assert.equal(cards.length, 8);
-  assert.equal(calls, 8);
+  assert.equal(cards.length, 4); // no due reviews → 4 fresh (mix ratio cap)
+  assert.equal(calls, 4);
 });
 
 test('standard sessions still deliver exactly 8 fingerprint-distinct cards when blended', async () => {
@@ -225,12 +225,12 @@ test('standard sessions still deliver exactly 8 fingerprint-distinct cards when 
   const { cards, requested } = await app._generateSessionCards(8);
 
   assert.equal(requested, 8);
-  assert.equal(cards.length, 8);
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
-  assert.equal(calls, 6);
+  assert.equal(cards.length, 6); // 2 due reviews + 4 fresh (mix ratio cap)
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 6);
+  assert.equal(calls, 4);
 });
 
-test('quick review still delivers exactly 15 fingerprint-distinct cards when blended', async () => {
+test('quick review still delivers a full-size session when blended', async () => {
   seedRandom(0);
   const app = freshApp();
   const dueA = snapshotCard('gen-due-a', 'Due scenario A', 'caching', 3);
@@ -246,9 +246,9 @@ test('quick review still delivers exactly 15 fingerprint-distinct cards when ble
   const { cards, requested } = await app._generateSessionCards(15);
 
   assert.equal(requested, 15);
-  assert.equal(cards.length, 15);
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 15);
-  assert.equal(calls, 13);
+  assert.equal(cards.length, 10); // 2 due reviews + 8 fresh (mix ratio cap)
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 10);
+  assert.equal(calls, 8);
 });
 
 test('a past-due entry with no resolvable content is skipped without error', async () => {
@@ -266,8 +266,8 @@ test('a past-due entry with no resolvable content is skipped without error', asy
 
   assert.equal(cards.some(card => card.id === 'ghost-1'), false);
   assert.equal(cards.some(card => card.id === 'ghost-2'), false);
-  assert.equal(cards.length, 8);
-  assert.equal(calls, 8);
+  assert.equal(cards.length, 4); // no due reviews → 4 fresh (mix ratio cap)
+  assert.equal(calls, 4);
 });
 
 test('when due cards exceed the requested count, the oldest are served first', async () => {
@@ -293,6 +293,28 @@ test('when due cards exceed the requested count, the oldest are served first', a
   assert.equal(calls, 0);
 });
 
+test('due reviews are ordered by predicted-recall risk, not recency alone', async () => {
+  seedRandom(0);
+  const app = freshApp();
+  // Same review time, but fragile stability → much lower predicted recall.
+  const fragile = snapshotCard('gen-fragile', 'Fragile due scenario', 'caching', 3);
+  const sturdy = snapshotCard('gen-sturdy', 'Sturdy due scenario', 'queues', 2);
+  const dueAt = Date.now() - 3600000;
+  const fragileRecord = reviewRecord(dueAt, fragile);
+  fragileRecord.stability = 0.2;
+  const sturdyRecord = reviewRecord(dueAt, sturdy);
+  sturdyRecord.stability = 8;
+  app.profile.cardHistory['gen-fragile'] = fragileRecord;
+  app.profile.cardHistory['gen-sturdy'] = sturdyRecord;
+
+  const due = app._dueReviewCards(2);
+
+  assert.equal(due.length, 2);
+  assert.equal(due[0].id, 'gen-fragile');
+  assert.equal(due[1].id, 'gen-sturdy');
+  assert.ok(app._predictedRecall(fragileRecord) < app._predictedRecall(sturdyRecord));
+});
+
 test('a due card already in the session is not fetched again as a new candidate', async () => {
   seedRandom(0);
   const app = freshApp();
@@ -307,9 +329,9 @@ test('a due card already in the session is not fetched again as a new candidate'
 
   const { cards } = await app._generateSessionCards(8);
 
-  assert.equal(cards.length, 8);
+  assert.equal(cards.length, 5); // 1 due review + 4 fresh (mix ratio cap)
   assert.equal(cards[0].id, 'gen-due-3');
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 5);
 });
 
 test('nextCard does not replace a due-review slot with the prefetched card', () => {

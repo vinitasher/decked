@@ -62,6 +62,18 @@ decision-based practice with adaptive difficulty.
   within each session fresh cards play easy → hard (due reviews keep their
   first position), so users start with lower-difficulty problems and move up
   as mastery grows
+- Prerequisite-first ordering: within a difficulty tier, foundational topics
+  are served before the topics that build on them
+- Anki-style mix ratio: fresh cards are capped at half the session so
+  scheduled reviews keep their slots and new content never dominates
+- Desirable-difficulty pacing: recent answers (last 10 per topic) steer each
+  topic's difficulty toward the 60-80% accuracy band
+- Due reviews are ordered by predicted-recall risk (FSRS R = e^(-t/S)), not
+  recency alone
+- Delayed repetition: a card answered wrong returns at the end of the session
+  for an immediate second chance (once per card per session)
+- Session end shows a "Review your mistakes" list with the correct answer and
+  explanation for every card answered wrong
 
 **Data model:**
 ```json
