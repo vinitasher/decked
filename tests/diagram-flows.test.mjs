@@ -260,11 +260,23 @@ test('mermaid definition maps flows onto a flowchart with per-edge styling', () 
   assert.match(reveal.definition, /linkStyle 2 stroke:#e53935/); // chosen-only edge: red
 
   const compare = context.RenderForTest._mermaidDefinition(card, { reveal: true, compare: true });
-  assert.match(compare.definition, /enqueues \(A, B\)/); // shared edge lists both options
-  assert.match(compare.definition, /n3 -\.->\|posts result \(B\)\| n0/); // callback back-edge
+  assert.match(compare.definition, /enqueues · A,B/); // shared edge lists both options (dot-separated, no parens)
+  assert.match(compare.definition, /n3 -\.->\|posts result · B\| n0/); // callback back-edge
   assert.match(compare.definition, /linkStyle 0 stroke:#1976d2/); // option A color
   assert.match(compare.definition, /linkStyle 3 stroke:#2e7d32,stroke-width:3px/); // correct option thicker
   assert.match(compare.legendHtml, /B ✓/);
+});
+
+test('mermaid edge labels strip characters the parser rejects', () => {
+  const def = context.RenderForTest._mermaidDefinition({
+    id: 's', topic: 'caching', difficulty: 2, correct: 'A',
+    nodes: ['User', 'API'],
+    options: [
+      { id: 'A', label: 'A', flows: [{ from: 'User', to: 'API', verb: 'loads on miss (per second)', kind: 'sync' }] }
+    ]
+  }, { reveal: true, compare: true });
+  assert.match(def.definition, /\|loads on miss per second · A\|/);
+  assert.doesNotMatch(def.definition, /\(|\)/);
 });
 
 test('diagram prefers mermaid and falls back to the custom renderer', () => {

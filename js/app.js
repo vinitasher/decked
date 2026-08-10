@@ -225,7 +225,7 @@ function renderAccountBar() {
   bar.classList.remove('hidden');
   bar.innerHTML = signedIn
     ? `<span class="account-chip">👤 <span class="account-email">${escHtml(email)}</span>${currentPlan === 'pro' ? ' <span class="plan-badge plan-pro">PRO</span>' : ' <span class="plan-badge">Free</span>'}</span> <button class="btn btn-sm btn-outline" onclick="APP.signOut()">Sign out</button>`
-    : `<span class="account-chip">Free tier: ${appConfig.freeDailyCardLimit} cards &amp; ${appConfig.freeDailyWikiLimit} wiki entries per day</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGoogle()">🔑 Sign in</button>`;
+    : `<span class="account-chip">Free tier: ${appConfig.freeDailyCardLimit} cards &amp; ${appConfig.freeDailyWikiLimit} wiki entries per day</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGoogle()">🔑 Sign in with Google</button> <button class="btn btn-sm btn-outline" onclick="APP.signInGithub()">🐙 Sign in with GitHub</button>`;
 }
 
 async function renderQuotaBar() {
@@ -2189,6 +2189,11 @@ const APP = {
   signInGoogle() {
     if (!supabaseClient) return;
     supabaseClient.auth.signInWithOAuth({ provider: 'google' });
+  },
+
+  signInGithub() {
+    if (!supabaseClient) return;
+    supabaseClient.auth.signInWithOAuth({ provider: 'github' });
   },
 
   signOut() {
