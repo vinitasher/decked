@@ -179,6 +179,12 @@ function isOAuthCallbackHash(hash = window.location.hash) {
   return /^#(?:access_token|refresh_token|expires_at|error|error_description)=/.test(String(hash || ''));
 }
 
+function getOAuthCallbackError(hash = window.location.hash) {
+  const params = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  if (!params.get('error')) return '';
+  return params.get('error_description') || params.get('error') || 'OAuth sign-in failed.';
+}
+
 function escHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -203,27 +209,47 @@ function apiHeaders() {
 }
 
 async function initAccount() {
+  const callbackError = getOAuthCallbackError();
   await loadAppConfig();
   if (!appConfig.supabaseUrl || !appConfig.supabaseAnonKey) {
+    if (callbackError) renderAccountError(callbackError);
     renderQuotaBar();
     return;
   }
   try {
     supabaseClient = window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey);
   } catch (_) {
+    renderAccountError('Could not initialize sign-in. Check the Supabase client configuration.');
     renderQuotaBar();
     return;
   }
-  const { data } = await supabaseClient.auth.getSession();
-  currentSession = data.session;
+  let sessionData;
+  try {
+    sessionData = await supabaseClient.auth.getSession();
+  } catch (_) {
+    renderAccountError('Could not complete sign-in. Please try again.');
+    renderQuotaBar();
+    return;
+  }
+  const { data, error } = sessionData;
+  const authError = callbackError || error?.message || '';
+  currentSession = data?.session || null;
   supabaseClient.auth.onAuthStateChange((_event, session) => {
     currentSession = session;
     renderAccountBar();
     renderQuotaBar();
   });
-  renderAccountBar();
+  if (authError) renderAccountError(authError);
+  else renderAccountBar();
   renderQuotaBar();
   handleUpgradeReturn();
+}
+
+function renderAccountError(message) {
+  const bar = document.getElementById('account-bar');
+  if (!bar) return;
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<span class="account-error">GitHub sign-in failed: ${escHtml(message)}</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGithub()">Try again</button>`;
 }
 
 function renderAccountBar() {

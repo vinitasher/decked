@@ -42,6 +42,14 @@ test('the hash router preserves Supabase OAuth response fragments', () => {
   assert.match(app, /if \(SCREEN_ROUTES\.includes\(id\) && !isOAuthCallbackHash\(\)\) this\._syncScreen\(id\)/);
 });
 
+test('OAuth callback errors are surfaced instead of failing silently', () => {
+  assert.match(app, /function getOAuthCallbackError\(hash = window\.location\.hash\) \{/);
+  assert.match(app, /function renderAccountError\(message\) \{/);
+  assert.match(app, /GitHub sign-in failed:/);
+  assert.match(app, /sessionData = await supabaseClient\.auth\.getSession\(\)/);
+  assert.match(app, /const authError = callbackError \|\| error\?\.message \|\| ''/);
+});
+
 test('app.js sends device id and bearer token headers on API calls', () => {
   assert.match(app, /function apiHeaders\(\) \{\s*const headers = \{\};/);
   assert.match(app, /headers\['X-Device-Id'\] = getOrCreateDeviceId\(\)/);
@@ -79,4 +87,5 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
 });
 
 test('service worker cache version is bumped for the account assets', () => {
+  assert.match(serviceWorker, /const CACHE = 'sdf-v17';/);
 });
