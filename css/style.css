@@ -64,7 +64,9 @@ footer a:hover { color: var(--primary); }
 .option-prerequisites { color: var(--muted); font-size: 0.72rem; font-weight: 400; }
 #scenario { background: var(--card-bg); border-radius: 10px; padding: 16px; margin: 8px 0; line-height: 1.6; box-shadow: 0 1px 3px var(--stat-shadow); font-size: 0.95rem; }
 /* Session split layout: the question on the left, a full-page-height sticky
-   diagram panel on the right. The panel stacks below on narrow screens. */
+   diagram panel on the right. The panel header mirrors the left column's
+   header row so the diagram starts at the question's level. The panel stacks
+   below on narrow screens. */
 .session-layout { display: flex; gap: 20px; align-items: flex-start; }
 .session-main { flex: 1 1 55%; min-width: 0; }
 .session-diagram {
@@ -80,6 +82,16 @@ footer a:hover { color: var(--primary); }
   box-shadow: 0 1px 3px var(--stat-shadow);
   display: flex;
   flex-direction: column;
+}
+.session-diagram-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px; /* matches the left header row (back button) */
+  margin-bottom: 8px; /* matches the prerequisites block spacing */
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted-text);
 }
 @media (max-width: 860px) {
   .session-layout { flex-direction: column; }

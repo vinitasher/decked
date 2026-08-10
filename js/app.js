@@ -1043,7 +1043,7 @@ const APP = {
     // retrieval practice: hide diagram until answered (user can toggle to peek)
     if (!this._diagramPeeking) this._diagramPeeking = {};
     const canPeek = this._diagramPeeking[card.id] || false;
-    document.getElementById('diagram-container').innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;font-size:0.85rem">📐 Diagram hidden for retrieval practice<br>Answer first, then the diagram reveals<br><button class="btn btn-sm btn-outline" onclick="APP.peekDiagram()">Peek at Diagram</button></p>';
+    document.getElementById('diagram-container').innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;font-size:0.85rem">📐 Diagram hidden for retrieval practice<br>Answer first, then the diagram reveals</p>';
     if (canPeek) {
       this.peekDiagram();
     }

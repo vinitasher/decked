@@ -50,6 +50,21 @@ test('the session layout gives the diagram a full-height right-side panel', () =
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*\.session-diagram \{ position: static;/);
 });
 
+test('the diagram panel header mirrors the question header row so the diagram starts at the question level', () => {
+  const aside = html.indexOf('class="session-diagram"');
+  const header = html.indexOf('class="session-diagram-header"', aside);
+  const peek = html.indexOf('id="diagram-peek-btn"', header);
+  const container = html.indexOf('id="diagram-container"', peek);
+
+  assert.ok(header > aside);
+  assert.ok(peek > header);
+  assert.ok(container > peek);
+  assert.match(html, /<span>🏗 Architecture<\/span>/);
+  assert.match(html, /onclick="APP\.peekDiagram\(\)"/);
+  assert.match(css, /\.session-diagram-header \{[\s\S]*?min-height: 32px;[\s\S]*?margin-bottom: 8px;/);
+  assert.doesNotMatch(app, /Peek at Diagram/); // the peek control lives in the panel header now
+});
+
 test('wide monitors expand the app container and give the panel the extra room', () => {
   assert.match(css, /@media \(min-width: 1100px\)[\s\S]*\.container \{ max-width: 1440px; \}/);
   assert.match(css, /@media \(min-width: 1100px\)[\s\S]*\.session-main \{ max-width: 780px; \}/);
