@@ -2188,12 +2188,12 @@ const APP = {
 
   signInGoogle() {
     if (!supabaseClient) return;
-    supabaseClient.auth.signInWithOAuth({ provider: 'google', redirectTo: window.location.origin });
+    supabaseClient.auth.signInWithOAuth({ provider: 'google', redirectTo: 'https://decked.pages.dev' });
   },
 
   signInGithub() {
     if (!supabaseClient) return;
-    supabaseClient.auth.signInWithOAuth({ provider: 'github', redirectTo: window.location.origin });
+    supabaseClient.auth.signInWithOAuth({ provider: 'github', redirectTo: 'https://decked.pages.dev' });
   },
 
   signOut() {
