@@ -184,6 +184,85 @@ test('quick review sessions assemble exactly 15 fingerprint-distinct cards', asy
   assert.equal(calls, 15);
 });
 
+test('a new user starts sessions at the easiest difficulty', async () => {
+  seedRandom(0);
+  const app = freshApp();
+  let calls = 0;
+  app.fetchCard = async (topic, difficulty) => {
+    calls++;
+    return generatedCard(`card-${calls}`, `Scenario ${calls}`, topic, difficulty);
+  };
+
+  const { cards } = await app._generateSessionCards(8);
+
+  assert.equal(cards.length, 8);
+  assert.ok(cards.every(card => card.difficulty === 1),
+    `first sessions should be difficulty 1, got ${cards.map(card => card.difficulty)}`);
+});
+
+test('generated cards ramp from low to high difficulty within a session', async () => {
+  seedRandom(0);
+  const app = freshApp();
+  app.profile.topicScores = {
+    caching: { raw: 1, cardsReviewed: 3, daysSpanned: ['2026-08-01', '2026-08-02'] },
+    dns: { raw: 0, cardsReviewed: 1, daysSpanned: ['2026-08-01'] },
+    storage: { raw: 0.6, cardsReviewed: 2, daysSpanned: ['2026-08-01', '2026-08-02'] }
+  };
+  let calls = 0;
+  app.fetchCard = async (topic, difficulty) => {
+    calls++;
+    return generatedCard(`card-${calls}`, `Scenario ${calls}`, topic, difficulty);
+  };
+
+  const { cards } = await app._generateSessionCards(15);
+
+  assert.equal(cards.length, 15);
+  const difficulties = cards.map(card => card.difficulty);
+  assert.deepEqual(difficulties, difficulties.slice().sort((a, b) => a - b));
+  assert.equal(difficulties[0], 1);
+  assert.ok(difficulties[difficulties.length - 1] >= 4,
+    `progressed users should reach higher difficulties, got ${difficulties[difficulties.length - 1]}`);
+});
+
+test('due reviews keep the first position in a ramped session', async () => {
+  seedRandom(0);
+  const app = freshApp();
+  app.profile.cardHistory['gen-due-ramp'] = {
+    stability: 1.5,
+    difficulty: 0.5,
+    interval: 3,
+    nextReviewAt: Date.now() - 3600000,
+    timesReviewed: 2,
+    timesCorrect: 1,
+    confidenceSum: 3,
+    lastConfidence: 2,
+    card: {
+      id: 'gen-due-ramp',
+      scenario: 'A due review scenario at the hardest level',
+      topic: 'caching',
+      difficulty: 5,
+      prerequisiteTopics: ['api-design'],
+      options: [{ id: 'A', label: 'Option A', prerequisiteTopics: [] }],
+      correct: 'A',
+      explanation: 'Explanation'
+    }
+  };
+  let calls = 0;
+  app.fetchCard = async (topic, difficulty) => {
+    calls++;
+    return generatedCard(`card-${calls}`, `Fresh scenario ${calls}`, topic, difficulty);
+  };
+
+  const { cards } = await app._generateSessionCards(8);
+
+  assert.equal(cards.length, 8);
+  assert.equal(cards[0].id, 'gen-due-ramp');
+  assert.equal(cards[0].review, true);
+  const fresh = cards.slice(1);
+  const difficulties = fresh.map(card => card.difficulty);
+  assert.deepEqual(difficulties, difficulties.slice().sort((a, b) => a - b));
+});
+
 test('duplicate candidates are refilled with accumulated session exclusions', async () => {
   seedRandom(0);
   const app = freshApp();

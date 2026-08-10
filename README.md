@@ -58,6 +58,10 @@ decision-based practice with adaptive difficulty.
 - When picking a new card: weight by (1 - topic strength) × (coverage gap)
 - Standard session: exactly 8 distinct cards drawn from the full 13-topic
   catalog; Quick Review requests 15
+- Progressive difficulty ramp: never-studied topics start at difficulty 1, and
+  within each session fresh cards play easy → hard (due reviews keep their
+  first position), so users start with lower-difficulty problems and move up
+  as mastery grows
 
 **Data model:**
 ```json

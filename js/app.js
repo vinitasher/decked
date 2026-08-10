@@ -785,11 +785,13 @@ const APP = {
   },
 
   /* Full-catalog session planning: every topic at its mastery-derived target
-     difficulty, ranked by adaptive weight with the existing random tie-break. */
+     difficulty, ranked by adaptive weight with the existing random tie-break.
+     Never-studied topics start at the easiest level, so new users ramp from
+     lower difficulty up as mastery grows. */
   _rankedSessionTopics() {
     const topics = Object.keys(TOPIC_CATALOG || {});
     return topics.map(topic => {
-      const mastery = this.getTopicScore(topic);
+      const mastery = this.profile.topicScores[topic]?.raw ?? 0;
       const difficulty = Math.min(5, 1 + Math.round(mastery * 4));
       return {
         topic,
@@ -837,6 +839,7 @@ const APP = {
       if (this._isDuplicateScenario(card.scenario, session)) continue;
       session.push(card);
     }
+    const dueCount = session.length;
     const plan = this._buildSessionPlan(requested);
     // Generate one card at a time, in up to 3 refill rounds, so an
     // unavailable generator cannot loop forever (bounded at requested*3
@@ -861,7 +864,11 @@ const APP = {
         session.push(card);
       }
     }
-    return { cards: session, requested };
+    // Progressive difficulty ramp: within a session, fresh cards play easy →
+    // hard. Due reviews (already-learned cards) keep their first position; the
+    // adaptive plan order remains the stable tie-break within each difficulty.
+    const fresh = session.slice(dueCount).sort((a, b) => a.difficulty - b.difficulty);
+    return { cards: [...session.slice(0, dueCount), ...fresh], requested };
   },
 
   /* Surface a real shortfall instead of silently starting an underfilled
