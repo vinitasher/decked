@@ -119,45 +119,51 @@
 
   <!-- Session -->
   <div id="screen-session" class="screen hidden">
-    <div class="card-header">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button type="button" id="session-dashboard-btn" class="session-dashboard-btn" aria-label="Back to dashboard" title="Back to dashboard">←</button>
-        <span id="card-counter">1 / 8</span>
-        <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
-      </div>
-      <div class="card-meta">
-        <span id="card-topic">Topic</span>
-        <span id="card-difficulty">★★★</span>
-        <span id="card-requirements" class="card-requirements"></span>
-        <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
-        <span id="session-timer" style="color:var(--muted)"></span>
-      </div>
-    </div>
-    <div id="card-prerequisites" class="card-prerequisites"></div>
-    <div id="scenario"></div>
-    <div id="diagram-container"></div>
-    <div id="options"></div>
-    <div id="feedback" aria-live="polite"></div>
-    <div id="post-answer-actions" class="post-answer-actions hidden">
-      <div id="confidence-buttons" class="hidden">
-        <p>How difficult was this question?</p>
-        <div class="confidence-options">
-          <button type="button" class="btn btn-sm btn-outline" data-confidence="1" style="border-color:#e53935;color:#e53935;">Hard</button>
-          <button type="button" class="btn btn-sm btn-outline" data-confidence="2" style="border-color:#f9a825;color:#f9a825;">Good</button>
-          <button type="button" class="btn btn-sm btn-outline" data-confidence="3" style="border-color:#43a047;color:#43a047;">Easy</button>
-          <button type="button" class="btn btn-sm btn-outline" data-confidence="4" style="border-color:#1b5e20;color:#1b5e20;">Perfect</button>
+    <div class="session-layout">
+      <div class="session-main">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button type="button" id="session-dashboard-btn" class="session-dashboard-btn" aria-label="Back to dashboard" title="Back to dashboard">←</button>
+            <span id="card-counter">1 / 8</span>
+            <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
+          </div>
+          <div class="card-meta">
+            <span id="card-topic">Topic</span>
+            <span id="card-difficulty">★★★</span>
+            <span id="card-requirements" class="card-requirements"></span>
+            <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
+            <span id="session-timer" style="color:var(--muted)"></span>
+          </div>
+        </div>
+        <div id="card-prerequisites" class="card-prerequisites"></div>
+        <div id="scenario"></div>
+        <div id="options"></div>
+        <div id="feedback" aria-live="polite"></div>
+        <div id="post-answer-actions" class="post-answer-actions hidden">
+          <div id="confidence-buttons" class="hidden">
+            <p>How difficult was this question?</p>
+            <div class="confidence-options">
+              <button type="button" class="btn btn-sm btn-outline" data-confidence="1" style="border-color:#e53935;color:#e53935;">Hard</button>
+              <button type="button" class="btn btn-sm btn-outline" data-confidence="2" style="border-color:#f9a825;color:#f9a825;">Good</button>
+              <button type="button" class="btn btn-sm btn-outline" data-confidence="3" style="border-color:#43a047;color:#43a047;">Easy</button>
+              <button type="button" class="btn btn-sm btn-outline" data-confidence="4" style="border-color:#1b5e20;color:#1b5e20;">Perfect</button>
+            </div>
+          </div>
+          <div id="quality-rating" class="hidden">
+            <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935" aria-label="Poor card quality">👎</button>
+            <span>Rate card quality</span>
+            <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047" aria-label="Good card quality">👍</button>
+          </div>
+          <div class="next-card-actions">
+            <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>
+            <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
+            <button id="compare-btn" class="btn btn-outline hidden" onclick="APP.showCompareDiagram()" title="Overlay all four option wirings">🔀 Compare options</button>
+          </div>
         </div>
       </div>
-      <div id="quality-rating" class="hidden">
-        <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935" aria-label="Poor card quality">👎</button>
-        <span>Rate card quality</span>
-        <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047" aria-label="Good card quality">👍</button>
-      </div>
-      <div class="next-card-actions">
-        <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>
-        <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
-        <button id="compare-btn" class="btn btn-outline hidden" onclick="APP.showCompareDiagram()" title="Overlay all four option wirings">🔀 Compare options</button>
-      </div>
+      <aside class="session-diagram" aria-label="Architecture diagram">
+        <div id="diagram-container"></div>
+      </aside>
     </div>
   </div>
 

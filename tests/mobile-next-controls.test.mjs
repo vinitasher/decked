@@ -34,6 +34,22 @@ test('question header provides accessible dashboard navigation', () => {
   assert.match(css, /\.session-dashboard-btn \{[^}]*width: 32px;[^}]*height: 32px;/);
 });
 
+test('the session layout gives the diagram a full-height right-side panel', () => {
+  const sessionStart = html.indexOf('id="screen-session"');
+  const layout = html.indexOf('class="session-layout"', sessionStart);
+  const main = html.indexOf('class="session-main"', layout);
+  const diagram = html.indexOf('class="session-diagram"', main);
+  const container = html.indexOf('id="diagram-container"', diagram);
+
+  assert.ok(layout > sessionStart);
+  assert.ok(main > layout);
+  assert.ok(diagram > main);
+  assert.ok(container > diagram);
+  assert.match(html, /<aside class="session-diagram"[^>]*aria-label="Architecture diagram">/);
+  assert.match(css, /\.session-diagram \{[\s\S]*?position: sticky;[\s\S]*?max-height: calc\(100vh - 24px\);[\s\S]*?overflow: auto;/);
+  assert.match(css, /@media \(max-width: 860px\)[\s\S]*\.session-diagram \{ position: static;/);
+});
+
 test('mobile post-answer tray is sticky and hides keyboard-only guidance', () => {
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.post-answer-actions:not\(\.hidden\)[\s\S]*position: sticky/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.keyboard-hint \{ display: none; \}/);
