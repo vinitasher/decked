@@ -103,52 +103,56 @@ const Render = {
       layers[layer[i]].push(i);
     }
 
-    const marginX = 16, gapX = 44, marginY = 14, gapY = 38;
+    // Vertical layout: layers are rows stacked top → bottom (the end user sits
+    // in the top row), with the layer's nodes side by side within the row.
+    const marginX = 16, gapX = 40, marginY = 14, gapY = 34;
     const sized = names.map(name => this._boxSize(name, 16));
-    const colW = layers.map(col => col.length ? Math.max(...col.map(i => sized[i].w)) : 0);
-    const rowH = layers.map(col => col.length ? Math.max(...col.map(i => sized[i].h)) : 0);
+    const colW = layers.map(row => row.length ? Math.max(...row.map(i => sized[i].w)) : 0);
+    const rowH = layers.map(row => row.length ? Math.max(...row.map(i => sized[i].h)) : 0);
 
     const positions = new Array(names.length);
-    let x = marginX;
-    for (let c = 0; c < layers.length; c++) {
-      let y = marginY;
-      for (const i of layers[c]) {
+    let y = marginY;
+    for (let r = 0; r < layers.length; r++) {
+      let x = marginX;
+      for (const i of layers[r]) {
         positions[i] = {
-          x: x + (colW[c] - sized[i].w) / 2,
-          y: y + (rowH[c] - sized[i].h) / 2,
+          x: x + (colW[r] - sized[i].w) / 2,
+          y: y + (rowH[r] - sized[i].h) / 2,
           ...sized[i]
         };
-        y += rowH[c] + gapY;
+        x += colW[r] + gapX;
       }
-      x += colW[c] + gapX;
+      y += rowH[r] + gapY;
     }
-    const width = Math.max(260, x - gapX + marginX);
-    const columnHeights = layers.map(col => col.length
-      ? col.reduce((sum, i) => sum + sized[i].h, 0) + gapY * (col.length - 1)
+    const rowWidths = layers.map(row => row.length
+      ? row.length * colW[layers.indexOf(row)] + gapX * (row.length - 1)
       : 0);
-    const height = Math.max(58, marginY * 2 + Math.max(...columnHeights));
+    const width = Math.max(260, marginX * 2 + Math.max(...rowWidths));
+    const height = Math.max(120, marginY * 2
+      + layers.reduce((sum, row) => sum + rowH[layers.indexOf(row)], 0)
+      + gapY * (layers.length - 1));
 
     const edgeList = valid.map(edge => {
       const f = positions[index.get(edge.from)];
       const t = positions[index.get(edge.to)];
-      const sameCol = f.x === t.x;
-      const dx = (t.x + t.w / 2) - (f.x + f.w / 2);
+      const sameRow = f.y === t.y;
+      const dy = (t.y + t.h / 2) - (f.y + f.h / 2);
       const x1 = f.x + f.w / 2, y1 = f.y + f.h / 2;
       const x2 = t.x + t.w / 2, y2 = t.y + t.h / 2;
-      const bend = Math.min(70, Math.max(24, Math.abs(dx) * 0.4));
+      const bend = Math.min(70, Math.max(24, Math.abs(dy) * 0.4));
       let c1x, c1y, c2x, c2y;
-      if (sameCol) {
-        const dir = y2 >= y1 ? 1 : -1;
-        c1x = x1 + (dir > 0 ? -1 : 1) * bend;
-        c1y = y1 + dir * bend;
-        c2x = x2 + (dir > 0 ? -1 : 1) * bend;
-        c2y = y2 - dir * bend;
-      } else {
-        const dir = dx >= 0 ? 1 : -1;
+      if (sameRow) {
+        const dir = x2 >= x1 ? 1 : -1;
         c1x = x1 + dir * bend;
-        c1y = y1;
+        c1y = y1 + (dir > 0 ? -1 : 1) * bend;
         c2x = x2 - dir * bend;
-        c2y = y2;
+        c2y = y2 + (dir > 0 ? -1 : 1) * bend;
+      } else {
+        const dir = dy >= 0 ? 1 : -1;
+        c1x = x1;
+        c1y = y1 + dir * bend;
+        c2x = x2;
+        c2y = y2 - dir * bend;
       }
       return { ...edge, x1, y1, x2, y2, c1x, c1y, c2x, c2y };
     });

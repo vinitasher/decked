@@ -123,7 +123,7 @@ test('a synthesized end-user edge is repaired onto the true graph entry', () => 
   assert.equal(card.flows[0].to, 'CDN');
 });
 
-test('Render.layout anchors the end-user node in the first layer despite incoming edges', () => {
+test('Render.layout anchors the end-user node in the first row despite incoming edges', () => {
   const layout = Render.layout([
     { from: 'Worker Pool', to: 'Web App', verb: 'posts result', kind: 'callback' },
     { from: 'Web App', to: 'API Server', verb: 'posts', kind: 'sync' },
@@ -131,9 +131,9 @@ test('Render.layout anchors the end-user node in the first layer despite incomin
     { from: 'Queue', to: 'Worker Pool', verb: 'delivers', kind: 'async' }
   ], ['Web App', 'API Server', 'Queue', 'Worker Pool']);
   const byName = new Map(layout.nodes.map((pos, i) => ['Web App', 'API Server', 'Queue', 'Worker Pool'][i]).map((name, i) => [name, layout.nodes[i]]));
-  assert.ok(byName.get('Web App').x <= byName.get('API Server').x);
-  assert.ok(byName.get('Web App').x <= byName.get('Queue').x);
-  assert.ok(byName.get('Web App').x <= byName.get('Worker Pool').x);
+  assert.ok(byName.get('Web App').y <= byName.get('API Server').y);
+  assert.ok(byName.get('Web App').y <= byName.get('Queue').y);
+  assert.ok(byName.get('Web App').y <= byName.get('Worker Pool').y);
 });
 
 test('seed cards receive curated flows through prerequisite normalization', () => {
@@ -144,16 +144,16 @@ test('seed cards receive curated flows through prerequisite normalization', () =
     'the correct seed option should have explicit wiring');
 });
 
-test('Render.layout places sources in layer 0 and dependents deeper', () => {
+test('Render.layout stacks sources at the top and dependents below', () => {
   const layout = Render.layout([
     { from: 'client', to: 'api', verb: 'requests', kind: 'sync' },
     { from: 'api', to: 'cache', verb: 'checks', kind: 'sync' },
     { from: 'api', to: 'db', verb: 'queries', kind: 'sync' }
   ], ['client', 'api', 'cache', 'db']);
   const byName = new Map(layout.nodes.map((pos, i) => ['client', 'api', 'cache', 'db'][i]).map((name, i) => [name, layout.nodes[i]]));
-  assert.ok(byName.get('client').x <= byName.get('api').x);
-  assert.ok(byName.get('api').x <= byName.get('cache').x);
-  assert.ok(byName.get('api').x <= byName.get('db').x);
+  assert.ok(byName.get('client').y <= byName.get('api').y);
+  assert.ok(byName.get('api').y <= byName.get('cache').y);
+  assert.ok(byName.get('api').y <= byName.get('db').y);
   assert.ok(layout.width > 0 && layout.height > 0);
   for (const pos of layout.nodes) {
     assert.ok(Number.isFinite(pos.x) && Number.isFinite(pos.y));
@@ -161,7 +161,7 @@ test('Render.layout places sources in layer 0 and dependents deeper', () => {
   }
 });
 
-test('Render.layout fans out parallel branches without overlap', () => {
+test('Render.layout places parallel branches side by side in one row', () => {
   const layout = Render.layout([
     { from: 'client', to: 'lb', verb: 'requests', kind: 'sync' },
     { from: 'lb', to: 'worker-a', verb: 'routes', kind: 'sync' },
@@ -171,7 +171,9 @@ test('Render.layout fans out parallel branches without overlap', () => {
   ], ['client', 'lb', 'worker-a', 'worker-b', 'db']);
   const workerA = layout.nodes[2];
   const workerB = layout.nodes[3];
-  assert.ok(workerA.y !== workerB.y || workerA.x !== workerB.x, 'parallel workers must not overlap');
+  assert.ok(workerA.x !== workerB.x, 'parallel workers must sit side by side, not overlap');
+  assert.equal(workerA.y, workerB.y, 'parallel workers share the same row');
+  assert.ok(layout.nodes[4].y > workerA.y, 'the db row sits below the workers');
   assert.ok(layout.edges.length === 5);
 });
 
