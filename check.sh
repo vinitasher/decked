@@ -31,6 +31,7 @@ scripts=(
   server/server.js
   scripts/migrate-option-prerequisites.mjs
   scripts/dump-production-card-cache.mjs
+  scripts/upgrade-cached-card-flows.mjs
   scripts/generate-wiki.mjs
   scripts/audit-card-difficulties.mjs
 )

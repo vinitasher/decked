@@ -112,9 +112,14 @@ function generatedCard() {
     prerequisiteTopics: ['api-design', 'dns'],
     scenario: 'A service caches hot reads in memory but misses spike under load.',
     nodes: ['Web Client', 'API Server', 'Cache Layer', 'Database'],
+    flows: [
+      { from: 'Web Client', to: 'API Server', verb: 'requests', kind: 'sync' },
+      { from: 'API Server', to: 'Cache Layer', verb: 'checks', kind: 'sync' },
+      { from: 'Cache Layer', to: 'Database', verb: 'loads', kind: 'sync' }
+    ],
     options: [
       { id: 'A', label: 'Put a CDN in front', prerequisiteTopics: ['dns'] },
-      { id: 'B', label: 'Cache aside with TTL', prerequisiteTopics: ['cache-invalidation'] },
+      { id: 'B', label: 'Cache aside with TTL', prerequisiteTopics: ['cache-invalidation'], flows: [{ from: 'API Server', to: 'Cache Layer', verb: 'checks', kind: 'sync' }] },
       { id: 'C', label: 'Read replicas', prerequisiteTopics: ['replication-lag'] },
       { id: 'D', label: 'Write-through cache', prerequisiteTopics: ['cache-coherence'] }
     ],
@@ -139,10 +144,12 @@ test('rateConfidence persists a minimal content snapshot for a generated card', 
     topic: card.topic,
     difficulty: card.difficulty,
     prerequisiteTopics: ['api-design', 'dns'],
+    flows: card.flows,
     options: card.options.map(option => ({
       id: option.id,
       label: option.label,
-      prerequisiteTopics: option.prerequisiteTopics
+      prerequisiteTopics: option.prerequisiteTopics,
+      flows: option.flows || []
     })),
     correct: card.correct,
     explanation: card.explanation,

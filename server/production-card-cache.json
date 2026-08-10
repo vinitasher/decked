@@ -5,6 +5,7 @@
     "difficulty": 4,
     "scenario": "You are designing a REST API for a personalized content feed that serves 20,000 QPS with a p99 latency under 50ms. Each response is approximately 10KB. New content must appear in the feed within 500ms of publication. You must choose a caching strategy that balances latency, consistency, and cost.",
     "nodes": [
+      "End User",
       "Cloudflare CDN",
       "NGINX Load Balancer",
       "Java Spring Boot Application",
@@ -14,24 +15,178 @@
     "options": [
       {
         "id": "A",
-        "label": "Direct database reads: The API server queries PostgreSQL on every request without caching, relying on its B-tree indexes."
+        "label": "Direct database reads: The API server queries PostgreSQL on every request without caching, relying on its B-tree indexes.",
+        "flows": [
+          {
+            "from": "Java Spring Boot Application",
+            "to": "PostgreSQL Database",
+            "verb": "queries per request via B-tree indexes",
+            "kind": "sync"
+          },
+          {
+            "from": "PostgreSQL Database",
+            "to": "Java Spring Boot Application",
+            "verb": "returns feed rows on every request",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "B",
-        "label": "Cache-aside with Redis: The API server reads from Redis; on content publication, it updates both Redis and PostgreSQL synchronously."
+        "label": "Cache-aside with Redis: The API server reads from Redis; on content publication, it updates both Redis and PostgreSQL synchronously.",
+        "flows": [
+          {
+            "from": "Java Spring Boot Application",
+            "to": "Redis Cluster",
+            "verb": "reads cache-aside",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis Cluster",
+            "to": "Java Spring Boot Application",
+            "verb": "returns cached feed on hit",
+            "kind": "sync"
+          },
+          {
+            "from": "Java Spring Boot Application",
+            "to": "PostgreSQL Database",
+            "verb": "queries on cache miss",
+            "kind": "sync"
+          },
+          {
+            "from": "PostgreSQL Database",
+            "to": "Java Spring Boot Application",
+            "verb": "returns rows on cache miss",
+            "kind": "sync"
+          },
+          {
+            "from": "Java Spring Boot Application",
+            "to": "Redis Cluster",
+            "verb": "writes cache on miss",
+            "kind": "sync"
+          },
+          {
+            "from": "Java Spring Boot Application",
+            "to": "Redis Cluster",
+            "verb": "updates cache synchronously on publication",
+            "kind": "sync"
+          },
+          {
+            "from": "Java Spring Boot Application",
+            "to": "PostgreSQL Database",
+            "verb": "updates database synchronously on publication",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "C",
-        "label": "Memcached with TTL: The API server caches feed responses in Memcached with a 1-second TTL; updates are written directly to PostgreSQL and asynchronously invalidate the cache."
+        "label": "Memcached with TTL: The API server caches feed responses in Memcached with a 1-second TTL; updates are written directly to PostgreSQL and asynchronously invalidate the cache.",
+        "flows": [
+          {
+            "from": "Java Spring Boot Application",
+            "to": "PostgreSQL Database",
+            "verb": "writes updates directly",
+            "kind": "sync"
+          },
+          {
+            "from": "PostgreSQL Database",
+            "to": "Java Spring Boot Application",
+            "verb": "notifies to invalidate cache asynchronously",
+            "kind": "callback"
+          },
+          {
+            "from": "Java Spring Boot Application",
+            "to": "Redis Cluster",
+            "verb": "serves cached feed within 1s TTL",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "D",
-        "label": "In-memory data grid with Hazelcast: All feed data is stored in Hazelcast maps, bypassing PostgreSQL entirely, with replication across nodes."
+        "label": "In-memory data grid with Hazelcast: All feed data is stored in Hazelcast maps, bypassing PostgreSQL entirely, with replication across nodes.",
+        "flows": [
+          {
+            "from": "Cloudflare CDN",
+            "to": "NGINX Load Balancer",
+            "verb": "forwards requests",
+            "kind": "sync"
+          },
+          {
+            "from": "NGINX Load Balancer",
+            "to": "Java Spring Boot Application",
+            "verb": "routes requests",
+            "kind": "sync"
+          }
+        ]
       }
     ],
     "correct": "B",
     "explanation": "Option A fails because direct database reads introduce disk I/O and query overhead that cannot meet the 50ms p99 latency target. Option C fails because asynchronous cache invalidation can result in stale reads that exceed the 500ms update window, violating consistency requirements. Option D fails due to the prohibitively high hardware and licensing costs of an in-memory data grid at 20k QPS. Option B succeeds by using Redis as a cache with synchronous writes to PostgreSQL, providing low latency, strong consistency, and reasonable cost.",
-    "prerequisiteTopics": []
+    "prerequisiteTopics": [],
+    "flows": [
+      {
+        "from": "End User",
+        "to": "Cloudflare CDN",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "Cloudflare CDN",
+        "to": "NGINX Load Balancer",
+        "verb": "forwards requests",
+        "kind": "sync"
+      },
+      {
+        "from": "NGINX Load Balancer",
+        "to": "Java Spring Boot Application",
+        "verb": "routes requests",
+        "kind": "sync"
+      },
+      {
+        "from": "Java Spring Boot Application",
+        "to": "Redis Cluster",
+        "verb": "reads cached feed",
+        "kind": "sync"
+      },
+      {
+        "from": "Redis Cluster",
+        "to": "Java Spring Boot Application",
+        "verb": "serves feed on cache hit",
+        "kind": "sync"
+      },
+      {
+        "from": "Java Spring Boot Application",
+        "to": "PostgreSQL Database",
+        "verb": "queries feed on cache miss",
+        "kind": "sync"
+      },
+      {
+        "from": "PostgreSQL Database",
+        "to": "Java Spring Boot Application",
+        "verb": "returns feed rows",
+        "kind": "sync"
+      },
+      {
+        "from": "Java Spring Boot Application",
+        "to": "Redis Cluster",
+        "verb": "caches response on miss",
+        "kind": "sync"
+      },
+      {
+        "from": "Java Spring Boot Application",
+        "to": "PostgreSQL Database",
+        "verb": "writes new content on publication",
+        "kind": "sync"
+      },
+      {
+        "from": "PostgreSQL Database",
+        "to": "Java Spring Boot Application",
+        "verb": "notifies on content update",
+        "kind": "callback"
+      }
+    ]
   },
   "api-design:3": {
     "id": "api-design-gen-1785308031333",
@@ -39,6 +194,7 @@
     "difficulty": 4,
     "scenario": "Design an API for a real-time news feed that must handle 10,000 QPS with peaks at 20,000 QPS. Each response is 50KB. Latency must be under 100ms. The system must trade off strong consistency for low latency due to high read volume.",
     "nodes": [
+      "End User",
       "HAProxy",
       "Node.js",
       "Redis",
@@ -48,24 +204,136 @@
     "options": [
       {
         "id": "A",
-        "label": "Use direct PostgreSQL queries for all requests, ensuring strong consistency."
+        "label": "Use direct PostgreSQL queries for all requests, ensuring strong consistency.",
+        "flows": [
+          {
+            "from": "HAProxy",
+            "to": "Node.js",
+            "verb": "routes requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js",
+            "to": "PostgreSQL",
+            "verb": "queries directly",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "B",
-        "label": "Implement Redis cache with write-through to PostgreSQL and async queue for updates."
+        "label": "Implement Redis cache with write-through to PostgreSQL and async queue for updates.",
+        "flows": [
+          {
+            "from": "HAProxy",
+            "to": "Node.js",
+            "verb": "routes requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js",
+            "to": "Redis",
+            "verb": "reads cache",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js",
+            "to": "PostgreSQL",
+            "verb": "writes through",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js",
+            "to": "RabbitMQ",
+            "verb": "enqueues updates",
+            "kind": "async"
+          },
+          {
+            "from": "RabbitMQ",
+            "to": "Redis",
+            "verb": "refreshes cache",
+            "kind": "async"
+          }
+        ]
       },
       {
         "id": "C",
-        "label": "Deploy a monolithic server with Apache and MySQL on a single high-end instance."
+        "label": "Deploy a monolithic server with Apache and MySQL on a single high-end instance.",
+        "flows": [
+          {
+            "from": "Node.js",
+            "to": "PostgreSQL",
+            "verb": "queries directly",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "D",
-        "label": "Use only Redis in-memory cache with no database persistence for maximum speed."
+        "label": "Use only Redis in-memory cache with no database persistence for maximum speed.",
+        "flows": [
+          {
+            "from": "HAProxy",
+            "to": "Node.js",
+            "verb": "routes requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js",
+            "to": "Redis",
+            "verb": "reads cache",
+            "kind": "sync"
+          }
+        ]
       }
     ],
     "correct": "B",
     "explanation": "Option A fails for latency due to slow disk I/O from direct PostgreSQL queries, causing bottlenecks at high QPS. Option C fails for cost as vertical scaling with a single server is expensive for peak loads. Option D fails for consistency because Redis without persistence loses data on restart. Option B wins by using Redis cache for low latency reads, PostgreSQL for durability, and async updates to balance consistency and performance.",
-    "prerequisiteTopics": []
+    "prerequisiteTopics": [],
+    "flows": [
+      {
+        "from": "End User",
+        "to": "HAProxy",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "HAProxy",
+        "to": "Node.js",
+        "verb": "routes requests",
+        "kind": "sync"
+      },
+      {
+        "from": "Node.js",
+        "to": "Redis",
+        "verb": "queries cache",
+        "kind": "sync"
+      },
+      {
+        "from": "Redis",
+        "to": "PostgreSQL",
+        "verb": "loads on miss",
+        "kind": "callback"
+      },
+      {
+        "from": "Node.js",
+        "to": "PostgreSQL",
+        "verb": "writes through",
+        "kind": "sync"
+      },
+      {
+        "from": "Node.js",
+        "to": "RabbitMQ",
+        "verb": "enqueues updates",
+        "kind": "async"
+      },
+      {
+        "from": "RabbitMQ",
+        "to": "Redis",
+        "verb": "refreshes cache",
+        "kind": "async"
+      }
+    ]
   },
   "caching:1": {
     "id": "caching-gen-1785366879678",
@@ -76,6 +344,7 @@
     ],
     "scenario": "Design a caching layer for a social media feed API. The API handles 5,000 QPS for feed reads. Each feed request aggregates 50 posts from a database of 100 million posts, and the database response time is 150ms. The latency requirement is under 50ms. The trade-off is between serving slightly stale cached data to reduce latency and the high cost of scaling the database to meet latency demands.",
     "nodes": [
+      "End User",
       "MySQL Cluster",
       "Redis Cache",
       "HAProxy Load Balancer",
@@ -85,23 +354,231 @@
     "options": [
       {
         "id": "A",
-        "label": "Use a global CDN (CloudFront) to cache full feed responses with a long TTL (10 minutes). No backend cache."
+        "label": "Use a global CDN (CloudFront) to cache full feed responses with a long TTL (10 minutes). No backend cache.",
+        "flows": [
+          {
+            "from": "AWS CloudFront CDN",
+            "to": "HAProxy Load Balancer",
+            "verb": "forwards cache-miss feed requests",
+            "kind": "sync"
+          },
+          {
+            "from": "HAProxy Load Balancer",
+            "to": "Node.js Application Server",
+            "verb": "routes feed requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "MySQL Cluster",
+            "verb": "queries 50 posts on every miss",
+            "kind": "sync"
+          },
+          {
+            "from": "MySQL Cluster",
+            "to": "Node.js Application Server",
+            "verb": "returns 50 posts",
+            "kind": "callback"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "HAProxy Load Balancer",
+            "verb": "returns full feed response",
+            "kind": "sync"
+          },
+          {
+            "from": "HAProxy Load Balancer",
+            "to": "AWS CloudFront CDN",
+            "verb": "delivers full feed for edge caching",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "B",
-        "label": "Use a Redis cluster for cache-aside caching with a short TTL of 60 seconds. Cache individual posts and aggregate in the app server."
+        "label": "Use a Redis cluster for cache-aside caching with a short TTL of 60 seconds. Cache individual posts and aggregate in the app server.",
+        "flows": [
+          {
+            "from": "HAProxy Load Balancer",
+            "to": "Node.js Application Server",
+            "verb": "routes feed requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "Redis Cache",
+            "verb": "queries each post",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis Cache",
+            "to": "Node.js Application Server",
+            "verb": "returns cached post on hit",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "MySQL Cluster",
+            "verb": "queries post on cache miss",
+            "kind": "sync"
+          },
+          {
+            "from": "MySQL Cluster",
+            "to": "Node.js Application Server",
+            "verb": "returns post",
+            "kind": "callback"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "Redis Cache",
+            "verb": "caches post with 60s TTL",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "HAProxy Load Balancer",
+            "verb": "returns aggregated feed",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "C",
-        "label": "Scale the MySQL cluster with multiple read replicas to handle 5,000 QPS and use connection pooling."
+        "label": "Scale the MySQL cluster with multiple read replicas to handle 5,000 QPS and use connection pooling.",
+        "flows": [
+          {
+            "from": "HAProxy Load Balancer",
+            "to": "Node.js Application Server",
+            "verb": "routes feed requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "MySQL Cluster",
+            "verb": "queries posts via pooled connections across read replicas",
+            "kind": "sync"
+          },
+          {
+            "from": "MySQL Cluster",
+            "to": "Node.js Application Server",
+            "verb": "returns 50 posts from replicas",
+            "kind": "callback"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "HAProxy Load Balancer",
+            "verb": "returns aggregated feed",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "D",
-        "label": "Use a write-through cache where every new post immediately updates the cache before responding to the client."
+        "label": "Use a write-through cache where every new post immediately updates the cache before responding to the client.",
+        "flows": [
+          {
+            "from": "Node.js Application Server",
+            "to": "MySQL Cluster",
+            "verb": "writes new post",
+            "kind": "sync"
+          },
+          {
+            "from": "MySQL Cluster",
+            "to": "Node.js Application Server",
+            "verb": "acks post write",
+            "kind": "callback"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "Redis Cache",
+            "verb": "writes post through to cache",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis Cache",
+            "to": "Node.js Application Server",
+            "verb": "acks cache write",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "Redis Cache",
+            "verb": "reads cached posts for feed",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis Cache",
+            "to": "Node.js Application Server",
+            "verb": "returns posts",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "MySQL Cluster",
+            "verb": "queries posts on cache miss",
+            "kind": "sync"
+          },
+          {
+            "from": "Node.js Application Server",
+            "to": "HAProxy Load Balancer",
+            "verb": "returns aggregated feed",
+            "kind": "sync"
+          }
+        ]
       }
     ],
     "correct": "B",
-    "explanation": "Option A fails because a CDN cannot efficiently invalidate individual user feeds; long TTL leads to stale data, and high QPS of dynamic content makes CDN costly. Option C fails because even with replicas, the complex aggregation query takes >150ms, failing the latency requirement, and scaling replicas is expensive. Option D fails because write-through adds latency to every write operation, which may be unacceptable for a write-heavy social platform; also writes are more frequent than expected. Option B succeeds because cache-aside with a short TTL reduces database load and latency under 50ms for reads, while accepting minimal staleness within the TTL, which is acceptable for social feeds."
+    "explanation": "Option A fails because a CDN cannot efficiently invalidate individual user feeds; long TTL leads to stale data, and high QPS of dynamic content makes CDN costly. Option C fails because even with replicas, the complex aggregation query takes >150ms, failing the latency requirement, and scaling replicas is expensive. Option D fails because write-through adds latency to every write operation, which may be unacceptable for a write-heavy social platform; also writes are more frequent than expected. Option B succeeds because cache-aside with a short TTL reduces database load and latency under 50ms for reads, while accepting minimal staleness within the TTL, which is acceptable for social feeds.",
+    "flows": [
+      {
+        "from": "End User",
+        "to": "AWS CloudFront CDN",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "AWS CloudFront CDN",
+        "to": "HAProxy Load Balancer",
+        "verb": "forwards cache-miss feed requests",
+        "kind": "sync"
+      },
+      {
+        "from": "HAProxy Load Balancer",
+        "to": "Node.js Application Server",
+        "verb": "routes feed requests",
+        "kind": "sync"
+      },
+      {
+        "from": "Node.js Application Server",
+        "to": "Redis Cache",
+        "verb": "queries cached feed",
+        "kind": "sync"
+      },
+      {
+        "from": "Redis Cache",
+        "to": "Node.js Application Server",
+        "verb": "returns cached feed on hit",
+        "kind": "sync"
+      },
+      {
+        "from": "Node.js Application Server",
+        "to": "MySQL Cluster",
+        "verb": "queries 50 posts on cache miss",
+        "kind": "sync"
+      },
+      {
+        "from": "MySQL Cluster",
+        "to": "Node.js Application Server",
+        "verb": "returns 50 posts for aggregation",
+        "kind": "callback"
+      },
+      {
+        "from": "Node.js Application Server",
+        "to": "AWS CloudFront CDN",
+        "verb": "invalidates feed cache on updates",
+        "kind": "async"
+      }
+    ]
   },
   "caching:3": {
     "cards": [
@@ -111,6 +588,7 @@
         "difficulty": 5,
         "scenario": "Your team is designing a caching layer for a social media feed system serving 10,000 requests per second (p99 < 200ms). Each feed is 50KB and generated from the latest posts from friends. There are 2,000 write requests per second for new posts. The feed must show recent content, and stale data is acceptable for up to 5 seconds. Your chief concern is minimizing caching infrastructure costs while meeting latency and freshness requirements.",
         "nodes": [
+          "End User",
           "HAProxy Load Balancer",
           "Express.js Web Servers",
           "Redis Cluster",
@@ -121,28 +599,122 @@
           {
             "id": "A",
             "label": "Write-through cache: new posts immediately update Redis before DB.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Express.js Web Servers",
+                "to": "Redis Cluster",
+                "verb": "writes new post immediately",
+                "kind": "sync"
+              },
+              {
+                "from": "Express.js Web Servers",
+                "to": "PostgreSQL Database",
+                "verb": "persists post after Redis write",
+                "kind": "sync"
+              }
+            ]
           },
           {
             "id": "B",
             "label": "Write-behind cache: posts are written to Kafka and asynchronously update Redis.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Express.js Web Servers",
+                "to": "Apache Kafka",
+                "verb": "publishes new posts",
+                "kind": "async"
+              },
+              {
+                "from": "Apache Kafka",
+                "to": "Redis Cluster",
+                "verb": "delivers posts for async cache update",
+                "kind": "async"
+              }
+            ]
           },
           {
             "id": "C",
             "label": "Long TTL cache: feeds cached for 30 seconds, no invalidation on writes.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Express.js Web Servers",
+                "to": "Redis Cluster",
+                "verb": "loads cached feed (30s TTL)",
+                "kind": "sync"
+              },
+              {
+                "from": "Express.js Web Servers",
+                "to": "PostgreSQL Database",
+                "verb": "queries posts on cache miss",
+                "kind": "sync"
+              },
+              {
+                "from": "Express.js Web Servers",
+                "to": "Redis Cluster",
+                "verb": "caches feed with long TTL",
+                "kind": "sync"
+              }
+            ]
           },
           {
             "id": "D",
             "label": "Massive Redis cluster: store all feeds with 100% hit rate, multiple replicas.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Express.js Web Servers",
+                "to": "Redis Cluster",
+                "verb": "reads all feeds (100% hit rate)",
+                "kind": "sync"
+              }
+            ]
           }
         ],
         "correct": "B",
         "explanation": "Option A (write-through) fails because synchronous cache updates block writes, increasing p99 latency beyond the 200ms goal during write bursts. Option C (long TTL) violates the 5-second freshness constraint, serving stale feeds and degrading user experience. Option D (over-provisioning) uses too many nodes, incurring high infrastructure costs. Option B (write-behind with Kafka) decouples writes from reads, enabling low read latency and high write throughput while staying within budget. Its 5-second TTL meets freshness requirements, and the asynchronous update avoids write-time bottlenecks.",
         "prerequisiteTopics": [
           "api-design"
+        ],
+        "flows": [
+          {
+            "from": "End User",
+            "to": "HAProxy Load Balancer",
+            "verb": "",
+            "kind": "sync"
+          },
+          {
+            "from": "HAProxy Load Balancer",
+            "to": "Express.js Web Servers",
+            "verb": "load balances requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Express.js Web Servers",
+            "to": "Redis Cluster",
+            "verb": "loads feed on cache hit",
+            "kind": "sync"
+          },
+          {
+            "from": "Express.js Web Servers",
+            "to": "PostgreSQL Database",
+            "verb": "queries posts on cache miss",
+            "kind": "sync"
+          },
+          {
+            "from": "Express.js Web Servers",
+            "to": "Redis Cluster",
+            "verb": "caches generated feed",
+            "kind": "sync"
+          },
+          {
+            "from": "Express.js Web Servers",
+            "to": "Apache Kafka",
+            "verb": "publishes new posts",
+            "kind": "async"
+          }
         ]
       }
     ]
@@ -153,6 +725,7 @@
     "difficulty": 5,
     "scenario": "Design the consensus layer for a distributed payment system that must process 20,000 transactions per second with p99 latency under 50ms. Each transaction is 2KB and requires strict serializability. The system operates across three data centers within a region (max RTT 10ms). You must choose a consensus protocol that balances performance and strong consistency.",
     "nodes": [
+      "End User",
       "Payment SDK (GRPC client)",
       "Load Balancer (Envoy)",
       "Consensus Cluster (etcd/Raft)",
@@ -162,19 +735,63 @@
     "options": [
       {
         "id": "A",
-        "label": "Classic Paxos with strict quorum across all data centers (5 nodes)"
+        "label": "Classic Paxos with strict quorum across all data centers (5 nodes)",
+        "flows": [
+          {
+            "from": "Consensus Cluster (etcd/Raft)",
+            "to": "State Machine (RocksDB)",
+            "verb": "applies only after cross-DC quorum",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "B",
-        "label": "Raft with leader in one DC, batching, and pipeline replication"
+        "label": "Raft with leader in one DC, batching, and pipeline replication",
+        "flows": [
+          {
+            "from": "Load Balancer (Envoy)",
+            "to": "Consensus Cluster (etcd/Raft)",
+            "verb": "routes all writes to leader DC",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "C",
-        "label": "DynamoDB-style eventual consistency with conflict resolution"
+        "label": "DynamoDB-style eventual consistency with conflict resolution",
+        "flows": [
+          {
+            "from": "Payment SDK (GRPC client)",
+            "to": "State Machine (RocksDB)",
+            "verb": "reads and writes directly",
+            "kind": "sync"
+          },
+          {
+            "from": "State Machine (RocksDB)",
+            "to": "Payment SDK (GRPC client)",
+            "verb": "returns with conflict resolution",
+            "kind": "callback"
+          }
+        ]
       },
       {
         "id": "D",
-        "label": "Byzantine Fault Tolerant (PBFT) with all nodes participating in each round"
+        "label": "Byzantine Fault Tolerant (PBFT) with all nodes participating in each round",
+        "flows": [
+          {
+            "from": "Consensus Cluster (etcd/Raft)",
+            "to": "Payment SDK (GRPC client)",
+            "verb": "acks after 2f+1 replies",
+            "kind": "callback"
+          },
+          {
+            "from": "Consensus Cluster (etcd/Raft)",
+            "to": "State Machine (RocksDB)",
+            "verb": "applies per-replica on commit",
+            "kind": "sync"
+          }
+        ]
       }
     ],
     "correct": "B",
@@ -182,6 +799,50 @@
     "prerequisiteTopics": [
       "databases",
       "storage"
+    ],
+    "flows": [
+      {
+        "from": "End User",
+        "to": "Payment SDK (GRPC client)",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "Payment SDK (GRPC client)",
+        "to": "Load Balancer (Envoy)",
+        "verb": "requests",
+        "kind": "sync"
+      },
+      {
+        "from": "Load Balancer (Envoy)",
+        "to": "Consensus Cluster (etcd/Raft)",
+        "verb": "routes write proposal",
+        "kind": "sync"
+      },
+      {
+        "from": "Consensus Cluster (etcd/Raft)",
+        "to": "State Machine (RocksDB)",
+        "verb": "applies committed log entries",
+        "kind": "sync"
+      },
+      {
+        "from": "State Machine (RocksDB)",
+        "to": "Consensus Cluster (etcd/Raft)",
+        "verb": "returns result",
+        "kind": "sync"
+      },
+      {
+        "from": "Consensus Cluster (etcd/Raft)",
+        "to": "Payment SDK (GRPC client)",
+        "verb": "acks",
+        "kind": "callback"
+      },
+      {
+        "from": "Consensus Cluster (etcd/Raft)",
+        "to": "Observability (Prometheus/Grafana)",
+        "verb": "publishes metrics",
+        "kind": "async"
+      }
     ]
   },
   "databases:3": {
@@ -192,6 +853,7 @@
         "difficulty": 5,
         "scenario": "Design the database layer for a ride-sharing platform with 10 million daily active users and 10,000 ride requests per second. Each request requires reading and updating driver locations (500 bytes) and trip status (2KB) with P99 read latency under 100ms and strong consistency to prevent double-booking. The active dataset is 500GB. The team must choose a database solution that can handle this load reliably and cost-effectively.",
         "nodes": [
+          "End User",
           "Load Balancer (HAProxy)",
           "API Server (Node.js)",
           "Database (CockroachDB)",
@@ -202,28 +864,140 @@
           {
             "id": "A",
             "label": "Single MySQL master with read replicas and sharding at application layer",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "shards writes across shards",
+                "kind": "sync"
+              },
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "reads from read replicas",
+                "kind": "sync"
+              }
+            ]
           },
           {
             "id": "B",
             "label": "Geo-distributed CockroachDB cluster with strong consistency",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "queries with strong consistency",
+                "kind": "sync"
+              },
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "updates with strong consistency",
+                "kind": "sync"
+              }
+            ]
           },
           {
             "id": "C",
             "label": "MongoDB cluster with eventual consistency and sharding",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "shards writes",
+                "kind": "sync"
+              },
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "reads eventually consistent",
+                "kind": "async"
+              }
+            ]
           },
           {
             "id": "D",
             "label": "Amazon DynamoDB with DAX cache and strong consistency",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "API Server (Node.js)",
+                "to": "Cache (Redis Cluster)",
+                "verb": "reads through DAX cache",
+                "kind": "sync"
+              },
+              {
+                "from": "Cache (Redis Cluster)",
+                "to": "Database (CockroachDB)",
+                "verb": "loads on miss from DynamoDB",
+                "kind": "sync"
+              },
+              {
+                "from": "API Server (Node.js)",
+                "to": "Database (CockroachDB)",
+                "verb": "writes with strong consistency",
+                "kind": "sync"
+              }
+            ]
           }
         ],
         "correct": "B",
         "explanation": "Option A fails due to write latency and bottleneck: a single MySQL master cannot sustain 10K writes/sec, and application sharding adds complexity without native support. Option C fails due to consistency: eventual consistency can lead to double-booking and stale reads in ride-matching. Option D fails due to cost: DynamoDB with strong consistency at this throughput requires high provisioned capacity and DAX, becoming prohibitively expensive. Option B wins because CockroachDB offers linearizable consistency, automatic horizontal scaling, and geo-distribution, keeping latency low while handling write throughput cost-effectively by adding nodes.",
         "prerequisiteTopics": [
           "api-design"
+        ],
+        "flows": [
+          {
+            "from": "End User",
+            "to": "Load Balancer (HAProxy)",
+            "verb": "",
+            "kind": "sync"
+          },
+          {
+            "from": "Load Balancer (HAProxy)",
+            "to": "API Server (Node.js)",
+            "verb": "routes request",
+            "kind": "sync"
+          },
+          {
+            "from": "API Server (Node.js)",
+            "to": "Database (CockroachDB)",
+            "verb": "queries driver locations",
+            "kind": "sync"
+          },
+          {
+            "from": "API Server (Node.js)",
+            "to": "Database (CockroachDB)",
+            "verb": "updates trip status",
+            "kind": "sync"
+          },
+          {
+            "from": "API Server (Node.js)",
+            "to": "Cache (Redis Cluster)",
+            "verb": "caches driver locations",
+            "kind": "sync"
+          },
+          {
+            "from": "Cache (Redis Cluster)",
+            "to": "API Server (Node.js)",
+            "verb": "serves driver locations on cache hit",
+            "kind": "sync"
+          },
+          {
+            "from": "Monitoring (Prometheus)",
+            "to": "API Server (Node.js)",
+            "verb": "scrapes metrics",
+            "kind": "async"
+          },
+          {
+            "from": "Monitoring (Prometheus)",
+            "to": "Database (CockroachDB)",
+            "verb": "scrapes metrics",
+            "kind": "async"
+          }
         ]
       }
     ]
@@ -237,6 +1011,7 @@
     ],
     "scenario": "Design a database backend for a social media feed service that handles 1M QPS reads, 10K QPS writes (post creation), with p99 latency <20ms. Total data size is 10TB growing 1TB/month. The service requires strong consistency for read-after-write for user's own posts but can tolerate eventual consistency for others.",
     "nodes": [
+      "End User",
       "Nginx Load Balancer",
       "Redis Cache Cluster",
       "Cassandra Cluster",
@@ -250,7 +1025,51 @@
       },
       {
         "id": "B",
-        "label": "Distributed Cassandra cluster with local quorum consistency and a Redis cache for hot keys"
+        "label": "Distributed Cassandra cluster with local quorum consistency and a Redis cache for hot keys",
+        "flows": [
+          {
+            "from": "Application Server",
+            "to": "Cassandra Cluster",
+            "verb": "writes posts with LOCAL_QUORUM consistency to",
+            "kind": "sync"
+          },
+          {
+            "from": "Cassandra Cluster",
+            "to": "Application Server",
+            "verb": "acks quorum write to",
+            "kind": "async"
+          },
+          {
+            "from": "Application Server",
+            "to": "Redis Cache Cluster",
+            "verb": "queries hot keys in",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis Cache Cluster",
+            "to": "Application Server",
+            "verb": "returns cached feed on hit to",
+            "kind": "sync"
+          },
+          {
+            "from": "Application Server",
+            "to": "Cassandra Cluster",
+            "verb": "loads on miss from",
+            "kind": "sync"
+          },
+          {
+            "from": "Cassandra Cluster",
+            "to": "Application Server",
+            "verb": "returns feed rows to",
+            "kind": "sync"
+          },
+          {
+            "from": "Application Server",
+            "to": "Redis Cache Cluster",
+            "verb": "caches hot keys in",
+            "kind": "async"
+          }
+        ]
       },
       {
         "id": "C",
@@ -262,7 +1081,87 @@
       }
     ],
     "correct": "B",
-    "explanation": "Option A fails due to cost: supporting 1M QPS reads with MySQL replicas would require a large number of high-cost instances, and replication lag can cause stale reads. Option C fails due to latency: a single PostgreSQL instance cannot serve 1M QPS within 20ms, causing queueing and timeouts. Option D fails due to consistency: multi-master MySQL introduces write conflicts and requires conflict resolution, which may violate the required read-after-write consistency for own posts. Option B uses Cassandra with tunable consistency (local quorum ensures strong consistency for own posts) and Redis cache to absorb read traffic, providing low latency and linear scalability at a reasonable cost."
+    "explanation": "Option A fails due to cost: supporting 1M QPS reads with MySQL replicas would require a large number of high-cost instances, and replication lag can cause stale reads. Option C fails due to latency: a single PostgreSQL instance cannot serve 1M QPS within 20ms, causing queueing and timeouts. Option D fails due to consistency: multi-master MySQL introduces write conflicts and requires conflict resolution, which may violate the required read-after-write consistency for own posts. Option B uses Cassandra with tunable consistency (local quorum ensures strong consistency for own posts) and Redis cache to absorb read traffic, providing low latency and linear scalability at a reasonable cost.",
+    "flows": [
+      {
+        "from": "End User",
+        "to": "Nginx Load Balancer",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "Nginx Load Balancer",
+        "to": "Application Server",
+        "verb": "routes requests to",
+        "kind": "sync"
+      },
+      {
+        "from": "Application Server",
+        "to": "Redis Cache Cluster",
+        "verb": "queries cached feed in",
+        "kind": "sync"
+      },
+      {
+        "from": "Redis Cache Cluster",
+        "to": "Application Server",
+        "verb": "returns feed on cache hit to",
+        "kind": "sync"
+      },
+      {
+        "from": "Application Server",
+        "to": "Cassandra Cluster",
+        "verb": "loads feed on cache miss from",
+        "kind": "sync"
+      },
+      {
+        "from": "Cassandra Cluster",
+        "to": "Application Server",
+        "verb": "returns feed rows to",
+        "kind": "sync"
+      },
+      {
+        "from": "Application Server",
+        "to": "Cassandra Cluster",
+        "verb": "inserts new posts into",
+        "kind": "sync"
+      },
+      {
+        "from": "Cassandra Cluster",
+        "to": "Application Server",
+        "verb": "acks write to",
+        "kind": "async"
+      },
+      {
+        "from": "Application Server",
+        "to": "Redis Cache Cluster",
+        "verb": "caches hot feed in",
+        "kind": "async"
+      },
+      {
+        "from": "Prometheus Monitoring",
+        "to": "Nginx Load Balancer",
+        "verb": "scrapes metrics from",
+        "kind": "async"
+      },
+      {
+        "from": "Prometheus Monitoring",
+        "to": "Application Server",
+        "verb": "scrapes metrics from",
+        "kind": "async"
+      },
+      {
+        "from": "Prometheus Monitoring",
+        "to": "Redis Cache Cluster",
+        "verb": "scrapes metrics from",
+        "kind": "async"
+      },
+      {
+        "from": "Prometheus Monitoring",
+        "to": "Cassandra Cluster",
+        "verb": "scrapes metrics from",
+        "kind": "async"
+      }
+    ]
   },
   "observability:1": {
     "id": "observability-gen-1785307943173",
@@ -270,6 +1169,7 @@
     "difficulty": 5,
     "scenario": "A Kubernetes-based ridesharing platform handles 10,000 req/s; each request emits 500B of logs and 200B of traces. The SRE team needs to query across services with sub-2s latency for the past 24 hours while minimizing cost. The system includes Istio, NGINX, Kafka, and PostgreSQL.",
     "nodes": [
+      "End User",
       "Kubernetes",
       "Istio",
       "NGINX",
@@ -279,23 +1179,147 @@
     "options": [
       {
         "id": "A",
-        "label": "Ingest all logs and traces into Datadog with full granularity."
+        "label": "Ingest all logs and traces into Datadog with full granularity.",
+        "flows": [
+          {
+            "from": "Istio",
+            "to": "Kubernetes",
+            "verb": "emits full-granularity traces to agent in",
+            "kind": "async"
+          },
+          {
+            "from": "NGINX",
+            "to": "Kubernetes",
+            "verb": "emits access logs to agent in",
+            "kind": "async"
+          }
+        ]
       },
       {
         "id": "B",
-        "label": "Self-hosted Prometheus + Thanos for metrics, Loki for logs, Jaeger for traces."
+        "label": "Self-hosted Prometheus + Thanos for metrics, Loki for logs, Jaeger for traces.",
+        "flows": [
+          {
+            "from": "Kubernetes",
+            "to": "Istio",
+            "verb": "scrapes metrics from",
+            "kind": "sync"
+          },
+          {
+            "from": "Kubernetes",
+            "to": "NGINX",
+            "verb": "scrapes metrics from",
+            "kind": "sync"
+          },
+          {
+            "from": "Istio",
+            "to": "Kubernetes",
+            "verb": "exports traces to Jaeger in",
+            "kind": "async"
+          },
+          {
+            "from": "NGINX",
+            "to": "Kubernetes",
+            "verb": "streams logs to Loki in",
+            "kind": "async"
+          }
+        ]
       },
       {
         "id": "C",
-        "label": "Use AWS CloudWatch Logs and Metrics with default settings."
+        "label": "Use AWS CloudWatch Logs and Metrics with default settings.",
+        "flows": [
+          {
+            "from": "Kubernetes",
+            "to": "Istio",
+            "verb": "collects default metrics from",
+            "kind": "sync"
+          },
+          {
+            "from": "Kubernetes",
+            "to": "NGINX",
+            "verb": "collects default metrics and logs from",
+            "kind": "sync"
+          }
+        ]
       },
       {
         "id": "D",
-        "label": "Ship logs to Elasticsearch cluster and use correlation IDs for tracing."
+        "label": "Ship logs to Elasticsearch cluster and use correlation IDs for tracing.",
+        "flows": [
+          {
+            "from": "NGINX",
+            "to": "Istio",
+            "verb": "propagates correlation ID to",
+            "kind": "callback"
+          },
+          {
+            "from": "Istio",
+            "to": "Kubernetes",
+            "verb": "propagates correlation ID to",
+            "kind": "callback"
+          },
+          {
+            "from": "Kubernetes",
+            "to": "Kafka",
+            "verb": "ships logs to Elasticsearch via",
+            "kind": "async"
+          }
+        ]
       }
     ],
     "correct": "B",
-    "explanation": "Option A is incorrect because fully managed services like Datadog charge per ingested GB, making it prohibitively expensive at ~$30,000/month for 600 GB/day of logs and traces. Option C relies on CloudWatch which has limited indexing, resulting in query latencies often exceeding 5 seconds, failing the sub-2s requirement. Option D uses a small Elasticsearch cluster that can lose logs under high throughput and lacks built-in distributed tracing, leading to inconsistent observability data. Option B wins by combining Prometheus with Thanos for efficient metric storage, Loki on S3 for cheap log storage, and Jaeger for structured tracing, all self-hosted to balance performance and cost."
+    "explanation": "Option A is incorrect because fully managed services like Datadog charge per ingested GB, making it prohibitively expensive at ~$30,000/month for 600 GB/day of logs and traces. Option C relies on CloudWatch which has limited indexing, resulting in query latencies often exceeding 5 seconds, failing the sub-2s requirement. Option D uses a small Elasticsearch cluster that can lose logs under high throughput and lacks built-in distributed tracing, leading to inconsistent observability data. Option B wins by combining Prometheus with Thanos for efficient metric storage, Loki on S3 for cheap log storage, and Jaeger for structured tracing, all self-hosted to balance performance and cost.",
+    "flows": [
+      {
+        "from": "End User",
+        "to": "NGINX",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "NGINX",
+        "to": "Istio",
+        "verb": "proxies requests into",
+        "kind": "sync"
+      },
+      {
+        "from": "Istio",
+        "to": "Kubernetes",
+        "verb": "routes traffic to services in",
+        "kind": "sync"
+      },
+      {
+        "from": "Kubernetes",
+        "to": "PostgreSQL",
+        "verb": "queries",
+        "kind": "sync"
+      },
+      {
+        "from": "Kubernetes",
+        "to": "Kafka",
+        "verb": "publishes events to",
+        "kind": "async"
+      },
+      {
+        "from": "Kafka",
+        "to": "Kubernetes",
+        "verb": "delivers events to",
+        "kind": "async"
+      },
+      {
+        "from": "Istio",
+        "to": "Kafka",
+        "verb": "streams telemetry to",
+        "kind": "async"
+      },
+      {
+        "from": "Istio",
+        "to": "NGINX",
+        "verb": "returns response to",
+        "kind": "callback"
+      }
+    ]
   },
   "observability:3": {
     "cards": [
@@ -322,6 +1346,7 @@
         ],
         "scenario": "A microservices checkout platform handles 50k requests/s at p99 100ms. Each request generates ~15 spans, so the tracing pipeline receives 750k spans/s. The team wants 30-day trace retention and sub-second trace queries, but the storage budget is only $10k/month. Design an observability pipeline that balances trace fidelity, query latency, and cost.",
         "nodes": [
+          "End User",
           "OpenTelemetry Collector",
           "Apache Kafka",
           "Jaeger",
@@ -337,6 +1362,50 @@
               "trace-context-propagation",
               "kafka-buffering",
               "sampling-bias"
+            ],
+            "flows": [
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Apache Kafka",
+                "verb": "publishes",
+                "kind": "async"
+              },
+              {
+                "from": "Apache Kafka",
+                "to": "Jaeger",
+                "verb": "delivers",
+                "kind": "async"
+              },
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Prometheus",
+                "verb": "exports",
+                "kind": "async"
+              },
+              {
+                "from": "Prometheus",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Jaeger",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Jaeger",
+                "verb": "queries",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Prometheus",
+                "verb": "queries",
+                "kind": "sync"
+              }
             ]
           },
           {
@@ -347,6 +1416,50 @@
               "hot-warm-tiering",
               "trace-id-indexing",
               "metric-cardinality"
+            ],
+            "flows": [
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Apache Kafka",
+                "verb": "publishes",
+                "kind": "async"
+              },
+              {
+                "from": "Apache Kafka",
+                "to": "Jaeger",
+                "verb": "delivers",
+                "kind": "async"
+              },
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Prometheus",
+                "verb": "exports",
+                "kind": "async"
+              },
+              {
+                "from": "Prometheus",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Jaeger",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Jaeger",
+                "verb": "queries",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Prometheus",
+                "verb": "queries",
+                "kind": "sync"
+              }
             ]
           },
           {
@@ -357,6 +1470,50 @@
               "consistent-hashing",
               "trace-id-indexing",
               "metric-cardinality"
+            ],
+            "flows": [
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Apache Kafka",
+                "verb": "publishes",
+                "kind": "async"
+              },
+              {
+                "from": "Apache Kafka",
+                "to": "Jaeger",
+                "verb": "delivers",
+                "kind": "async"
+              },
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Prometheus",
+                "verb": "exports",
+                "kind": "async"
+              },
+              {
+                "from": "Prometheus",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Jaeger",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Jaeger",
+                "verb": "queries",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Prometheus",
+                "verb": "queries",
+                "kind": "sync"
+              }
             ]
           },
           {
@@ -367,11 +1524,81 @@
               "latency-filtering",
               "query-latency",
               "correlation-ids"
+            ],
+            "flows": [
+              {
+                "from": "OpenTelemetry Collector",
+                "to": "Jaeger",
+                "verb": "delivers",
+                "kind": "async"
+              },
+              {
+                "from": "Jaeger",
+                "to": "Grafana",
+                "verb": "serves",
+                "kind": "sync"
+              },
+              {
+                "from": "Grafana",
+                "to": "Jaeger",
+                "verb": "queries",
+                "kind": "sync"
+              }
             ]
           }
         ],
         "correct": "C",
-        "explanation": "A fails because head-based sampling decides before seeing trace outcomes, so rare p99 error/latency traces are systematically undersampled and trace completeness becomes inconsistent. B stores every span for 30 days, which at 750k spans/s creates multiple PB of storage and blows through the $10k/month budget. D focuses on slow spans and probabilistic edge sampling, which biases the data and forces Jaeger to scan raw spans for query workloads, producing multi-second query latency. C wins because tail-based sampling with consistent hashing keeps complete traces for important events while dynamically adjusting sample rates, and derived Prometheus metrics keep query latency low while 7-day hot storage bounds cost."
+        "explanation": "A fails because head-based sampling decides before seeing trace outcomes, so rare p99 error/latency traces are systematically undersampled and trace completeness becomes inconsistent. B stores every span for 30 days, which at 750k spans/s creates multiple PB of storage and blows through the $10k/month budget. D focuses on slow spans and probabilistic edge sampling, which biases the data and forces Jaeger to scan raw spans for query workloads, producing multi-second query latency. C wins because tail-based sampling with consistent hashing keeps complete traces for important events while dynamically adjusting sample rates, and derived Prometheus metrics keep query latency low while 7-day hot storage bounds cost.",
+        "flows": [
+          {
+            "from": "End User",
+            "to": "OpenTelemetry Collector",
+            "verb": "",
+            "kind": "sync"
+          },
+          {
+            "from": "OpenTelemetry Collector",
+            "to": "Apache Kafka",
+            "verb": "publishes",
+            "kind": "async"
+          },
+          {
+            "from": "Apache Kafka",
+            "to": "Jaeger",
+            "verb": "delivers",
+            "kind": "async"
+          },
+          {
+            "from": "OpenTelemetry Collector",
+            "to": "Prometheus",
+            "verb": "exports",
+            "kind": "async"
+          },
+          {
+            "from": "Prometheus",
+            "to": "Grafana",
+            "verb": "serves",
+            "kind": "sync"
+          },
+          {
+            "from": "Jaeger",
+            "to": "Grafana",
+            "verb": "serves",
+            "kind": "sync"
+          },
+          {
+            "from": "Grafana",
+            "to": "Jaeger",
+            "verb": "queries",
+            "kind": "sync"
+          },
+          {
+            "from": "Grafana",
+            "to": "Prometheus",
+            "verb": "queries",
+            "kind": "sync"
+          }
+        ]
       }
     ]
   },
@@ -383,6 +1610,7 @@
         "difficulty": 5,
         "scenario": "Design a system to process 1,000 orders per second (each 1 KB) with at-least-once delivery and a maximum processing latency of 500 ms. Traffic spikes up to 2,000 QPS are expected. The system must avoid duplicate processing while keeping costs reasonable.",
         "nodes": [
+          "End User",
           "NGINX Load Balancer",
           "Order API (Spring Boot)",
           "Queue System",
@@ -393,28 +1621,134 @@
           {
             "id": "A",
             "label": "Use a Redis List as a simple queue with multiple workers polling for new orders.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Worker Pool (Python Celery)",
+                "to": "Queue System",
+                "verb": "polls (BRPOP) for new orders",
+                "kind": "sync"
+              },
+              {
+                "from": "Queue System",
+                "to": "Worker Pool (Python Celery)",
+                "verb": "returns queued order",
+                "kind": "sync"
+              }
+            ]
           },
           {
             "id": "B",
             "label": "Use AWS SQS with a Dead Letter Queue and auto‑scaling workers.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Queue System",
+                "to": "Worker Pool (Python Celery)",
+                "verb": "delivers messages",
+                "kind": "async"
+              },
+              {
+                "from": "Worker Pool (Python Celery)",
+                "to": "Queue System",
+                "verb": "acks (deletes) processed message",
+                "kind": "sync"
+              }
+            ]
           },
           {
             "id": "C",
             "label": "Use Apache Kafka with a single consumer group and one topic per order type.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Order API (Spring Boot)",
+                "to": "Queue System",
+                "verb": "publishes to a topic per order type",
+                "kind": "async"
+              },
+              {
+                "from": "Queue System",
+                "to": "Worker Pool (Python Celery)",
+                "verb": "delivers to single consumer group",
+                "kind": "async"
+              }
+            ]
           },
           {
             "id": "D",
             "label": "Use a PostgreSQL table as a queue with row‑level locking and a worker checking for new rows.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Order API (Spring Boot)",
+                "to": "Order Database (PostgreSQL)",
+                "verb": "inserts order rows as queue entries",
+                "kind": "sync"
+              },
+              {
+                "from": "Worker Pool (Python Celery)",
+                "to": "Order Database (PostgreSQL)",
+                "verb": "polls for new rows with row-level locking",
+                "kind": "sync"
+              },
+              {
+                "from": "Order Database (PostgreSQL)",
+                "to": "Worker Pool (Python Celery)",
+                "verb": "returns claimed rows",
+                "kind": "sync"
+              }
+            ]
           }
         ],
         "correct": "B",
         "explanation": "Option A (Redis List) risks losing orders if Redis crashes without persistence, violating at‑least‑once delivery. Option C (Kafka) can achieve at‑least‑once, but its typical tail latency at moderate QPS often exceeds 500 ms, and the cost and complexity of running a Kafka cluster are higher than needed. Option D (PostgreSQL as queue) creates a scalability bottleneck; as traffic spikes, row contention and lock waiting increase latency and cost. Option B (AWS SQS) provides reliable at‑least‑once delivery, built‑in dead letter handling, and auto‑scaling workers can handle spikes without manual intervention, all at a reasonable cost for this workload.",
         "prerequisiteTopics": [
           "api-design"
+        ],
+        "flows": [
+          {
+            "from": "End User",
+            "to": "NGINX Load Balancer",
+            "verb": "",
+            "kind": "sync"
+          },
+          {
+            "from": "NGINX Load Balancer",
+            "to": "Order API (Spring Boot)",
+            "verb": "forwards requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Order API (Spring Boot)",
+            "to": "Order Database (PostgreSQL)",
+            "verb": "persists order with dedupe key and status",
+            "kind": "sync"
+          },
+          {
+            "from": "Order API (Spring Boot)",
+            "to": "Queue System",
+            "verb": "enqueues order event",
+            "kind": "async"
+          },
+          {
+            "from": "Queue System",
+            "to": "Worker Pool (Python Celery)",
+            "verb": "delivers order event",
+            "kind": "async"
+          },
+          {
+            "from": "Worker Pool (Python Celery)",
+            "to": "Order Database (PostgreSQL)",
+            "verb": "queries idempotency and updates processing status",
+            "kind": "sync"
+          },
+          {
+            "from": "Worker Pool (Python Celery)",
+            "to": "Order API (Spring Boot)",
+            "verb": "reports processing status",
+            "kind": "callback"
+          }
         ]
       }
     ]
@@ -427,6 +1761,7 @@
         "difficulty": 5,
         "scenario": "Design a real-time order processing system for a food delivery app handling 10,000 orders/sec (5KB each). The system must deliver orders to restaurants in order per restaurant and ensure no duplicate orders. You have a 2-second SLA. Choose a queuing solution that balances throughput, ordering, and durability.",
         "nodes": [
+          "End User",
           "AWS Application Load Balancer",
           "Apache Kafka (with per-restaurant partitions)",
           "Redis (for deduplication cache)",
@@ -442,7 +1777,21 @@
           {
             "id": "B",
             "label": "Use Apache Kafka with partitions keyed by restaurant ID, combined with idempotent producers.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Order Processing Workers (Golang)",
+                "to": "Apache Kafka (with per-restaurant partitions)",
+                "verb": "publishes idempotently",
+                "kind": "async"
+              },
+              {
+                "from": "Apache Kafka (with per-restaurant partitions)",
+                "to": "Order Processing Workers (Golang)",
+                "verb": "delivers in order per partition",
+                "kind": "async"
+              }
+            ]
           },
           {
             "id": "C",
@@ -452,13 +1801,71 @@
           {
             "id": "D",
             "label": "Use Redis Pub/Sub with sharding by restaurant ID, and a Redis Cluster for persistence.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": [],
+            "flows": [
+              {
+                "from": "Order Processing Workers (Golang)",
+                "to": "Redis (for deduplication cache)",
+                "verb": "publishes via Pub/Sub",
+                "kind": "async"
+              },
+              {
+                "from": "Redis (for deduplication cache)",
+                "to": "Order Processing Workers (Golang)",
+                "verb": "delivers",
+                "kind": "async"
+              }
+            ]
           }
         ],
         "correct": "B",
         "explanation": "Option A fails because managing thousands of queues in RabbitMQ becomes a bottleneck, increasing latency beyond the SLA due to poor scalability. Option C fails due to cost and throughput limitations: SQS FIFO only supports 300 TPS, requiring many queues and increasing complexity. Option D fails because Redis Pub/Sub does not guarantee message persistence or at-least-once delivery, risking order loss. Option B wins as Kafka provides high throughput (100k+/sec), strict partition-level ordering, and persistence via replication, meeting all requirements.",
         "prerequisiteTopics": [
           "api-design"
+        ],
+        "flows": [
+          {
+            "from": "End User",
+            "to": "AWS Application Load Balancer",
+            "verb": "",
+            "kind": "sync"
+          },
+          {
+            "from": "AWS Application Load Balancer",
+            "to": "Order Processing Workers (Golang)",
+            "verb": "forwards",
+            "kind": "sync"
+          },
+          {
+            "from": "Order Processing Workers (Golang)",
+            "to": "Redis (for deduplication cache)",
+            "verb": "queries",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis (for deduplication cache)",
+            "to": "Order Processing Workers (Golang)",
+            "verb": "returns on miss",
+            "kind": "callback"
+          },
+          {
+            "from": "Order Processing Workers (Golang)",
+            "to": "Apache Kafka (with per-restaurant partitions)",
+            "verb": "publishes",
+            "kind": "async"
+          },
+          {
+            "from": "Apache Kafka (with per-restaurant partitions)",
+            "to": "Order Processing Workers (Golang)",
+            "verb": "delivers in order per partition",
+            "kind": "async"
+          },
+          {
+            "from": "Order Processing Workers (Golang)",
+            "to": "PostgreSQL (persistent storage)",
+            "verb": "persists",
+            "kind": "sync"
+          }
         ]
       }
     ]

@@ -19,6 +19,14 @@
           "cdn-caching",
           "cache-invalidation",
           "content-freshness"
+        ],
+        "flows": [
+          {
+            "from": "Mobile App",
+            "to": "API Server (Node.js)",
+            "verb": "requests via edge CDN (30s TTL, serves on hit)",
+            "kind": "sync"
+          }
         ]
       },
       {
@@ -28,6 +36,32 @@
           "write-through-caching",
           "cache-coherence",
           "write-ordering"
+        ],
+        "flows": [
+          {
+            "from": "Inventory Service",
+            "to": "Redis Cache",
+            "verb": "writes price/stock (write-through)",
+            "kind": "sync"
+          },
+          {
+            "from": "Inventory Service",
+            "to": "Postgres (Primary)",
+            "verb": "updates after Redis write",
+            "kind": "sync"
+          },
+          {
+            "from": "API Server (Node.js)",
+            "to": "Redis Cache",
+            "verb": "reads",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis Cache",
+            "to": "API Server (Node.js)",
+            "verb": "serves on hit",
+            "kind": "sync"
+          }
         ]
       },
       {
@@ -37,6 +71,20 @@
           "local-caches",
           "cache-coherence",
           "cache-invalidation"
+        ],
+        "flows": [
+          {
+            "from": "API Server (Node.js)",
+            "to": "Postgres (Primary)",
+            "verb": "loads on cache miss",
+            "kind": "sync"
+          },
+          {
+            "from": "API Server (Node.js)",
+            "to": "Postgres (Primary)",
+            "verb": "periodic background refresh (30s)",
+            "kind": "async"
+          }
         ]
       },
       {
@@ -46,6 +94,20 @@
           "database-indexing",
           "read-replication",
           "connection-pooling"
+        ],
+        "flows": [
+          {
+            "from": "API Server (Node.js)",
+            "to": "Postgres (Primary)",
+            "verb": "reads directly via covering index",
+            "kind": "sync"
+          },
+          {
+            "from": "Postgres (Primary)",
+            "to": "API Server (Node.js)",
+            "verb": "returns (read replicas, connection pool)",
+            "kind": "sync"
+          }
         ]
       }
     ],
@@ -63,6 +125,44 @@
       "database-indexing",
       "read-replication",
       "connection-pooling"
+    ],
+    "flows": [
+      {
+        "from": "Mobile App",
+        "to": "API Server (Node.js)",
+        "verb": "requests",
+        "kind": "sync"
+      },
+      {
+        "from": "API Server (Node.js)",
+        "to": "Postgres (Primary)",
+        "verb": "queries",
+        "kind": "sync"
+      },
+      {
+        "from": "Postgres (Primary)",
+        "to": "API Server (Node.js)",
+        "verb": "returns",
+        "kind": "sync"
+      },
+      {
+        "from": "API Server (Node.js)",
+        "to": "Mobile App",
+        "verb": "responds",
+        "kind": "sync"
+      },
+      {
+        "from": "Inventory Service",
+        "to": "Postgres (Primary)",
+        "verb": "writes price and stock changes",
+        "kind": "sync"
+      },
+      {
+        "from": "Inventory Service",
+        "to": "Redis Cache",
+        "verb": "publishes real-time updates",
+        "kind": "async"
+      }
     ]
   },
   "queues:3": {
@@ -71,6 +171,7 @@
     "difficulty": 5,
     "scenario": "You are designing the booking engine for a concert ticketing platform. During on-sale events, 500,000 concurrent users submit 50,000 booking requests per second for 20,000 total seats. Each request must be processed in order per seat category and confirmed within 500 ms. Double-bookings are unacceptable. The team must choose a queuing architecture that balances ordering guarantees, throughput, and operational complexity.",
     "nodes": [
+      "End User",
       "Web Client (React)",
       "Nginx Rate-Limiting Reverse Proxy",
       "Booking API Service (Go)",
@@ -87,6 +188,38 @@
           "row-locking",
           "deadlocks",
           "connection-pooling"
+        ],
+        "flows": [
+          {
+            "from": "Web Client (React)",
+            "to": "Nginx Rate-Limiting Reverse Proxy",
+            "verb": "requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Nginx Rate-Limiting Reverse Proxy",
+            "to": "Booking API Service (Go)",
+            "verb": "forwards",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Postgres with optimistic locking",
+            "verb": "inserts with SERIALIZABLE isolation",
+            "kind": "sync"
+          },
+          {
+            "from": "Postgres with optimistic locking",
+            "to": "Booking API Service (Go)",
+            "verb": "returns row with acquired lock",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Web Client (React)",
+            "verb": "confirms",
+            "kind": "sync"
+          }
         ]
       },
       {
@@ -96,6 +229,56 @@
           "message-partitioning",
           "message-ordering",
           "optimistic-concurrency"
+        ],
+        "flows": [
+          {
+            "from": "Web Client (React)",
+            "to": "Nginx Rate-Limiting Reverse Proxy",
+            "verb": "requests",
+            "kind": "sync"
+          },
+          {
+            "from": "Nginx Rate-Limiting Reverse Proxy",
+            "to": "Booking API Service (Go)",
+            "verb": "forwards",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Redis for idempotency tokens",
+            "verb": "checks idempotency token",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Kafka Cluster (3 brokers)",
+            "verb": "publishes to category partition",
+            "kind": "async"
+          },
+          {
+            "from": "Kafka Cluster (3 brokers)",
+            "to": "Booking API Service (Go)",
+            "verb": "delivers sequentially per partition",
+            "kind": "async"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Postgres with optimistic locking",
+            "verb": "writes with optimistic locking",
+            "kind": "sync"
+          },
+          {
+            "from": "Postgres with optimistic locking",
+            "to": "Booking API Service (Go)",
+            "verb": "returns updated row",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Web Client (React)",
+            "verb": "confirms",
+            "kind": "callback"
+          }
         ]
       },
       {
@@ -105,6 +288,38 @@
           "competing-consumers",
           "cache-coherence",
           "read-modify-write-races"
+        ],
+        "flows": [
+          {
+            "from": "Nginx Rate-Limiting Reverse Proxy",
+            "to": "Booking API Service (Go)",
+            "verb": "forwards",
+            "kind": "sync"
+          },
+          {
+            "from": "Redis for idempotency tokens",
+            "to": "Booking API Service (Go)",
+            "verb": "reads seat availability",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Postgres with optimistic locking",
+            "verb": "writes",
+            "kind": "sync"
+          },
+          {
+            "from": "Postgres with optimistic locking",
+            "to": "Booking API Service (Go)",
+            "verb": "returns seat claim result",
+            "kind": "sync"
+          },
+          {
+            "from": "Booking API Service (Go)",
+            "to": "Web Client (React)",
+            "verb": "confirms",
+            "kind": "sync"
+          }
         ]
       },
       {
@@ -134,6 +349,68 @@
       "fifo-queues",
       "conditional-writes",
       "serverless-cold-starts"
+    ],
+    "flows": [
+      {
+        "from": "End User",
+        "to": "Web Client (React)",
+        "verb": "",
+        "kind": "sync"
+      },
+      {
+        "from": "Web Client (React)",
+        "to": "Nginx Rate-Limiting Reverse Proxy",
+        "verb": "requests",
+        "kind": "sync"
+      },
+      {
+        "from": "Nginx Rate-Limiting Reverse Proxy",
+        "to": "Booking API Service (Go)",
+        "verb": "forwards",
+        "kind": "sync"
+      },
+      {
+        "from": "Booking API Service (Go)",
+        "to": "Redis for idempotency tokens",
+        "verb": "queries idempotency token",
+        "kind": "sync"
+      },
+      {
+        "from": "Redis for idempotency tokens",
+        "to": "Booking API Service (Go)",
+        "verb": "returns token status",
+        "kind": "sync"
+      },
+      {
+        "from": "Booking API Service (Go)",
+        "to": "Kafka Cluster (3 brokers)",
+        "verb": "publishes booking request",
+        "kind": "async"
+      },
+      {
+        "from": "Kafka Cluster (3 brokers)",
+        "to": "Booking API Service (Go)",
+        "verb": "delivers to consumer",
+        "kind": "async"
+      },
+      {
+        "from": "Booking API Service (Go)",
+        "to": "Postgres with optimistic locking",
+        "verb": "writes with optimistic locking",
+        "kind": "sync"
+      },
+      {
+        "from": "Postgres with optimistic locking",
+        "to": "Booking API Service (Go)",
+        "verb": "returns seat row",
+        "kind": "sync"
+      },
+      {
+        "from": "Booking API Service (Go)",
+        "to": "Web Client (React)",
+        "verb": "confirms booking",
+        "kind": "callback"
+      }
     ]
   }
 }

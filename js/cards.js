@@ -79,6 +79,245 @@ function normalizePrerequisiteTopics(topics, cardTopic) {
     );
 }
 
+/* ——— Diagram flows ———
+   A card may carry `flows` (directed edges between named nodes, describing the
+   base architecture) and each option may carry its own `flows` (the wiring
+   that option implies). Cards without flows render as a linear chain over
+   their nodes, so legacy and cached cards still work. */
+
+const FLOW_KINDS = ['sync', 'async', 'callback'];
+
+/* Nodes that represent the end user / client of the system. Every diagram's
+   flows must start here; cards without such a node get one synthesized. */
+const END_USER_NODE = /^(end[- ]?user|user|web client|mobile app|browser|client|customer|app)$/i;
+
+function findEndUserNode(nodes) {
+  if (!Array.isArray(nodes)) return -1;
+  return nodes.findIndex(name => END_USER_NODE.test(String(name)));
+}
+
+function normalizeFlows(flows, nodes) {
+  const nodeSet = new Set(Array.isArray(nodes) ? nodes : []);
+  return (Array.isArray(flows) ? flows : [])
+    .filter(flow => flow && typeof flow === 'object')
+    .map(flow => ({
+      from: typeof flow.from === 'string' ? flow.from : '',
+      to: typeof flow.to === 'string' ? flow.to : '',
+      verb: typeof flow.verb === 'string' ? flow.verb : '',
+      kind: FLOW_KINDS.includes(flow.kind) ? flow.kind : 'sync'
+    }))
+    .filter(flow =>
+      flow.from && flow.to && flow.from !== flow.to &&
+      nodeSet.has(flow.from) && nodeSet.has(flow.to)
+    );
+}
+
+/* Anchor the flow graph on the end user: the user node is found by name (or
+   synthesized when absent) and always has an outgoing edge, so diagrams start
+   from the person using the system. The synthesized edge connects to the
+   graph's entry point (the first flow's source), not an arbitrary node.
+   Idempotent. */
+function anchorFlowsOnEndUser(card) {
+  if (!card || typeof card !== 'object') return card;
+  if (!Array.isArray(card.nodes) || !card.nodes.length) return card;
+  if (!Array.isArray(card.flows)) card.flows = [];
+  let userIndex = findEndUserNode(card.nodes);
+  if (userIndex === -1) {
+    const entry = card.flows[0]?.from
+      || card.nodes.find((name, index) => index !== userIndex && name);
+    card.nodes.unshift('End User');
+    card.flows.unshift({ from: 'End User', to: entry, verb: '', kind: 'sync' });
+    userIndex = 0;
+  }
+  const userName = card.nodes[userIndex];
+  const hasOutgoing = card.flows.some(flow => flow.from === userName);
+  if (!hasOutgoing) {
+    const target = card.flows.find(flow => flow.from !== userName)?.from
+      || card.nodes.find((name, index) => index !== userIndex && name !== userName)
+      || card.nodes[0];
+    card.flows.unshift({ from: userName, to: target, verb: '', kind: 'sync' });
+  } else {
+    // Repair: a synthesized edge may point at a node that is not the graph's
+    // entry (e.g. an arbitrary nodes[0]); retarget the user's first outgoing
+    // edge to the entry point (first non-user flow's source) when it differs.
+    const firstUserEdge = card.flows.findIndex(flow => flow.from === userName);
+    const entry = card.flows.find(flow => flow.from !== userName)?.from;
+    if (entry && firstUserEdge !== -1 && card.flows[firstUserEdge]?.to !== entry
+        && card.nodes.includes(entry)) {
+      card.flows[firstUserEdge].to = entry;
+    }
+  }
+  return card;
+}
+
+function normalizeCardFlows(card) {
+  if (!card || typeof card !== 'object') return card;
+  const flows = normalizeFlows(card.flows, card.nodes);
+  card.flows = (flows.length || !Array.isArray(card.nodes) || card.nodes.length < 2)
+    ? flows
+    : card.nodes.slice(0, -1).map((node, index) => ({
+        from: node, to: card.nodes[index + 1], verb: '', kind: 'sync'
+      }));
+  if (Array.isArray(card.options)) {
+    for (const option of card.options) {
+      if (!option || typeof option !== 'object') continue;
+      const optionFlows = normalizeFlows(option.flows, card.nodes);
+      option.flows = optionFlows.length ? optionFlows : undefined;
+    }
+  }
+  return anchorFlowsOnEndUser(card);
+}
+
+/* Hand-curated wiring for the fallback deck: base architecture plus the exact
+   edges each option implies, so option choices rewire the diagram. */
+const SEED_FLOWS = {
+  "fallback-cache-001": {
+    base: [
+      { from: "Web Client", to: "API Server", verb: "requests", kind: "sync" },
+      { from: "API Server", to: "Database", verb: "queries", kind: "sync" }
+    ],
+    options: {
+      A: [
+        { from: "Web Client", to: "Cache Layer", verb: "requests", kind: "sync" },
+        { from: "Cache Layer", to: "API Server", verb: "forwards", kind: "sync" },
+        { from: "API Server", to: "Database", verb: "queries", kind: "sync" }
+      ],
+      B: [
+        { from: "Web Client", to: "API Server", verb: "requests", kind: "sync" },
+        { from: "API Server", to: "Cache Layer", verb: "checks cache", kind: "sync" },
+        { from: "Cache Layer", to: "Database", verb: "loads on miss", kind: "sync" }
+      ],
+      C: [
+        { from: "Web Client", to: "API Server", verb: "requests", kind: "sync" },
+        { from: "API Server", to: "Database", verb: "reads replicas", kind: "sync" }
+      ],
+      D: [
+        { from: "Web Client", to: "Cache Layer", verb: "loads static", kind: "sync" }
+      ]
+    }
+  },
+  "fallback-queue-001": {
+    base: [
+      { from: "Web App", to: "API Server", verb: "posts", kind: "sync" },
+      { from: "API Server", to: "Bank API", verb: "calls", kind: "sync" }
+    ],
+    options: {
+      A: [
+        { from: "Web App", to: "API Server", verb: "posts", kind: "sync" },
+        { from: "API Server", to: "Queue", verb: "enqueues", kind: "async" },
+        { from: "Queue", to: "Worker Pool", verb: "delivers", kind: "async" },
+        { from: "Worker Pool", to: "Bank API", verb: "calls", kind: "sync" },
+        { from: "Worker Pool", to: "Web App", verb: "posts result", kind: "callback" }
+      ],
+      B: [
+        { from: "Web App", to: "API Server", verb: "posts", kind: "sync" },
+        { from: "API Server", to: "Bank API", verb: "awaits", kind: "async" }
+      ],
+      C: [
+        { from: "Web App", to: "API Server", verb: "posts", kind: "sync" },
+        { from: "API Server", to: "Bank API", verb: "calls", kind: "sync" }
+      ],
+      D: [
+        { from: "Web App", to: "API Server", verb: "posts", kind: "sync" },
+        { from: "API Server", to: "Queue", verb: "writes", kind: "async" },
+        { from: "Queue", to: "Bank API", verb: "processes", kind: "async" }
+      ]
+    }
+  },
+  "fallback-db-001": {
+    base: [
+      { from: "Mobile App", to: "API Server", verb: "requests", kind: "sync" },
+      { from: "API Server", to: "Primary DB", verb: "writes", kind: "sync" },
+      { from: "Primary DB", to: "Read Replica", verb: "replicates", kind: "async" }
+    ],
+    options: {
+      A: [
+        { from: "Mobile App", to: "API Server", verb: "requests", kind: "sync" },
+        { from: "API Server", to: "Primary DB", verb: "reads & writes", kind: "sync" },
+        { from: "API Server", to: "Read Replica", verb: "reads trending", kind: "sync" }
+      ],
+      B: [
+        { from: "Mobile App", to: "API Server", verb: "requests", kind: "sync" },
+        { from: "API Server", to: "Primary DB", verb: "writes", kind: "sync" },
+        { from: "Primary DB", to: "Read Replica", verb: "replicates", kind: "async" },
+        { from: "API Server", to: "Cache", verb: "reads & writes", kind: "sync" }
+      ],
+      C: [
+        { from: "Mobile App", to: "API Server", verb: "requests", kind: "sync" },
+        { from: "API Server", to: "Primary DB", verb: "reads & writes", kind: "sync" }
+      ],
+      D: [
+        { from: "Mobile App", to: "API Server", verb: "requests", kind: "sync" },
+        { from: "API Server", to: "Read Replica", verb: "reads", kind: "sync" },
+        { from: "Read Replica", to: "Primary DB", verb: "replicates", kind: "async" }
+      ]
+    }
+  },
+  "fallback-consensus-001": {
+    base: [
+      { from: "Node A", to: "Node B", verb: "syncs", kind: "async" },
+      { from: "Node B", to: "Node C", verb: "syncs", kind: "async" },
+      { from: "Node C", to: "Node D", verb: "syncs", kind: "async" },
+      { from: "Node D", to: "Node E", verb: "syncs", kind: "async" }
+    ],
+    options: {
+      A: [
+        { from: "Node A", to: "Node B", verb: "leads", kind: "sync" },
+        { from: "Node A", to: "Node C", verb: "leads", kind: "sync" },
+        { from: "Node A", to: "Node D", verb: "leads", kind: "sync" },
+        { from: "Node A", to: "Node E", verb: "leads", kind: "sync" }
+      ],
+      B: [
+        { from: "Node A", to: "Node B", verb: "commits", kind: "sync" },
+        { from: "Node B", to: "Node A", verb: "acks", kind: "callback" },
+        { from: "Node C", to: "Node A", verb: "acks", kind: "callback" }
+      ],
+      C: [
+        { from: "Node A", to: "Node B", verb: "gossips", kind: "async" },
+        { from: "Node B", to: "Node C", verb: "gossips", kind: "async" },
+        { from: "Node C", to: "Node D", verb: "gossips", kind: "async" },
+        { from: "Node D", to: "Node E", verb: "gossips", kind: "async" }
+      ],
+      D: [
+        { from: "Node A", to: "Node B", verb: "reads", kind: "sync" },
+        { from: "Node B", to: "Node C", verb: "reads", kind: "sync" },
+        { from: "Node C", to: "Node D", verb: "reads", kind: "sync" },
+        { from: "Node D", to: "Node E", verb: "reads", kind: "sync" }
+      ]
+    }
+  },
+  "fallback-api-001": {
+    base: [
+      { from: "Third-Party App", to: "API Gateway", verb: "calls", kind: "sync" },
+      { from: "API Gateway", to: "Booking Service", verb: "forwards", kind: "sync" },
+      { from: "Booking Service", to: "Driver Dispatch", verb: "dispatches", kind: "async" }
+    ],
+    options: {
+      A: [
+        { from: "Third-Party App", to: "API Gateway", verb: "POST /ride", kind: "sync" },
+        { from: "API Gateway", to: "Booking Service", verb: "forwards", kind: "sync" },
+        { from: "Booking Service", to: "Driver Dispatch", verb: "dispatches", kind: "async" }
+      ],
+      B: [
+        { from: "Third-Party App", to: "API Gateway", verb: "POST /bookings", kind: "sync" },
+        { from: "API Gateway", to: "Booking Service", verb: "forwards", kind: "sync" },
+        { from: "Booking Service", to: "Driver Dispatch", verb: "dispatches", kind: "async" },
+        { from: "Driver Dispatch", to: "Third-Party App", verb: "GET status", kind: "callback" }
+      ],
+      C: [
+        { from: "Third-Party App", to: "API Gateway", verb: "query", kind: "sync" },
+        { from: "API Gateway", to: "Booking Service", verb: "resolves", kind: "sync" },
+        { from: "Booking Service", to: "Driver Dispatch", verb: "dispatches", kind: "async" }
+      ],
+      D: [
+        { from: "Third-Party App", to: "API Gateway", verb: "streams", kind: "callback" },
+        { from: "API Gateway", to: "Booking Service", verb: "streams", kind: "callback" },
+        { from: "Booking Service", to: "Driver Dispatch", verb: "dispatches", kind: "async" }
+      ]
+    }
+  }
+};
+
 function normalizeCardPrerequisites(card) {
   if (!card || typeof card !== "object") return card;
   card.options = Array.isArray(card.options)
@@ -99,7 +338,21 @@ function normalizeCardPrerequisites(card) {
     ...existingCardPrerequisites,
     ...card.options.flatMap(option => option.prerequisiteTopics)
   ], card.topic);
-  return card;
+  // diagram flows: curated seed wiring wins over none; anything else is
+  // normalized (or synthesized as a chain for legacy cards)
+  const seedFlows = SEED_FLOWS[card.id];
+  if (seedFlows && (!Array.isArray(card.flows) || card.flows.length === 0)) {
+    card.flows = normalizeFlows(seedFlows.base, card.nodes);
+  }
+  if (Array.isArray(card.options)) {
+    for (const option of card.options) {
+      if (!option || typeof option !== 'object') continue;
+      if (seedFlows && !Array.isArray(option.flows)) {
+        option.flows = normalizeFlows(seedFlows.options?.[option.id], card.nodes);
+      }
+    }
+  }
+  return normalizeCardFlows(card);
 }
 
 /* ——— Difficulty classification ———

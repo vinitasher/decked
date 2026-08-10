@@ -176,10 +176,53 @@ test('generation validation rejects scenarios with no concrete requirements', ()
       prerequisiteTopics: [],
       scenario: 'Design a cache for a social feed.',
       nodes: ['a', 'b', 'c'],
+      flows: [
+        { from: 'a', to: 'b', verb: 'requests', kind: 'sync' },
+        { from: 'b', to: 'c', verb: 'queries', kind: 'sync' }
+      ],
       options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
       correct: 'A',
       explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
     }, 'A'),
     /at least one concrete requirement/
+  );
+});
+
+test('generation validation rejects flows that reference unknown nodes', () => {
+  assert.throws(
+    () => validateGeneratedCard({
+      id: 'x', topic: 'caching', difficulty: 2,
+      prerequisiteTopics: [],
+      scenario: 'An API serves 20,000 QPS and must keep data fresh within 500ms.',
+      nodes: ['a', 'b', 'c'],
+      flows: [
+        { from: 'a', to: 'ghost', verb: 'requests', kind: 'sync' },
+        { from: 'ghost', to: 'c', verb: 'queries', kind: 'sync' }
+      ],
+      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      correct: 'A',
+      explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
+    }, 'A'),
+    /flows must reference distinct node names/
+  );
+});
+
+test('generation validation rejects flows that leave a node unconnected', () => {
+  assert.throws(
+    () => validateGeneratedCard({
+      id: 'x', topic: 'caching', difficulty: 2,
+      prerequisiteTopics: [],
+      scenario: 'An API serves 20,000 QPS and must keep data fresh within 500ms.',
+      nodes: ['a', 'b', 'c', 'd'],
+      flows: [
+        { from: 'a', to: 'b', verb: 'requests', kind: 'sync' },
+        { from: 'b', to: 'c', verb: 'queries', kind: 'sync' },
+        { from: 'c', to: 'b', verb: 'acks', kind: 'callback' }
+      ],
+      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      correct: 'A',
+      explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
+    }, 'A'),
+    /appears in no flow/
   );
 });

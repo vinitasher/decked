@@ -23,7 +23,8 @@ The card must be a single JSON object with these exact keys:
 - difficulty: ${cardDifficulty}
 - scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches. The scenario must contain exactly ${cardDifficulty} distinct requirements (quantified SLAs, throughput targets, latency budgets, data volumes, consistency guarantees, or deadlines).
 - nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
-- options: exactly 4 objects {id, label, prerequisiteTopics} with ids A, B, C, D, where ${designatedCorrect} is correct. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topicName}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
+- flows: array of directed edges describing the base architecture the scenario describes. Each edge is {from, to, verb, kind} where from/to are node names, verb is the action on that edge ("requests", "publishes", "queries", "caches", "loads on miss", "acks"), and kind is one of "sync", "async", "callback". Every node must appear in at least one flow, and the topology must be realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
+- options: exactly 4 objects {id, label, prerequisiteTopics, flows} with ids A, B, C, D, where ${designatedCorrect} is correct. Each option's flows array describes the exact wiring that option implies: {from, to, verb, kind} edges between nodes, using only the nodes that option connects, consistent with the option label. If an option omits flows, omit the key entirely — never send an empty array. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topicName}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
 - prerequisiteTopics: the deduplicated union of all four options' prerequisiteTopics.
 - correct: "${designatedCorrect}"
 - explanation: explain why each option other than ${designatedCorrect} fails (different reason per option) and why ${designatedCorrect} wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
@@ -78,7 +79,7 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
   }
   if (!card) throw new Error('no JSON found in output');
 
-  const required = ['id', 'topic', 'difficulty', 'scenario', 'nodes', 'options', 'correct', 'explanation'];
+  const required = ['id', 'topic', 'difficulty', 'scenario', 'nodes', 'flows', 'options', 'correct', 'explanation'];
   for (const f of required) {
     if (!card[f]) throw new Error(`missing field: ${f}`);
   }
@@ -87,6 +88,24 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
   if (!/\d{2,}/.test(card.scenario)) errors.push('scenario lacks concrete numbers');
   if (countScenarioRequirements(card.scenario).count < 1) errors.push('scenario has no concrete requirements');
   if (card.nodes.length < 3) errors.push('need at least 3 nodes');
+  if (!Array.isArray(card.flows) || card.flows.length < card.nodes.length - 1) {
+    errors.push('flows must connect the nodes');
+  } else {
+    const nodeSet = new Set(card.nodes);
+    for (const flow of card.flows) {
+      if (!flow || typeof flow.from !== 'string' || typeof flow.to !== 'string'
+          || !nodeSet.has(flow.from) || !nodeSet.has(flow.to) || flow.from === flow.to) {
+        errors.push('flows must reference distinct node names');
+        break;
+      }
+    }
+    for (const node of card.nodes) {
+      if (!card.flows.some(flow => flow.from === node || flow.to === node)) {
+        errors.push(`node "${node}" appears in no flow`);
+        break;
+      }
+    }
+  }
   if (
     card.options.length !== OPTION_IDS.length ||
     !OPTION_IDS.every(id => card.options.some(option => option?.id === id))
@@ -96,6 +115,9 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
   }
   if (!card.options.every(o => o.prerequisiteTopics.length >= 2 && o.prerequisiteTopics.length <= 4)) {
     errors.push('every option needs 2-4 prerequisite concepts');
+  }
+  if (card.options.some(o => o.flows !== undefined && !Array.isArray(o.flows))) {
+    errors.push('option flows must be arrays when present');
   }
   if (!card.options.map(o => o.id).includes(card.correct)) errors.push('correct not in options');
   if (card.correct !== designatedCorrect) errors.push(`correct must match designated option ${designatedCorrect}`);

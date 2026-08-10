@@ -660,11 +660,13 @@ const APP = {
       difficulty: card.difficulty,
       prerequisiteTopics: Array.isArray(card.prerequisiteTopics)
         ? [...card.prerequisiteTopics] : [],
+      flows: Array.isArray(card.flows) ? card.flows.map(flow => ({ ...flow })) : [],
       options: (Array.isArray(card.options) ? card.options : []).map(option => ({
         id: option?.id,
         label: option?.label,
         prerequisiteTopics: Array.isArray(option?.prerequisiteTopics)
-          ? [...option.prerequisiteTopics] : []
+          ? [...option.prerequisiteTopics] : [],
+        flows: Array.isArray(option?.flows) ? option.flows.map(flow => ({ ...flow })) : []
       })),
       correct: card.correct,
       explanation: card.explanation
@@ -1193,7 +1195,10 @@ const APP = {
       console.error('Unable to persist confidence feedback', error);
     }
 
-    Render.diagram(card, 'diagram-container', true);
+    Render.diagram(card, 'diagram-container', {
+      reveal: true,
+      option: (card.options || []).find(option => option.id === this._selectedId)
+    });
     this.renderDeckStats();
     this.prefetchNext();
   },
@@ -1253,7 +1258,7 @@ const APP = {
   peekDiagram() {
     const card = this.currentCard;
     this._diagramPeeking[card.id] = true;
-    Render.diagram(card, 'diagram-container', false);
+    Render.diagram(card, 'diagram-container', { reveal: false });
   },
 
   nextCard() {

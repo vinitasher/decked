@@ -74,6 +74,11 @@ decision-based practice with adaptive difficulty.
   for an immediate second chance (once per card per session)
 - Session end shows a "Review your mistakes" list with the correct answer and
   explanation for every card answered wrong
+- Architecture diagrams: every card carries a directed flow graph (`flows`
+  with `from`/`to`/`verb`/`kind`) and each option carries the exact wiring it
+  implies. Diagrams use a layered graph layout (parallel branches, callback
+  back-edges, verb-labeled edges), theme-aware colors, and on reveal they
+  highlight the correct wiring — red where the chosen option diverges.
 
 **Data model:**
 ```json

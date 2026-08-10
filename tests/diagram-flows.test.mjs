@@ -1,0 +1,207 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+import test from 'node:test';
+
+const cardsSource = await readFile(new URL('../js/cards.js', import.meta.url), 'utf8');
+const renderSource = await readFile(new URL('../js/render.js', import.meta.url), 'utf8');
+const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
+
+const context = vm.createContext({
+  console, Math, Date, JSON
+});
+vm.runInContext(`${cardsSource}
+globalThis.normalizeFlowsForTest = normalizeFlows;
+globalThis.normalizeCardFlowsForTest = normalizeCardFlows;
+globalThis.normalizeCardPrerequisitesForTest = normalizeCardPrerequisites;
+globalThis.SEED_FLOWS_FOR_TEST = SEED_FLOWS;
+globalThis.SEED_CARDS_FOR_TEST = SEED_CARDS;
+${renderSource}
+globalThis.RenderForTest = Render;`, context);
+
+const normalizeFlows = context.normalizeFlowsForTest;
+const normalizeCardFlows = context.normalizeCardFlowsForTest;
+const normalizeCardPrerequisites = context.normalizeCardPrerequisitesForTest;
+const SEED_FLOWS = context.SEED_FLOWS_FOR_TEST;
+const Render = context.RenderForTest;
+
+function cardWithFlows(flows) {
+  return {
+    id: 'x', topic: 'caching', difficulty: 2,
+    nodes: ['client', 'api', 'cache', 'db'],
+    flows,
+    options: [{ id: 'A', label: 'Option A', prerequisiteTopics: ['a'] }],
+    correct: 'A', explanation: 'x'
+  };
+}
+
+test('every seed card has curated base flows and per-option wiring', () => {
+  const seeds = ['fallback-cache-001', 'fallback-queue-001', 'fallback-db-001',
+    'fallback-consensus-001', 'fallback-api-001'];
+  for (const id of seeds) {
+    const entry = SEED_FLOWS[id];
+    assert.ok(entry, `${id} is missing seed flows`);
+    assert.ok(entry.base.length >= 1, `${id}: base flows`);
+    assert.deepEqual(Object.keys(entry.options).sort(), ['A', 'B', 'C', 'D'], `${id}: all four options`);
+  }
+});
+
+test('legacy cards without flows normalize to a linear chain', () => {
+  const card = normalizeCardFlows(cardWithFlows(undefined));
+  assert.deepEqual(card.flows.map(flow => flow.from + '->' + flow.to),
+    ['client->api', 'api->cache', 'cache->db']);
+});
+
+test('flows referencing unknown nodes are dropped, then fall back to the chain', () => {
+  const card = normalizeCardFlows(cardWithFlows([
+    { from: 'client', to: 'ghost', verb: 'x', kind: 'sync' },
+    { from: 'ghost', to: 'db', verb: 'x', kind: 'sync' }
+  ]));
+  assert.equal(card.flows.length, 3); // invalid edges dropped → chain fallback
+  assert.deepEqual(card.flows.map(flow => flow.from + '->' + flow.to),
+    ['client->api', 'api->cache', 'cache->db']);
+});
+
+test('flow kinds are whitelisted and unknown verbs are kept as-is', () => {
+  const card = normalizeCardFlows(cardWithFlows([
+    { from: 'client', to: 'api', verb: 'requests', kind: 'bogus' },
+    { from: 'api', to: 'cache', verb: '', kind: 'async' }
+  ]));
+  assert.equal(card.flows[0].kind, 'sync');
+  assert.equal(card.flows[1].kind, 'async');
+  assert.equal(card.flows[1].verb, '');
+});
+
+test('option flows are normalized and emptied options become undefined', () => {
+  const card = cardWithFlows([
+    { from: 'client', to: 'api', verb: 'requests', kind: 'sync' },
+    { from: 'api', to: 'db', verb: 'queries', kind: 'sync' }
+  ]);
+  card.options = [
+    { id: 'A', label: 'A', prerequisiteTopics: [], flows: [{ from: 'api', to: 'cache', verb: 'caches', kind: 'sync' }] },
+    { id: 'B', label: 'B', prerequisiteTopics: [], flows: [{ from: 'api', to: 'ghost', verb: 'x', kind: 'sync' }] }
+  ];
+  normalizeCardFlows(card);
+  assert.equal(card.options[0].flows.length, 1);
+  assert.equal(card.options[1].flows, undefined);
+});
+
+test('cards without an end-user node get one synthesized at the graph entry', () => {
+  const card = normalizeCardFlows({
+    id: 'x', topic: 'caching', difficulty: 2,
+    nodes: ['Cloudflare CDN', 'API Server', 'Redis', 'PostgreSQL'],
+    flows: [
+      { from: 'Cloudflare CDN', to: 'API Server', verb: 'forwards', kind: 'sync' },
+      { from: 'API Server', to: 'Redis', verb: 'checks', kind: 'sync' },
+      { from: 'Redis', to: 'PostgreSQL', verb: 'loads on miss', kind: 'sync' }
+    ],
+    options: [{ id: 'A', label: 'A', prerequisiteTopics: ['a'] }],
+    correct: 'A', explanation: 'x'
+  });
+  assert.equal(card.nodes[0], 'End User');
+  assert.equal(card.flows[0].from, 'End User');
+  assert.equal(card.flows[0].to, 'Cloudflare CDN');
+  // idempotent
+  const again = normalizeCardFlows(JSON.parse(JSON.stringify(card)));
+  assert.deepEqual(again.nodes, card.nodes);
+  assert.equal(again.flows.length, card.flows.length);
+});
+
+test('a synthesized end-user edge is repaired onto the true graph entry', () => {
+  const card = normalizeCardFlows({
+    id: 'x', topic: 'caching', difficulty: 2,
+    nodes: ['End User', 'MySQL Cluster', 'Redis', 'CDN', 'API Server'],
+    flows: [
+      { from: 'End User', to: 'MySQL Cluster', verb: '', kind: 'sync' },
+      { from: 'CDN', to: 'API Server', verb: 'forwards', kind: 'sync' },
+      { from: 'API Server', to: 'Redis', verb: 'checks', kind: 'sync' }
+    ],
+    options: [{ id: 'A', label: 'A', prerequisiteTopics: ['a'] }],
+    correct: 'A', explanation: 'x'
+  });
+  assert.equal(card.flows[0].to, 'CDN');
+});
+
+test('Render.layout anchors the end-user node in the first layer despite incoming edges', () => {
+  const layout = Render.layout([
+    { from: 'Worker Pool', to: 'Web App', verb: 'posts result', kind: 'callback' },
+    { from: 'Web App', to: 'API Server', verb: 'posts', kind: 'sync' },
+    { from: 'API Server', to: 'Queue', verb: 'enqueues', kind: 'async' },
+    { from: 'Queue', to: 'Worker Pool', verb: 'delivers', kind: 'async' }
+  ], ['Web App', 'API Server', 'Queue', 'Worker Pool']);
+  const byName = new Map(layout.nodes.map((pos, i) => ['Web App', 'API Server', 'Queue', 'Worker Pool'][i]).map((name, i) => [name, layout.nodes[i]]));
+  assert.ok(byName.get('Web App').x <= byName.get('API Server').x);
+  assert.ok(byName.get('Web App').x <= byName.get('Queue').x);
+  assert.ok(byName.get('Web App').x <= byName.get('Worker Pool').x);
+});
+
+test('seed cards receive curated flows through prerequisite normalization', () => {
+  const seed = normalizeCardPrerequisites(JSON.parse(JSON.stringify(context.SEED_CARDS_FOR_TEST.find(c => c.id === 'fallback-queue-001'))));
+  assert.ok(seed.flows.length >= 2);
+  const correct = seed.options.find(option => option.id === seed.correct);
+  assert.ok(Array.isArray(correct.flows) && correct.flows.length >= 3,
+    'the correct seed option should have explicit wiring');
+});
+
+test('Render.layout places sources in layer 0 and dependents deeper', () => {
+  const layout = Render.layout([
+    { from: 'client', to: 'api', verb: 'requests', kind: 'sync' },
+    { from: 'api', to: 'cache', verb: 'checks', kind: 'sync' },
+    { from: 'api', to: 'db', verb: 'queries', kind: 'sync' }
+  ], ['client', 'api', 'cache', 'db']);
+  const byName = new Map(layout.nodes.map((pos, i) => ['client', 'api', 'cache', 'db'][i]).map((name, i) => [name, layout.nodes[i]]));
+  assert.ok(byName.get('client').x <= byName.get('api').x);
+  assert.ok(byName.get('api').x <= byName.get('cache').x);
+  assert.ok(byName.get('api').x <= byName.get('db').x);
+  assert.ok(layout.width > 0 && layout.height > 0);
+  for (const pos of layout.nodes) {
+    assert.ok(Number.isFinite(pos.x) && Number.isFinite(pos.y));
+    assert.ok(pos.w >= 64 && pos.w <= 170);
+  }
+});
+
+test('Render.layout fans out parallel branches without overlap', () => {
+  const layout = Render.layout([
+    { from: 'client', to: 'lb', verb: 'requests', kind: 'sync' },
+    { from: 'lb', to: 'worker-a', verb: 'routes', kind: 'sync' },
+    { from: 'lb', to: 'worker-b', verb: 'routes', kind: 'sync' },
+    { from: 'worker-a', to: 'db', verb: 'writes', kind: 'sync' },
+    { from: 'worker-b', to: 'db', verb: 'writes', kind: 'sync' }
+  ], ['client', 'lb', 'worker-a', 'worker-b', 'db']);
+  const workerA = layout.nodes[2];
+  const workerB = layout.nodes[3];
+  assert.ok(workerA.y !== workerB.y || workerA.x !== workerB.x, 'parallel workers must not overlap');
+  assert.ok(layout.edges.length === 5);
+});
+
+test('Render.layout returns edges with finite bezier controls', () => {
+  const layout = Render.layout([
+    { from: 'client', to: 'api', verb: 'requests', kind: 'sync' },
+    { from: 'api', to: 'db', verb: 'queries', kind: 'sync' }
+  ], ['client', 'api', 'db']);
+  for (const edge of layout.edges) {
+    for (const value of [edge.x1, edge.y1, edge.x2, edge.y2, edge.c1x, edge.c1y, edge.c2x, edge.c2y]) {
+      assert.ok(Number.isFinite(value));
+    }
+  }
+});
+
+test('diagram rendering uses theme variables and per-option highlight logic', () => {
+  assert.match(renderSource, /var\(--diagram-bg\)/);
+  assert.match(renderSource, /var\(--success\)/);
+  assert.match(renderSource, /var\(--danger\)/);
+  assert.match(renderSource, /var\(--muted\)/);
+  assert.match(renderSource, /chosenOption\?\.flows/);
+  assert.match(renderSource, /correctOption/);
+  assert.match(renderSource, /viewBox/);
+});
+
+test('rateConfidence passes the chosen option to the diagram renderer', () => {
+  assert.match(appSource, /Render\.diagram\(card, 'diagram-container', \{/);
+  assert.match(appSource, /option: \(card\.options \|\| \[\]\)\.find\(option => option\.id === this\._selectedId\)/);
+});
+
+test('snapshots persist card and option flows', () => {
+  assert.match(appSource, /flows: Array\.isArray\(card\.flows\) \? card\.flows\.map\(flow => \(\{ \.\.\.flow \}\)\) : \[\]/);
+  assert.match(appSource, /flows: Array\.isArray\(option\?\.flows\) \? option\.flows\.map\(flow => \(\{ \.\.\.flow \}\)\) : \[\]/);
+});

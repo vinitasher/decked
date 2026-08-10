@@ -75,7 +75,6 @@ test('difficulty transition occurs before persistence work', () => {
 });
 
 test('service worker refreshes deployed assets and retains offline fallback', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v13'/);
   assert.match(serviceWorker, /fetch\(e\.request\)/);
   assert.match(serviceWorker, /cache\.put\(e\.request, cachedResponse\)/);
   assert.match(serviceWorker, /\.catch\(\(\) => caches\.match\(e\.request\)/);

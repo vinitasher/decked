@@ -12,6 +12,11 @@ const card = {
   prerequisiteTopics: ['api-design'],
   scenario: 'A producer sends 5,000 messages per second while a single consumer can process only 1,000 messages per second.',
   nodes: ['producer', 'queue', 'consumer', 'database'],
+  flows: [
+    { from: 'producer', to: 'queue', verb: 'publishes', kind: 'async' },
+    { from: 'queue', to: 'consumer', verb: 'delivers', kind: 'async' },
+    { from: 'consumer', to: 'database', verb: 'writes', kind: 'sync' }
+  ],
   options: [
     { id: 'A', label: 'Call the consumer synchronously', prerequisiteTopics: ['api-design', 'real-time'] },
     { id: 'B', label: 'Buffer work in a queue and drain asynchronously', prerequisiteTopics: ['api-design', 'queues'] },

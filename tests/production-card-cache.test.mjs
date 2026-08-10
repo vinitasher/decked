@@ -81,6 +81,38 @@ test('every card carries the stored fields and four options', () => {
   }
 });
 
+test('every cached card carries validated diagram flows', () => {
+  const kinds = new Set(['sync', 'async', 'callback']);
+  const endUser = /^(end[- ]?user|user|web client|mobile app|browser|client|customer|app)$/i;
+  for (const [key, value] of Object.entries(snapshot)) {
+    for (const card of cardsIn(value)) {
+      assert.ok(Array.isArray(card.flows) && card.flows.length >= card.nodes.length - 1,
+        `${key}/${card.id} flows must connect the nodes`);
+      const nodeSet = new Set(card.nodes);
+      for (const flow of card.flows) {
+        assert.ok(flow && nodeSet.has(flow.from) && nodeSet.has(flow.to) && flow.from !== flow.to,
+          `${key}/${card.id} flow references an unknown node`);
+        assert.ok(typeof flow.verb === 'string', `${key}/${card.id} flow verb missing`);
+        assert.ok(kinds.has(flow.kind), `${key}/${card.id} flow kind invalid`);
+      }
+      for (const node of card.nodes) {
+        assert.ok(card.flows.some(flow => flow.from === node || flow.to === node),
+          `${key}/${card.id} node ${node} appears in no flow`);
+      }
+      assert.ok(endUser.test(card.nodes[0]), `${key}/${card.id} must start from the end user`);
+      assert.equal(card.flows[0].from, card.nodes[0],
+        `${key}/${card.id} first flow must leave the end-user node`);
+      for (const option of card.options) {
+        if (!option.flows) continue;
+        for (const flow of option.flows) {
+          assert.ok(nodeSet.has(flow.from) && nodeSet.has(flow.to),
+            `${key}/${card.id} option ${option.id} flow references an unknown node`);
+        }
+      }
+    }
+  }
+});
+
 test('pool values expose their cards via the cards array', () => {
   const poolKeys = Object.keys(snapshot).filter(key => Array.isArray(snapshot[key].cards));
   assert.ok(poolKeys.length > 0, 'expected at least one pool value in the snapshot');
