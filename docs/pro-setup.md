@@ -19,6 +19,15 @@ entitlement into KV. No database is required — KV is the source of truth.
    - `anon` public key → `SUPABASE_ANON_KEY` (public, safe for the client)
    - `JWT Secret` → `SUPABASE_JWT_SECRET` (server-side only, secret)
 
+4. In **Authentication → URL Configuration**, add these entries to
+   **Redirect URLs**:
+   - `https://decked.pages.dev`
+   - `http://localhost:3000`
+   - `http://127.0.0.1:3000`
+
+   The app returns to the origin where sign-in started, so both the deployed
+   site and local GitHub/Google development logins need to be allow-listed.
+
 No tables are needed. Accounts exist purely so Pro can be attached to a
 stable identity; entitlements live in Cloudflare KV.
 

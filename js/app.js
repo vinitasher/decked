@@ -170,6 +170,15 @@ let supabaseClient = null;
 let currentSession = null;
 let currentPlan = 'free';
 
+function getOAuthRedirectUrl() {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return origin && origin !== 'null' ? origin : 'https://decked.pages.dev';
+}
+
+function isOAuthCallbackHash(hash = window.location.hash) {
+  return /^#(?:access_token|refresh_token|expires_at|error|error_description)=/.test(String(hash || ''));
+}
+
 function escHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -1619,7 +1628,10 @@ const APP = {
     document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
     const el = document.getElementById('screen-' + id);
     if (el) el.classList.remove('hidden');
-    if (SCREEN_ROUTES.includes(id)) this._syncScreen(id);
+    // Supabase's implicit OAuth response lives in the hash. Keep it intact
+    // until the Supabase client has consumed it instead of replacing it with
+    // the app's normal #/welcome route.
+    if (SCREEN_ROUTES.includes(id) && !isOAuthCallbackHash()) this._syncScreen(id);
     window.scrollTo?.(0, 0);
   },
 
@@ -2188,12 +2200,12 @@ const APP = {
 
   signInGoogle() {
     if (!supabaseClient) return;
-    supabaseClient.auth.signInWithOAuth({ provider: 'google', redirectTo: 'https://decked.pages.dev' });
+    supabaseClient.auth.signInWithOAuth({ provider: 'google', redirectTo: getOAuthRedirectUrl() });
   },
 
   signInGithub() {
     if (!supabaseClient) return;
-    supabaseClient.auth.signInWithOAuth({ provider: 'github', redirectTo: 'https://decked.pages.dev' });
+    supabaseClient.auth.signInWithOAuth({ provider: 'github', redirectTo: getOAuthRedirectUrl() });
   },
 
   signOut() {

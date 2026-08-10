@@ -18,7 +18,7 @@ test('every screen has its own URL route', () => {
 
 test('showScreen keeps the address bar in sync and routing is hash-driven', () => {
   assert.match(appSource, /window\.addEventListener\('hashchange', \(\) => this\._handleHashChange\(\)\)/);
-  assert.match(appSource, /if \(SCREEN_ROUTES\.includes\(id\)\) this\._syncScreen\(id\);/);
+  assert.match(appSource, /if \(SCREEN_ROUTES\.includes\(id\) && !isOAuthCallbackHash\(\)\) this\._syncScreen\(id\);/);
   assert.match(appSource, /showScreen\(route\)/);
   assert.match(appSource, /_currentRoute\(\) \|\| 'welcome'/);
 });
@@ -45,6 +45,7 @@ function routerApp(hash) {
   const app = Object.create(context.APP);
   app.sessionCards = [];
   app.renderDeckStats = () => {};
+  app.testLocation = context.window.location;
   return app;
 }
 
@@ -78,6 +79,14 @@ test('a deep link to #/session with no session shows the dashboard', () => {
   const app = routerApp('#/session');
   app._handleHashChange();
   assert.equal(app._currentRoute(), 'welcome');
+});
+
+test('an OAuth access-token fragment is preserved while the account initializes', () => {
+  const callbackHash = '#access_token=oauth-token&refresh_token=refresh-token';
+  const app = routerApp(callbackHash);
+  app._handleHashChange();
+  assert.equal(app._currentRoute(), null);
+  assert.equal(app.testLocation.hash, callbackHash);
 });
 
 test('a deep link to #/wiki/<topic> opens that topic', () => {

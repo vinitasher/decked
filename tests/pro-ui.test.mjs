@@ -28,6 +28,20 @@ test('app.js initializes accounts from the runtime config', () => {
   assert.match(app, /initAccount\(\)/);
 });
 
+test('OAuth callbacks return to the current app origin, including localhost', () => {
+  assert.match(app, /function getOAuthRedirectUrl\(\) \{/);
+  assert.match(app, /const origin = typeof window !== 'undefined' \? window\.location\.origin : '';/);
+  assert.match(app, /return origin && origin !== 'null' \? origin : 'https:\/\/decked\.pages\.dev';/);
+  assert.match(app, /signInWithOAuth\(\{ provider: 'google', redirectTo: getOAuthRedirectUrl\(\) \}\)/);
+  assert.match(app, /signInWithOAuth\(\{ provider: 'github', redirectTo: getOAuthRedirectUrl\(\) \}\)/);
+});
+
+test('the hash router preserves Supabase OAuth response fragments', () => {
+  assert.match(app, /function isOAuthCallbackHash\(hash = window\.location\.hash\) \{/);
+  assert.match(app, /access_token\|refresh_token\|expires_at\|error\|error_description/);
+  assert.match(app, /if \(SCREEN_ROUTES\.includes\(id\) && !isOAuthCallbackHash\(\)\) this\._syncScreen\(id\)/);
+});
+
 test('app.js sends device id and bearer token headers on API calls', () => {
   assert.match(app, /function apiHeaders\(\) \{\s*const headers = \{\};/);
   assert.match(app, /headers\['X-Device-Id'\] = getOrCreateDeviceId\(\)/);
@@ -47,9 +61,7 @@ test('app.js handles quota-exceeded responses with an upgrade notice', () => {
 
 test('app.js wires sign-in, sign-out, and the checkout flow', () => {
   assert.match(app, /signInGoogle\(\) \{\s*if \(!supabaseClient\) return;/);
-  assert.match(app, /signInWithOAuth\(\{ provider: 'google', redirectTo: 'https:\/\/decked\.pages\.dev' \}\)/);
   assert.match(app, /signInGithub\(\) \{\s*if \(!supabaseClient\) return;/);
-  assert.match(app, /signInWithOAuth\(\{ provider: 'github', redirectTo: 'https:\/\/decked\.pages\.dev' \}\)/);
   assert.match(app, /Sign in with GitHub/);
   assert.match(app, /signOut\(\) \{\s*if \(supabaseClient\) supabaseClient\.auth\.signOut\(\);/);
   assert.match(app, /api\/billing\/checkout/);
