@@ -191,6 +191,16 @@ const Render = {
 
   _esc(label) { return String(label ?? '').replace(/"/g, '&quot;'); },
 
+  /* Edge labels live inside Mermaid pipe syntax, which rejects parentheses
+     and brackets — strip them (verbs like "loads on miss (per second)" stay
+     readable) and collapse whitespace. */
+  _safeMermaidLabel(text) {
+    return this._esc(String(text ?? '')
+      .replace(/[()[\]{}]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim());
+  },
+
   /* Pure mapping of card flows onto a Mermaid flowchart definition plus
      per-edge linkStyle overrides and the compare legend. */
   _mermaidDefinition(card, opts = {}) {
@@ -240,9 +250,10 @@ const Render = {
       const dotted = edge.kind === 'async' || edge.kind === 'callback';
       let label = edge.verb || '';
       if (compare && edge.options && edge.options.length) {
-        label = label ? `${label} (${edge.options.join(', ')})` : `(${edge.options.join(', ')})`;
+        // Mermaid pipe labels reject parentheses; use a middle dot instead
+        label = label ? `${label} · ${edge.options.join(',')}` : `${edge.options.join(',')}`;
       }
-      def.push(`${from} ${dotted ? '-.->' : '-->'}|${this._esc(label)}| ${to}`);
+      def.push(`${from} ${dotted ? '-.->' : '-->'}|${this._safeMermaidLabel(label)}| ${to}`);
       let style = null;
       if (compare) {
         const first = edge.options?.[0];
