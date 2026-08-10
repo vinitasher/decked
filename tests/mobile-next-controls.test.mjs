@@ -50,6 +50,11 @@ test('the session layout gives the diagram a full-height right-side panel', () =
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*\.session-diagram \{ position: static;/);
 });
 
+test('wide monitors expand the app container and give the panel the extra room', () => {
+  assert.match(css, /@media \(min-width: 1100px\)[\s\S]*\.container \{ max-width: 1440px; \}/);
+  assert.match(css, /@media \(min-width: 1100px\)[\s\S]*\.session-main \{ max-width: 780px; \}/);
+});
+
 test('mobile post-answer tray is sticky and hides keyboard-only guidance', () => {
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.post-answer-actions:not\(\.hidden\)[\s\S]*position: sticky/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.keyboard-hint \{ display: none; \}/);
