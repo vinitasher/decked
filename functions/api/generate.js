@@ -308,11 +308,11 @@ export async function onRequest(context) {
         body: JSON.stringify({
           model: models[attempt],
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 4096,
+          max_tokens: 8192,
           temperature: 0.7,
           thinking: { type: 'disabled' }
         }),
-        signal: AbortSignal.timeout(45000)
+        signal: AbortSignal.timeout(120000)
       });
 
       if (aiResponse.ok) {

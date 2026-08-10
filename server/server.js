@@ -26,7 +26,9 @@ function cacheKey(topic, difficulty) {
 function generateCard(topic, difficulty, callback) {
   const script = path.join(__dirname, 'generate-card.js');
   const child = spawn(process.execPath, [script, topic, String(difficulty)], {
-    timeout: 90000,
+    // Generation regularly takes 1-2 minutes (flows payload); allow the full
+    // three-attempt budget instead of killing mid-generation.
+    timeout: 600000,
     cwd: __dirname
   });
 

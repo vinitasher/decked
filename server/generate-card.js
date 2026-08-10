@@ -47,7 +47,7 @@ function callModel(prompt) {
   const env = { ...process.env, OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"deny","bash":"deny"}}' };
   return execSync(
     `${opencodeBin} run --auto --dir /home/pi/git/mamaLab --model ${model} "${escaped}"`,
-    { timeout: 90000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, env }
+    { timeout: 240000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, env }
   );
 }
 
