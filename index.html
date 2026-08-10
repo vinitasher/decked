@@ -119,23 +119,24 @@
 
   <!-- Session -->
   <div id="screen-session" class="screen hidden">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button type="button" id="session-dashboard-btn" class="session-dashboard-btn" aria-label="Back to dashboard" title="Back to dashboard">←</button>
+        <span id="card-counter">1 / 8</span>
+        <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
+        <button id="diagram-peek-btn" class="btn btn-sm btn-outline" onclick="APP.peekDiagram()" title="Show the architecture diagram before answering">👁 Peek</button>
+      </div>
+      <div class="card-meta">
+        <span id="card-topic">Topic</span>
+        <span id="card-difficulty">★★★</span>
+        <span id="card-requirements" class="card-requirements"></span>
+        <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
+        <span id="session-timer" style="color:var(--muted)"></span>
+      </div>
+    </div>
+    <div id="card-prerequisites" class="card-prerequisites"></div>
     <div class="session-layout">
       <div class="session-main">
-        <div class="card-header">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <button type="button" id="session-dashboard-btn" class="session-dashboard-btn" aria-label="Back to dashboard" title="Back to dashboard">←</button>
-            <span id="card-counter">1 / 8</span>
-            <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
-          </div>
-          <div class="card-meta">
-            <span id="card-topic">Topic</span>
-            <span id="card-difficulty">★★★</span>
-            <span id="card-requirements" class="card-requirements"></span>
-            <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
-            <span id="session-timer" style="color:var(--muted)"></span>
-          </div>
-        </div>
-        <div id="card-prerequisites" class="card-prerequisites"></div>
         <div id="scenario"></div>
         <div id="options"></div>
         <div id="feedback" aria-live="polite"></div>
@@ -162,10 +163,6 @@
         </div>
       </div>
       <aside class="session-diagram" aria-label="Architecture diagram">
-        <div class="session-diagram-header">
-          <span>🏗 Architecture</span>
-          <button id="diagram-peek-btn" class="btn btn-sm btn-outline" onclick="APP.peekDiagram()" title="Show the architecture diagram before answering">👁 Peek</button>
-        </div>
         <div id="diagram-container"></div>
       </aside>
     </div>
