@@ -274,6 +274,7 @@ const APP = {
   _displayedOptions: [],
   _retriedCardIds: new Set(),
   _sessionResults: {},
+  _compareMode: false,
 
   init() {
     this.loadProfile();
@@ -1013,6 +1014,7 @@ const APP = {
     const card = this.currentCard;
     this._recordDisplayedScenario(card);
     this._confidenceSubmitted = false;
+    this._compareMode = false;
 
     document.getElementById('card-counter').textContent =
       `${this.sessionIndex + 1} / ${this.sessionCards.length}${card.retry ? ' · retry' : ''}`;
@@ -1078,6 +1080,7 @@ const APP = {
     });
     document.getElementById('next-btn').classList.add('hidden');
     document.getElementById('regenerate-btn').classList.add('hidden');
+    document.getElementById('compare-btn').classList.add('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
   },
 
@@ -1108,6 +1111,7 @@ const APP = {
     const actionsEl = document.getElementById('post-answer-actions');
     actionsEl.classList.remove('hidden');
     document.getElementById('confidence-buttons').classList.remove('hidden');
+    document.getElementById('compare-btn').classList.remove('hidden');
     document.getElementById('next-btn').classList.add('hidden'); // wait for confidence
     document.getElementById('regenerate-btn').classList.add('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
@@ -1259,6 +1263,22 @@ const APP = {
     const card = this.currentCard;
     this._diagramPeeking[card.id] = true;
     Render.diagram(card, 'diagram-container', { reveal: false });
+  },
+
+  /* Toggle the compare view: all four options' wirings overlaid, color-coded
+     with a legend. Off again → back to the chosen-vs-correct highlight. */
+  showCompareDiagram() {
+    this._compareMode = !this._compareMode;
+    const card = this.currentCard;
+    if (!card) return;
+    if (this._compareMode) {
+      Render.diagram(card, 'diagram-container', { reveal: true, compare: true });
+    } else {
+      Render.diagram(card, 'diagram-container', {
+        reveal: true,
+        option: (card.options || []).find(option => option.id === this._selectedId)
+      });
+    }
   },
 
   nextCard() {

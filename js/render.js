@@ -167,17 +167,51 @@ const Render = {
 
   _edgeKey(edge) { return edge.from + '\u0000' + edge.to; },
 
+  /* Per-option wiring colors for the compare view. */
+  OPTION_COLORS: { A: '#1976d2', B: '#2e7d32', C: '#e65100', D: '#7b1fa2' },
+
+  /* SVG path + arrowhead for one edge with the given control points. */
+  _edgeSvg(edge, c1x, c1y, c2x, c2y, color, width, dash, opacity) {
+    const path = `M${edge.x1},${edge.y1} C${c1x},${c1y} ${c2x},${c2y} ${edge.x2},${edge.y2}`;
+    let html = `<path d="${path}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" opacity="${opacity}"/>`;
+    const angle = Math.atan2(edge.y2 - c2y, edge.x2 - c2x);
+    const a = 8;
+    html += `<polygon points="${edge.x2},${edge.y2} ${edge.x2 - a * Math.cos(angle - 0.42)},${edge.y2 - a * Math.sin(angle - 0.42)} ${edge.x2 - a * Math.cos(angle + 0.42)},${edge.y2 - a * Math.sin(angle + 0.42)}" fill="${color}" opacity="${opacity}"/>`;
+    return html;
+  },
+
   diagram(card, containerId, opts = {}) {
     const el = document.getElementById(containerId);
     if (!el) return;
     if (typeof opts !== 'object') opts = { reveal: !!opts };
     const reveal = !!opts.reveal;
+    const compare = !!opts.compare;
     const chosenOption = opts.option;
     const correctOption = (card?.options || []).find(option => option?.id === card.correct);
 
-    // Which wiring to draw: the chosen option's, else the correct option's,
-    // else the card's own flows (or the chain fallback).
-    let drawn = (chosenOption?.flows && chosenOption.flows.length ? chosenOption.flows : null)
+    // Compare mode: overlay every option's wiring, color-coded per option.
+    // Edges shared by several options fan out side by side.
+    let edgeGroups = null;
+    if (compare) {
+      const byKey = new Map();
+      for (const option of card?.options || []) {
+        for (const flow of option?.flows || []) {
+          const key = this._edgeKey(flow);
+          let group = byKey.get(key);
+          if (!group) {
+            group = { ...flow, options: [] };
+            byKey.set(key, group);
+          }
+          group.options.push(option.id);
+        }
+      }
+      edgeGroups = [...byKey.values()];
+    }
+
+    // Which wiring to draw: the option union (compare), else the chosen
+    // option's, else the correct option's, else the card's own flows.
+    let drawn = edgeGroups
+      || (chosenOption?.flows && chosenOption.flows.length ? chosenOption.flows : null)
       || (correctOption?.flows && correctOption.flows.length ? correctOption.flows : null)
       || card?.flows || [];
     const layout = this.layout(drawn, card?.nodes || []);
@@ -201,6 +235,32 @@ const Render = {
     let html = `<svg viewBox="0 0 ${layout.width} ${layout.height}" style="width:100%;height:auto;display:block;font-family:sans-serif;">`;
 
     for (const edge of layout.edges) {
+      if (compare) {
+        const ids = edge.options || [];
+        const count = ids.length;
+        ids.forEach((optionId, index) => {
+          const offset = (index - (count - 1) / 2) * 5;
+          const nx = -(edge.y2 - edge.y1);
+          const ny = (edge.x2 - edge.x1);
+          const len = Math.hypot(nx, ny) || 1;
+          const c1x = edge.c1x + (nx / len) * offset;
+          const c1y = edge.c1y + (ny / len) * offset;
+          const c2x = edge.c2x + (nx / len) * offset;
+          const c2y = edge.c2y + (ny / len) * offset;
+          const color = this.OPTION_COLORS[optionId] || '#888';
+          const isCorrect = optionId === card.correct;
+          let dash = edge.kind === 'callback' ? '2,3' : '';
+          html += this._edgeSvg(edge, c1x, c1y, c2x, c2y, color,
+            isCorrect ? 3.2 : 2, dash, 0.95);
+          const mid = this._bezierPoint(
+            { x: edge.x1, y: edge.y1 }, { x: c1x, y: c1y },
+            { x: c2x, y: c2y }, { x: edge.x2, y: edge.y2 }, 0.5
+          );
+          html += `<circle cx="${mid.x}" cy="${mid.y}" r="6" fill="${color}" opacity="0.95"/>`;
+          html += `<text x="${mid.x}" y="${mid.y + 2.6}" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">${optionId}</text>`;
+        });
+        continue;
+      }
       const inCorrect = correctKeys.has(this._edgeKey(edge));
       const inChosen = chosenKeys.has(this._edgeKey(edge));
       let color = edgeColor;
@@ -210,13 +270,7 @@ const Render = {
         else { color = 'var(--danger)'; dash = '5,3'; }
       }
       if (edge.kind === 'callback') dash = dash ? `2,3 ${dash}` : '2,3';
-      const path = `M${edge.x1},${edge.y1} C${edge.c1x},${edge.c1y} ${edge.c2x},${edge.c2y} ${edge.x2},${edge.y2}`;
-      html += `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="${dash}" opacity="${edgeOpacity}"/>`;
-
-      // arrowhead on the true end tangent
-      const angle = Math.atan2(edge.y2 - edge.c2y, edge.x2 - edge.c2x);
-      const a = 8;
-      html += `<polygon points="${edge.x2},${edge.y2} ${edge.x2 - a * Math.cos(angle - 0.42)},${edge.y2 - a * Math.sin(angle - 0.42)} ${edge.x2 - a * Math.cos(angle + 0.42)},${edge.y2 - a * Math.sin(angle + 0.42)}" fill="${color}" opacity="${edgeOpacity}"/>`;
+      html += this._edgeSvg(edge, edge.c1x, edge.c1y, edge.c2x, edge.c2y, color, 2, dash, edgeOpacity);
 
       // verb pill at the bezier midpoint
       if (edge.verb) {
@@ -238,8 +292,7 @@ const Render = {
       const name = card.nodes[i];
       const active = touched.has(name);
       const opacity = active ? 1 : 0.4;
-      const fill = reveal && active ? 'var(--card-bg)' : 'var(--card-bg)';
-      html += `<rect x="${pos.x}" y="${pos.y}" width="${pos.w}" height="${pos.h}" rx="8" fill="${fill}" stroke="${tc.stroke}" stroke-width="${active ? 2 : 1}" stroke-dasharray="${active ? '' : '3,3'}" opacity="${opacity}"/>`;
+      html += `<rect x="${pos.x}" y="${pos.y}" width="${pos.w}" height="${pos.h}" rx="8" fill="var(--card-bg)" stroke="${tc.stroke}" stroke-width="${active ? 2 : 1}" stroke-dasharray="${active ? '' : '3,3'}" opacity="${opacity}"/>`;
       pos.lines.forEach((line, li) => {
         const lineY = pos.y + (pos.lines.length > 1 ? pos.h / 2 - 2 + li * 13 : pos.h / 2 + 4);
         html += `<text x="${pos.x + pos.w / 2}" y="${lineY}" text-anchor="middle" font-size="9.5" fill="var(--fg)" font-weight="600" opacity="${opacity}" font-family="sans-serif">${line}</text>`;
@@ -247,6 +300,18 @@ const Render = {
     });
 
     html += '</svg>';
+
+    if (compare) {
+      html += '<div class="diagram-legend" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-top:8px;font-size:0.72rem;color:var(--muted-text);">';
+      for (const option of card?.options || []) {
+        const hasWiring = Array.isArray(option?.flows) && option.flows.length;
+        const color = this.OPTION_COLORS[option.id] || '#888';
+        const isCorrect = option.id === card.correct;
+        html += `<span style="opacity:${hasWiring ? 1 : 0.45};" title="${hasWiring ? '' : 'no wiring data'}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
+      }
+      html += '</div>';
+    }
+
     el.innerHTML = html;
   }
 };

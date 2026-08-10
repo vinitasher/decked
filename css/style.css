@@ -76,7 +76,7 @@ footer a:hover { color: var(--primary); }
 .confidence-options .btn { min-width: 0; padding: 9px 4px; }
 #quality-rating { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
 #quality-rating span { align-self: center; color: var(--muted); font-size: 0.8rem; }
-.next-card-actions { display: flex; gap: 8px; margin-top: 8px; }
+.next-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 #next-btn { flex: 1; }
 #regenerate-btn { flex: 0 0 auto; padding: 10px 14px; }
 .keyboard-hint { font-size: 0.7rem; opacity: 0.6; }

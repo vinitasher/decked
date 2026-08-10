@@ -6,6 +6,7 @@ import test from 'node:test';
 const cardsSource = await readFile(new URL('../js/cards.js', import.meta.url), 'utf8');
 const renderSource = await readFile(new URL('../js/render.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
+const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
 const context = vm.createContext({
   console, Math, Date, JSON
@@ -194,6 +195,39 @@ test('diagram rendering uses theme variables and per-option highlight logic', ()
   assert.match(renderSource, /chosenOption\?\.flows/);
   assert.match(renderSource, /correctOption/);
   assert.match(renderSource, /viewBox/);
+});
+
+test('compare mode overlays every option wiring, color-coded with a legend', () => {
+  const holder = { innerHTML: '' };
+  context.document = { getElementById: () => holder };
+  const card = {
+    id: 'cmp', topic: 'caching', difficulty: 2, correct: 'B',
+    nodes: ['Client', 'API', 'Cache', 'DB'],
+    options: [
+      { id: 'A', label: 'A', flows: [{ from: 'Client', to: 'API', verb: 'requests', kind: 'sync' }, { from: 'API', to: 'DB', verb: 'queries', kind: 'sync' }] },
+      { id: 'B', label: 'B', flows: [{ from: 'Client', to: 'API', verb: 'requests', kind: 'sync' }, { from: 'API', to: 'Cache', verb: 'checks', kind: 'sync' }, { from: 'Cache', to: 'DB', verb: 'loads on miss', kind: 'sync' }] },
+      { id: 'C', label: 'C', flows: [{ from: 'API', to: 'DB', verb: 'queries', kind: 'sync' }] },
+      { id: 'D', label: 'D', flows: [] }
+    ]
+  };
+  context.RenderForTest.diagram(card, 'diagram-container', { reveal: true, compare: true });
+  const htmlOut = holder.innerHTML;
+  assert.match(htmlOut, /diagram-legend/);
+  // four option colors present, including the ones without wiring (dimmed)
+  for (const color of Object.values(context.RenderForTest.OPTION_COLORS)) {
+    assert.ok(htmlOut.includes(color), `missing option color ${color}`);
+  }
+  // every distinct edge is drawn with an option letter badge
+  assert.equal((htmlOut.match(/<circle /g) || []).length, 6); // Client→API ×2, API→Cache, API→DB ×2, Cache→DB
+  assert.match(htmlOut, /B ✓/);
+  assert.doesNotMatch(htmlOut, /<script/);
+});
+
+test('compare mode is wired to a toggle button in the app', () => {
+  assert.match(html, /id="compare-btn"[^>]*onclick="APP\.showCompareDiagram\(\)"/);
+  assert.match(appSource, /showCompareDiagram\(\) \{/);
+  assert.match(appSource, /compare: true/);
+  assert.match(appSource, /this\._compareMode = false;/);
 });
 
 test('rateConfidence passes the chosen option to the diagram renderer', () => {

@@ -35,7 +35,7 @@ function createContext() {
     'card-counter', 'card-topic', 'card-difficulty', 'scenario',
     'card-prerequisites', 'diagram-container', 'options', 'bookmark-btn',
     'feedback', 'post-answer-actions', 'confidence-buttons', 'next-btn',
-    'regenerate-btn', 'quality-rating', 'screen-session'
+    'regenerate-btn', 'compare-btn', 'quality-rating', 'screen-session'
   ]) elements.set(id, makeElement(id));
 
   const keydownListeners = [];
