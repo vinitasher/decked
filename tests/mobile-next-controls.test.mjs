@@ -96,9 +96,9 @@ test('homepage study actions share a row when there is room and stack on phones'
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \.btn \{ flex: 0 0 auto; width: 100%; \}/);
 });
 
-test('profile does not expose data export or import controls', () => {
-  assert.doesNotMatch(html, /Export Data|Import Data|id="import-file"/);
-  assert.doesNotMatch(app, /exportProfile\(|importProfile\(/);
+test('profile does not expose data transfer or study reminder controls', () => {
+  assert.doesNotMatch(html, /Export Data|Import Data|id="import-file"|Enable Study Reminders|id="study-reminder"/);
+  assert.doesNotMatch(app, /exportProfile\(|importProfile\(|enableNudges\(|sendNudge\(|_requestNotificationPermission\(/);
 });
 
 test('mobile post-answer tray is sticky and hides keyboard-only guidance', () => {

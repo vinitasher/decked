@@ -323,7 +323,6 @@ const APP = {
     this._checkServerHealth();
     this._initTheme();
     this._initSwipe();
-    this._requestNotificationPermission();
     initAccount();
     // auto-resume prompt: show button if session was interrupted
     if (localStorage.getItem('sdf_resume')) {
@@ -1570,34 +1569,6 @@ const APP = {
 
   getAchievedCount() {
     return (this.profile.achievements || []).length;
-  },
-
-  /* ——— Notifications ——— */
-
-  _requestNotificationPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  },
-
-  sendNudge() {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      const due = this._dueReviewCount();
-      if (due > 0) {
-        new Notification('📚 System Design Flashcards', {
-          body: `${due} card${due > 1 ? 's' : ''} due for review! A quick session?`,
-          icon: '/icon-192.png'
-        });
-      }
-    }
-  },
-
-  enableNudges() {
-    if ('Notification' in window) {
-      Notification.requestPermission();
-    }
-    localStorage.setItem('sdf_nudges', 'true');
-    this.sendNudge();
   },
 
   /* ——— UI ——— */
