@@ -141,6 +141,8 @@ footer a:hover { color: var(--primary); }
 .study-calendar-cell.level-4 { background: var(--calendar-level-4); }
 .study-calendar-cell.is-future { background: transparent; border: 1px solid var(--card-border); }
 .coverage-heatmap { margin: 20px 0; }
+.radar-chart-wrap { display: flex; justify-content: center; width: 100%; overflow: hidden; }
+.radar-canvas { display: block; width: min(100%, 360px); height: auto; margin: 8px 0; }
 .heatmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; margin: 12px 0; }
 .heatmap-cell { min-width: 0; min-height: 44px; border-radius: 6px; font-size: 0.72rem; display: flex; align-items: center; justify-content: center; font-weight: 600; padding: 6px; text-align: center; }
 .heatmap-label { font-size: 0.65rem; color: var(--muted); grid-column: 1 / -1; margin-top: 4px; }

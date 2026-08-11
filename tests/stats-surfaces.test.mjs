@@ -44,6 +44,16 @@ function makeElement(id) {
 function createContext(elementIds = []) {
   const elements = new Map();
   for (const id of elementIds) elements.set(id, makeElement(id));
+  const radar = elements.get('radar-canvas');
+  if (radar) {
+    radar.parentElement = { clientWidth: 320 };
+    radar.getContext = () => ({
+      clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {}, fillText() {},
+      closePath() {},
+      set strokeStyle(_) {}, set lineWidth(_) {}, set fillStyle(_) {}, set font(_) {},
+      set textAlign(_) {}, set textBaseline(_) {}
+    });
+  }
   const context = {
     window: { location: { hostname: 'example.com' } },
     URLSearchParams,
@@ -81,7 +91,7 @@ globalThis.appForTest = APP;`, context);
   return context;
 }
 
-const statsElementIds = ['stats-global', 'study-calendar', 'mastery-chart', 'coverage-heatmap', 'confidence-buttons', 'next-btn', 'consecutive-correct'];
+const statsElementIds = ['stats-global', 'study-calendar', 'mastery-chart', 'coverage-heatmap', 'radar-canvas', 'confidence-buttons', 'next-btn', 'consecutive-correct'];
 const context = createContext(statsElementIds);
 const chartEl = context.document.getElementById('mastery-chart');
 const heatEl = context.document.getElementById('coverage-heatmap');
@@ -172,6 +182,16 @@ test('showStats derives topic totals and card totals from the studied set', () =
   assert.equal(html.includes(`${seedIds.length + 2} studied`), true);
   // 5 seed topics + storage + security
   assert.equal(html.includes('Topics: 0 / 7 mastered'), true);
+});
+
+test('showStats draws the radar chart after the stats screen is shown', () => {
+  const app = freshApp();
+
+  app.showStats();
+
+  const radar = context.document.getElementById('radar-canvas');
+  assert.equal(radar.width, 296);
+  assert.equal(radar.height, 296);
 });
 
 test('mastery chart lists topics that exist only in cardHistory', () => {
