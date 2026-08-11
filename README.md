@@ -188,6 +188,15 @@ in card question headers — lives in `js/app.js`.
 - **Force for good:** democratises system design education; transparent about
   the model (users can see why a card was chosen)
 
+## Product strategy
+
+The [LearnHub and MathPath strategic gap analysis](docs/learnhub-mathpath-gap-analysis.md)
+assesses the current product against a question-centered adaptive learning
+model and today's system-design interview market. It defines the recommended
+position, capability gaps, evidence gates, three-year direction, metrics, and a
+90-day validation plan for evolving from multiple-choice recognition into
+guided architecture judgment.
+
 ## Deploy
 
 The production site runs on Cloudflare Pages with OpenCode Go
