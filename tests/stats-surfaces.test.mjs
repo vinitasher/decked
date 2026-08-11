@@ -80,12 +80,10 @@ globalThis.appForTest = APP;`, context);
   return context;
 }
 
-const statsElementIds = ['stats-global', 'study-calendar', 'mastery-chart', 'confidence-buttons', 'next-btn', 'consecutive-correct'];
+const statsElementIds = ['stats-global', 'study-calendar', 'mastery-chart', 'coverage-heatmap', 'confidence-buttons', 'next-btn', 'consecutive-correct'];
 const context = createContext(statsElementIds);
 const chartEl = context.document.getElementById('mastery-chart');
-const heatParent = { children: [] };
-heatParent.insertBefore = child => { heatParent.children.push(child); };
-chartEl.parentNode = heatParent;
+const heatEl = context.document.getElementById('coverage-heatmap');
 const seedIds = context.SEED_CARDS.map(card => card.id);
 
 function baseProfile() {
@@ -198,10 +196,19 @@ test('coverage heatmap includes topics that exist only in cardHistory', () => {
 
   app.renderMasteryChart();
 
-  const heat = heatParent.children[0].innerHTML;
-  assert.equal(heat.includes('sto'), true);
-  assert.equal(heat.includes('sec'), true);
-  assert.equal(heat.includes('caching'), true);
+  const heat = heatEl.innerHTML;
+  assert.equal(heat.includes('Storage'), true);
+  assert.equal(heat.includes('Security'), true);
+  assert.equal(heat.includes('Caching'), true);
+});
+
+test('coverage heatmap rerenders in place without duplicating the surface', () => {
+  const app = freshApp();
+
+  app.renderMasteryChart();
+  app.renderMasteryChart();
+
+  assert.equal((heatEl.innerHTML.match(/class="heatmap"/g) || []).length, 1);
 });
 
 test('study calendar counts generated-card reviews on the correct day', () => {

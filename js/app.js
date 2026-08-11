@@ -1443,7 +1443,8 @@ const APP = {
     }).join('');
 
     // topic coverage heatmap over the studied set (seed + reviewed cards)
-    const heatEl = document.createElement('div');
+    const heatEl = document.getElementById('coverage-heatmap');
+    if (!heatEl) return;
     heatEl.innerHTML = '<h2>Coverage Heatmap</h2><div class="heatmap">';
     for (const t of topics) {
       const cardsInTopic = [...this._studiedCardIds()].filter(id => {
@@ -1454,10 +1455,10 @@ const APP = {
       const colors = { low: '#ffcdd2', med: '#fff9c4', high: '#c8e6c9', mastered: '#a5d6a7' };
       const mastered = this.isTopicMastered(t);
       const color = mastered ? colors.mastered : colors[level];
-      heatEl.innerHTML += `<div class="heatmap-cell" style="background:${color}" title="${t}: ${cardsInTopic} cards${mastered ? ' ✓mastered' : ''}">${t.substring(0, 3)}</div>`;
+      const label = topicLabels[t] || t;
+      heatEl.innerHTML += `<div class="heatmap-cell" style="background:${color}" title="${label}: ${cardsInTopic} cards${mastered ? ' ✓mastered' : ''}">${label}</div>`;
     }
     heatEl.innerHTML += '<div class="heatmap-label">Topic coverage by studied card count & mastery</div></div>';
-    el.parentNode.insertBefore(heatEl, el.nextSibling);
   },
 
   /* ——— Card Authoring ——— */
