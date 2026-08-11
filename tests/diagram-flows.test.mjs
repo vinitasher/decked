@@ -200,19 +200,30 @@ test('Render.layout returns edges with finite bezier controls', () => {
   }
 });
 
-test('diagram rendering uses theme variables and per-option highlight logic', () => {
-  assert.match(renderSource, /var\(--diagram-bg\)/);
-  assert.match(renderSource, /var\(--success\)/);
-  assert.match(renderSource, /var\(--danger\)/);
-  assert.match(renderSource, /var\(--muted\)/);
+test('diagram rendering delegates theme and highlight logic to Mermaid', () => {
+  assert.match(renderSource, /async _renderMermaid/);
+  assert.match(renderSource, /securityLevel: 'strict'/);
+  assert.match(renderSource, /OPTION_COLORS/);
   assert.match(renderSource, /chosenOption\?\.flows/);
   assert.match(renderSource, /correctOption/);
-  assert.match(renderSource, /viewBox/);
 });
 
-test('compare mode overlays every option wiring, color-coded with a legend', () => {
+test('compare mode renders every option wiring through Mermaid', async () => {
   const holder = { innerHTML: '' };
-  context.document = { getElementById: () => holder };
+  const definitions = [];
+  context.document = {
+    getElementById: () => holder,
+    documentElement: { getAttribute: () => null }
+  };
+  context.window = {
+    mermaid: {
+      initialize: () => {},
+      render: async (_id, definition) => {
+        definitions.push(definition);
+        return { svg: '<svg data-renderer="mermaid"></svg>' };
+      }
+    }
+  };
   const card = {
     id: 'cmp', topic: 'caching', difficulty: 2, correct: 'B',
     nodes: ['Client', 'API', 'Cache', 'DB'],
@@ -224,32 +235,14 @@ test('compare mode overlays every option wiring, color-coded with a legend', () 
     ]
   };
   context.RenderForTest.diagram(card, 'diagram-container', { reveal: true, compare: true });
-  const htmlOut = holder.innerHTML;
-  assert.match(htmlOut, /diagram-legend/);
-  // four option colors present, including the ones without wiring (dimmed)
-  for (const color of Object.values(context.RenderForTest.OPTION_COLORS)) {
-    assert.ok(htmlOut.includes(color), `missing option color ${color}`);
-  }
-  // every distinct edge is drawn with an option letter badge
-  assert.equal((htmlOut.match(/<circle /g) || []).length, 6); // Client→API ×2, API→Cache, API→DB ×2, Cache→DB
-  assert.match(htmlOut, /requests · A,B/);
-  assert.match(htmlOut, /loads on miss · B/);
-  assert.match(htmlOut, /B ✓/);
-  assert.doesNotMatch(htmlOut, /<script/);
-});
-
-test('compare mode escapes generated labels in its SVG text', () => {
-  const holder = { innerHTML: '' };
-  context.document = { getElementById: () => holder };
-  context.RenderForTest.diagram({
-    id: 'cmp-escaped', topic: 'caching', correct: 'A',
-    nodes: ['User', 'API'],
-    options: [{ id: 'A', label: 'A', flows: [{
-      from: 'User', to: 'API', verb: 'reads <cache> & "fast"', kind: 'sync'
-    }] }]
-  }, 'diagram-container', { reveal: true, compare: true });
-  assert.match(holder.innerHTML, /reads &lt;cache&gt; &amp; &quot;fast&quot; · A/);
-  assert.doesNotMatch(holder.innerHTML, /<text[^>]*>reads <cache>/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(definitions.length, 1);
+  assert.match(definitions[0], /^flowchart TB$/m);
+  assert.match(definitions[0], /requests · A,B/);
+  assert.match(definitions[0], /loads on miss · B/);
+  assert.match(holder.innerHTML, /data-renderer="mermaid"/);
+  assert.match(holder.innerHTML, /diagram-legend/);
+  context.window = undefined;
 });
 
 test('compare mode is wired to a toggle button in the app', () => {
@@ -330,10 +323,38 @@ test('mermaid definitions label edges that arrive without a verb', () => {
   assert.match(def.definition, /\|publishes\|/);
 });
 
-test('diagram prefers mermaid and falls back to the custom renderer', () => {
+test('diagram is Mermaid-only and reports unavailable rendering without SVG fallback', async () => {
+  const holder = { innerHTML: '' };
+  context.window = undefined;
+  context.document = { getElementById: () => holder };
+  context.RenderForTest.diagram({ nodes: [], options: [] }, 'diagram-container', { compare: true });
+  assert.match(holder.innerHTML, /diagram-error/);
+  assert.match(holder.innerHTML, /Diagram unavailable/);
+  assert.doesNotMatch(holder.innerHTML, /<svg/);
+
+  const failedHolder = { innerHTML: '' };
+  context.document = {
+    getElementById: () => failedHolder,
+    documentElement: { getAttribute: () => null }
+  };
+  context.window = {
+    mermaid: {
+      initialize: () => {},
+      render: async () => { throw new Error('parser failure'); }
+    }
+  };
+  context.RenderForTest.diagram({ nodes: [], options: [] }, 'diagram-container');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(failedHolder.innerHTML, /diagram-error/);
+  assert.doesNotMatch(failedHolder.innerHTML, /<svg/);
+  context.window = undefined;
+  assert.doesNotMatch(renderSource, /_renderCustom|_edgeSvg|_escSvg/);
+});
+
+test('diagram prefers Mermaid', () => {
   assert.match(renderSource, /window\.mermaid && typeof window\.mermaid\.render === 'function'/);
-  assert.match(renderSource, /if \(opts\.compare\) \{\s*this\._renderCustom\(card, el, opts\);\s*return;/);
-  assert.match(renderSource, /_renderMermaid\(card, el, opts\)\.catch\(\(\) => this\._renderCustom/);
+  assert.match(renderSource, /_renderMermaid\(card, el, opts\)\.catch\(\(\) => this\._showDiagramError/);
+  assert.match(renderSource, /this\._showDiagramError\(el\)/);
   assert.match(renderSource, /async _renderMermaid/);
   assert.match(renderSource, /mermaid\.initialize\(\{ startOnLoad: false, theme/);
   assert.match(html, /cdn\.jsdelivr\.net\/npm\/mermaid@11\/dist\/mermaid\.min\.js/);

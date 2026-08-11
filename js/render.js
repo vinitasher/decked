@@ -1,33 +1,15 @@
-/* Architecture diagram rendering (SVG) with directional flows.
+/* Architecture diagram rendering (Mermaid) with directional flows.
    Cards carry a flow graph (card.flows) plus per-option wiring (option.flows);
-   legacy cards without flows render as a linear chain. Nodes are placed in
-   layers by longest-path ranking (Sugiyama-lite), edges are cubic beziers with
-   tangent arrowheads and verb pills, and all colors come from the theme's CSS
-   variables so light, dark, and high-contrast themes all work. */
+   legacy cards without flows render as a linear chain. Mermaid owns graph
+   layout and theme-aware rendering for every diagram view. */
 
 const Render = {
-  topicColor: {
-    caching: {bg: "#e3f2fd", stroke: "#1565c0"},
-    queues: {bg: "#fce4ec", stroke: "#c62828"},
-    databases: {bg: "#e8f5e9", stroke: "#2e7d32"},
-    consensus: {bg: "#fff3e0", stroke: "#e65100"},
-    "api-design": {bg: "#f3e5f5", stroke: "#6a1b9a"},
-    loadbalancing: {bg: "#e0f7fa", stroke: "#00695c"},
-    storage: {bg: "#fff8e1", stroke: "#f57f17"},
-    observability: {bg: "#f1f8e9", stroke: "#558b2f"},
-    security: {bg: "#fbe9e7", stroke: "#bf360c"},
-    "real-time": {bg: "#e0f2f1", stroke: "#004d40"}
-  },
-
-  FONT_CHAR_W: 5.4,
-
   _flowLabel(edge) {
     const label = typeof edge?.verb === 'string' ? edge.verb.trim() : '';
     if (label) return label;
     return { sync: 'sends', async: 'publishes', callback: 'returns' }[edge?.kind] || 'connects';
   },
 
-  /* Wrap a node label into at most two lines of the given width. */
   _wrap(label, maxChars) {
     const words = String(label).split(/\s+/).filter(Boolean);
     const lines = [];
@@ -49,7 +31,7 @@ const Render = {
     const lines = this._wrap(label, maxChars);
     const maxLen = Math.max(...lines.map(line => line.length), 1);
     return {
-      w: Math.max(64, Math.min(170, 14 + maxLen * this.FONT_CHAR_W)),
+      w: Math.max(64, Math.min(170, 14 + maxLen * 5.4)),
       h: lines.length > 1 ? 40 : 30,
       lines
     };
@@ -167,48 +149,27 @@ const Render = {
     return { width, height, nodes: positions, edges: edgeList };
   },
 
-  _bezierPoint(p0, c1, c2, p1, t) {
-    const u = 1 - t;
-    const a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
-    return {
-      x: a * p0.x + b * c1.x + c * c2.x + d * p1.x,
-      y: a * p0.y + b * c1.y + c * c2.y + d * p1.y
-    };
-  },
-
   _edgeKey(edge) { return edge.from + '\u0000' + edge.to; },
 
   /* Per-option wiring colors for the compare view. */
   OPTION_COLORS: { A: '#1976d2', B: '#2e7d32', C: '#e65100', D: '#7b1fa2' },
 
-  /* Entry point: render normal card flows as Mermaid when available. Compare
-     mode always uses the bundled layered renderer because the option union
-     can contain branches and callback cycles that Mermaid may lay out
-     horizontally despite a top-to-bottom direction request. */
+  /* Entry point: Mermaid is the only diagram renderer. */
   diagram(card, containerId, opts = {}) {
     const el = document.getElementById(containerId);
     if (!el) return;
     if (typeof opts !== 'object') opts = { reveal: !!opts };
-    if (opts.compare) {
-      this._renderCustom(card, el, opts);
-      return;
-    }
     if (typeof window !== 'undefined' && window.mermaid && typeof window.mermaid.render === 'function') {
-      this._renderMermaid(card, el, opts).catch(() => this._renderCustom(card, el, opts));
+      this._renderMermaid(card, el, opts).catch(() => this._showDiagramError(el));
     } else {
-      this._renderCustom(card, el, opts);
+      this._showDiagramError(el);
     }
   },
 
   _esc(label) { return String(label ?? '').replace(/"/g, '&quot;'); },
 
-  _escSvg(label) {
-    return String(label ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+  _showDiagramError(el) {
+    el.innerHTML = '<p class="diagram-error" role="status">Diagram unavailable. Please reload and try again.</p>';
   },
 
   /* Edge labels live inside Mermaid pipe syntax, which rejects parentheses
@@ -322,156 +283,4 @@ const Render = {
     el.innerHTML = svg + (legendHtml || '');
   },
 
-  /* SVG path + arrowhead for one edge with the given control points. */
-  _edgeSvg(edge, c1x, c1y, c2x, c2y, color, width, dash, opacity) {
-    const path = `M${edge.x1},${edge.y1} C${c1x},${c1y} ${c2x},${c2y} ${edge.x2},${edge.y2}`;
-    let html = `<path d="${path}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" opacity="${opacity}"/>`;
-    const angle = Math.atan2(edge.y2 - c2y, edge.x2 - c2x);
-    const a = 8;
-    html += `<polygon points="${edge.x2},${edge.y2} ${edge.x2 - a * Math.cos(angle - 0.42)},${edge.y2 - a * Math.sin(angle - 0.42)} ${edge.x2 - a * Math.cos(angle + 0.42)},${edge.y2 - a * Math.sin(angle + 0.42)}" fill="${color}" opacity="${opacity}"/>`;
-    return html;
-  },
-
-  _renderCustom(card, el, opts = {}) {
-    const reveal = !!opts.reveal;
-    const compare = !!opts.compare;
-    const chosenOption = opts.option;
-    const correctOption = (card?.options || []).find(option => option?.id === card.correct);
-
-    // Compare mode: overlay every option's wiring, color-coded per option.
-    // Edges shared by several options fan out side by side.
-    let edgeGroups = null;
-    if (compare) {
-      const byKey = new Map();
-      for (const option of card?.options || []) {
-        for (const flow of option?.flows || []) {
-          const key = this._edgeKey(flow);
-          let group = byKey.get(key);
-          if (!group) {
-            group = { ...flow, options: [] };
-            byKey.set(key, group);
-          }
-          group.options.push(option.id);
-        }
-      }
-      edgeGroups = [...byKey.values()];
-    }
-
-    // Which wiring to draw: the option union (compare), else the chosen
-    // option's, else the correct option's, else the card's own flows.
-    let drawn = edgeGroups
-      || (chosenOption?.flows && chosenOption.flows.length ? chosenOption.flows : null)
-      || (correctOption?.flows && correctOption.flows.length ? correctOption.flows : null)
-      || card?.flows || [];
-    const layout = this.layout(drawn, card?.nodes || []);
-
-    const correctKeys = new Set((correctOption?.flows || []).map(this._edgeKey));
-    const chosenKeys = new Set((chosenOption?.flows || []).map(this._edgeKey));
-    const revealHighlight = reveal && chosenOption && chosenOption.flows && chosenOption.flows.length;
-
-    const tc = this.topicColor[card?.topic] || { bg: '#eee', stroke: '#999' };
-    const edgeColor = revealHighlight ? 'var(--success)' : (reveal ? 'var(--success)' : 'var(--muted)');
-    const edgeDash = reveal ? (revealHighlight ? '' : '6,3') : '3,4';
-    const edgeOpacity = reveal ? 0.9 : 0.55;
-
-    // nodes actually touched by the drawn wiring (untouched nodes render faded)
-    const touched = new Set();
-    for (const edge of layout.edges) {
-      touched.add(edge.from);
-      touched.add(edge.to);
-    }
-
-    let html = `<svg viewBox="0 0 ${layout.width} ${layout.height}" style="width:100%;height:auto;display:block;font-family:sans-serif;">`;
-
-    for (const edge of layout.edges) {
-      if (compare) {
-        const ids = edge.options || [];
-        const count = ids.length;
-        ids.forEach((optionId, index) => {
-          const offset = (index - (count - 1) / 2) * 5;
-          const nx = -(edge.y2 - edge.y1);
-          const ny = (edge.x2 - edge.x1);
-          const len = Math.hypot(nx, ny) || 1;
-          const c1x = edge.c1x + (nx / len) * offset;
-          const c1y = edge.c1y + (ny / len) * offset;
-          const c2x = edge.c2x + (nx / len) * offset;
-          const c2y = edge.c2y + (ny / len) * offset;
-          const color = this.OPTION_COLORS[optionId] || '#888';
-          const isCorrect = optionId === card.correct;
-          let dash = edge.kind === 'callback' ? '2,3' : '';
-          html += this._edgeSvg(edge, c1x, c1y, c2x, c2y, color,
-            isCorrect ? 3.2 : 2, dash, 0.95);
-          const mid = this._bezierPoint(
-            { x: edge.x1, y: edge.y1 }, { x: c1x, y: c1y },
-            { x: c2x, y: c2y }, { x: edge.x2, y: edge.y2 }, 0.5
-          );
-          html += `<circle cx="${mid.x}" cy="${mid.y}" r="6" fill="${color}" opacity="0.95"/>`;
-          html += `<text x="${mid.x}" y="${mid.y + 2.6}" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">${this._escSvg(optionId)}</text>`;
-        });
-        const edgeLabel = `${this._flowLabel(edge)} · ${ids.join(',')}`;
-        const mid = this._bezierPoint(
-          { x: edge.x1, y: edge.y1 }, { x: edge.c1x, y: edge.c1y },
-          { x: edge.c2x, y: edge.c2y }, { x: edge.x2, y: edge.y2 }, 0.5
-        );
-        const labelY = mid.y - 11;
-        const pw = edgeLabel.length * 4.6 + 12;
-        const ph = 14;
-        html += `<rect x="${mid.x - pw / 2}" y="${labelY - ph / 2}" width="${pw}" height="${ph}" rx="7" fill="var(--diagram-bg)" stroke="var(--muted)" stroke-width="1" opacity="0.95"/>`;
-        html += `<text x="${mid.x}" y="${labelY + 3}" text-anchor="middle" font-size="8" fill="var(--muted-text)" font-family="sans-serif">${this._escSvg(edgeLabel)}</text>`;
-        continue;
-      }
-      const inCorrect = correctKeys.has(this._edgeKey(edge));
-      const inChosen = chosenKeys.has(this._edgeKey(edge));
-      let color = edgeColor;
-      let dash = edgeDash;
-      if (revealHighlight) {
-        if (inCorrect) { color = 'var(--success)'; dash = ''; }
-        else { color = 'var(--danger)'; dash = '5,3'; }
-      }
-      if (edge.kind === 'callback') dash = dash ? `2,3 ${dash}` : '2,3';
-      html += this._edgeSvg(edge, edge.c1x, edge.c1y, edge.c2x, edge.c2y, color, 2, dash, edgeOpacity);
-
-      // verb pill at the bezier midpoint
-      const edgeLabel = this._flowLabel(edge);
-      if (edgeLabel) {
-        const mid = this._bezierPoint(
-          { x: edge.x1, y: edge.y1 },
-          { x: edge.c1x, y: edge.c1y },
-          { x: edge.c2x, y: edge.c2y },
-          { x: edge.x2, y: edge.y2 },
-          0.5
-        );
-        const pw = edgeLabel.length * 4.6 + 12;
-        const ph = 14;
-        html += `<rect x="${mid.x - pw / 2}" y="${mid.y - ph / 2}" width="${pw}" height="${ph}" rx="7" fill="var(--diagram-bg)" stroke="${color}" stroke-width="1" opacity="0.95"/>`;
-        html += `<text x="${mid.x}" y="${mid.y + 3}" text-anchor="middle" font-size="8" fill="var(--muted-text)" font-family="sans-serif">${edgeLabel}</text>`;
-      }
-    }
-
-    layout.nodes.forEach((pos, i) => {
-      const name = card.nodes[i];
-      const active = touched.has(name);
-      const opacity = active ? 1 : 0.4;
-      html += `<rect x="${pos.x}" y="${pos.y}" width="${pos.w}" height="${pos.h}" rx="8" fill="var(--card-bg)" stroke="${tc.stroke}" stroke-width="${active ? 2 : 1}" stroke-dasharray="${active ? '' : '3,3'}" opacity="${opacity}"/>`;
-      pos.lines.forEach((line, li) => {
-        const lineY = pos.y + (pos.lines.length > 1 ? pos.h / 2 - 2 + li * 13 : pos.h / 2 + 4);
-        html += `<text x="${pos.x + pos.w / 2}" y="${lineY}" text-anchor="middle" font-size="9.5" fill="var(--fg)" font-weight="600" opacity="${opacity}" font-family="sans-serif">${this._escSvg(line)}</text>`;
-      });
-    });
-
-    html += '</svg>';
-
-    if (compare) {
-      html += '<div class="diagram-legend" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-top:8px;font-size:0.72rem;color:var(--muted-text);">';
-      for (const option of card?.options || []) {
-        const hasWiring = Array.isArray(option?.flows) && option.flows.length;
-        const color = this.OPTION_COLORS[option.id] || '#888';
-        const isCorrect = option.id === card.correct;
-        html += `<span style="opacity:${hasWiring ? 1 : 0.45};" title="${hasWiring ? '' : 'no wiring data'}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
-      }
-      html += '</div>';
-    }
-
-    el.innerHTML = html;
-  }
 };

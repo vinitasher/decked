@@ -76,11 +76,12 @@ decision-based practice with adaptive difficulty.
   explanation for every card answered wrong
 - Architecture diagrams: every card carries a directed flow graph (`flows`
   with `from`/`to`/`verb`/`kind`) and each option carries the exact wiring it
-  implies. Diagrams use a layered graph layout (parallel branches, callback
-  back-edges, verb-labeled edges), theme-aware colors, and on reveal they
-  highlight the correct wiring — red where the chosen option diverges. The
-  compare view uses the deterministic layered renderer so every option graph
-  stays top-to-bottom, including branching and callback flows.
+  implies. Diagrams use Mermaid flowcharts with parallel branches, callback
+  back-edges, verb-labeled edges, theme-aware colors, and on reveal they
+  highlight the correct wiring — red where the chosen option diverges. Every
+  diagram uses top-to-bottom flowchart mode, including the compare view. If
+  Mermaid is unavailable or fails to render, the app shows a reload message
+  instead of generating a second diagram format.
 
 **Data model:**
 ```json
