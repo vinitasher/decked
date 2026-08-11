@@ -48,16 +48,16 @@ footer a:hover { color: var(--primary); }
 .stat-card .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .welcome-actions { display: flex; gap: 12px; margin: 12px 0 20px; }
 .welcome-actions .btn { flex: 1 1 190px; min-width: 0; margin: 0; text-align: center; }
-.progress-section { width: 100%; max-width: 860px; margin: 0 auto; }
-.study-goal { margin: 12px 0; padding: 12px; background: var(--card-bg); border-radius: 10px; box-shadow: 0 1px 3px var(--stat-shadow); }
+.progress-section { width: 100%; max-width: none; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.study-goal { min-width: 0; margin: 12px 0 0; padding: 12px; background: var(--card-bg); border-radius: 10px; box-shadow: 0 1px 3px var(--stat-shadow); }
 .study-goal-header { display: flex; justify-content: space-between; font-size: 0.85rem; }
 #goal-progress { height: 8px; margin-top: 8px; overflow: hidden; background: var(--topic-bar-bg); border-radius: 4px; }
 #goal-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 4px; transition: width 0.3s; }
-.achievements-section { margin-top: 20px; }
+.achievements-section { min-width: 0; margin-top: 12px; }
 .achievements-section h2 { margin-bottom: 8px; }
 #achievement-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.profile-section { width: 100%; max-width: 860px; margin: 24px auto 0; }
-.profile-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 12px 0; }
+.profile-section { width: 100%; max-width: none; margin: 24px 0 0; }
+.profile-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 12px 0; }
 .profile-actions .btn { width: 100%; margin: 0; padding: 10px 14px; font-size: 0.9rem; }
 
 .topic-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.85rem; }
@@ -181,6 +181,9 @@ footer a:hover { color: var(--primary); }
 @media (max-width: 560px) {
   .welcome-actions { flex-direction: column; }
   .welcome-actions .btn { flex: 0 0 auto; width: 100%; }
+}
+@media (max-width: 760px) {
+  .progress-section { grid-template-columns: 1fr; gap: 0; }
 }
 @media (max-width: 480px) {
   .profile-actions { grid-template-columns: 1fr; }

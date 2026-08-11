@@ -96,7 +96,7 @@ test('homepage study actions share a row when there is room and stack on phones'
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \.btn \{ flex: 0 0 auto; width: 100%; \}/);
 });
 
-test('homepage progress components stay within a readable width', () => {
+test('homepage progress components use the full row and share a desktop grid', () => {
   const welcome = html.indexOf('id="screen-welcome"');
   const progress = html.indexOf('class="progress-section"', welcome);
   const goal = html.indexOf('id="study-goal"', progress);
@@ -107,12 +107,13 @@ test('homepage progress components stay within a readable width', () => {
   assert.ok(goal > progress);
   assert.ok(achievements > goal);
   assert.ok(list > achievements);
-  assert.match(css, /\.progress-section \{ width: 100%; max-width: 860px; margin: 0 auto; \}/);
-  assert.match(css, /\.study-goal \{ margin: 12px 0; padding: 12px;/);
+  assert.match(css, /\.progress-section \{ width: 100%; max-width: none; margin: 0; display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /\.study-goal \{ min-width: 0; margin: 12px 0 0; padding: 12px;/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.progress-section \{ grid-template-columns: 1fr; gap: 0; \}/);
   assert.match(css, /#achievement-list \{ display: flex; flex-wrap: wrap; gap: 6px;/);
 });
 
-test('homepage profile tools stay compact inside a readable-width component', () => {
+test('homepage profile and tools use the full available width', () => {
   const welcome = html.indexOf('id="screen-welcome"');
   const profile = html.indexOf('class="profile-section"', welcome);
   const actions = html.indexOf('class="profile-actions"', profile);
@@ -123,8 +124,8 @@ test('homepage profile tools stay compact inside a readable-width component', ()
   assert.ok(actions > profile);
   assert.ok(create > actions);
   assert.ok(stats > create);
-  assert.match(css, /\.profile-section \{ width: 100%; max-width: 860px; margin: 24px auto 0; \}/);
-  assert.match(css, /\.profile-actions \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(180px, 1fr\)\);/);
+  assert.match(css, /\.profile-section \{ width: 100%; max-width: none; margin: 24px 0 0; \}/);
+  assert.match(css, /\.profile-actions \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(220px, 1fr\)\);/);
   assert.match(css, /\.profile-actions \.btn \{ width: 100%; margin: 0; padding: 10px 14px; font-size: 0\.9rem; \}/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.profile-actions \{ grid-template-columns: 1fr; \}/);
 });
