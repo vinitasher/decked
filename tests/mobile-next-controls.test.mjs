@@ -50,24 +50,27 @@ test('the session layout gives the diagram a full-height right-side panel', () =
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*\.session-diagram \{ position: static;/);
 });
 
-test('the header and prerequisites span both columns so the diagram starts on the question line', () => {
+test('the diagram panel owns its title and peek control', () => {
   const sessionStart = html.indexOf('id="screen-session"');
   const header = html.indexOf('class="card-header"', sessionStart);
   const prerequisites = html.indexOf('id="card-prerequisites"', header);
   const layout = html.indexOf('class="session-layout"', prerequisites);
-  const peek = html.indexOf('id="diagram-peek-btn"', header);
   const aside = html.indexOf('class="session-diagram"', layout);
+  const panelHeader = html.indexOf('class="diagram-panel-header"', aside);
+  const peek = html.indexOf('id="diagram-peek-btn"', panelHeader);
+  const container = html.indexOf('id="diagram-container"', panelHeader);
 
   assert.ok(header > sessionStart);
   assert.ok(prerequisites > header);
   assert.ok(layout > prerequisites);
-  assert.ok(peek > header && peek < layout, 'peek control lives in the shared header');
   assert.ok(aside > layout);
-  // the panel contains no header of its own — the diagram is its first content
-  assert.match(html, /<aside class="session-diagram"[^>]*>\s*<div id="diagram-container">/);
+  assert.ok(panelHeader > aside);
+  assert.ok(peek > panelHeader && peek < container, 'peek control lives in the diagram panel');
+  assert.match(html, /<div class="diagram-panel-header">\s*<strong>System design<\/strong>/);
+  assert.match(html, /<aside class="session-diagram"[^>]*>[\s\S]*<div id="diagram-container">/);
   assert.match(css, /#diagram-container \{ margin: 8px 0 0;/);
   assert.match(css, /\.session-diagram \{[\s\S]*?padding: 0 14px 14px;/);
-  assert.doesNotMatch(css, /\.session-diagram-header/);
+  assert.match(css, /\.diagram-panel-header \{ display: flex; align-items: center; justify-content: space-between;/);
   assert.doesNotMatch(app, /Peek at Diagram/); // the placeholder no longer embeds a peek button
 });
 

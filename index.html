@@ -126,7 +126,6 @@
         <button type="button" id="session-dashboard-btn" class="session-dashboard-btn" aria-label="Back to dashboard" title="Back to dashboard">←</button>
         <span id="card-counter">1 / 8</span>
         <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
-        <button id="diagram-peek-btn" class="btn btn-sm btn-outline" onclick="APP.peekDiagram()" title="Show the architecture diagram before answering">👁 Peek</button>
       </div>
       <div class="card-meta">
         <span id="card-topic">Topic</span>
@@ -165,6 +164,10 @@
         </div>
       </div>
       <aside class="session-diagram" aria-label="Architecture diagram">
+        <div class="diagram-panel-header">
+          <strong>System design</strong>
+          <button id="diagram-peek-btn" class="btn btn-sm btn-outline" onclick="APP.peekDiagram()" title="Show the architecture diagram before answering">👁 Peek</button>
+        </div>
         <div id="diagram-container"></div>
       </aside>
     </div>
