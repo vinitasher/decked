@@ -61,9 +61,11 @@
       <div class="stat-card"><div class="stat-num" id="stat-due">0</div><div class="stat-label">Due Now</div></div>
       <div class="stat-card"><div class="stat-num" id="stat-streak">0</div><div class="stat-label">Day Streak</div></div>
     </div>
-    <button id="start-session-btn" class="btn btn-primary" style="width:100%;margin:12px 0" onclick="APP.startSession()">Start Session</button>
-    <button id="resume-btn" class="btn btn-outline hidden" style="width:100%;margin:12px 0" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
-    <button class="btn btn-success" style="width:100%;margin:12px 0" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
+    <div class="welcome-actions" aria-label="Study actions">
+      <button id="start-session-btn" class="btn btn-primary" onclick="APP.startSession()">Start Session</button>
+      <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
+      <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
+    </div>
     <div id="study-goal" style="margin:12px 0;padding:12px;background:var(--card-bg);border-radius:10px;box-shadow:0 1px 3px var(--stat-shadow);">
       <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
         <span>🎯 Daily Goal</span>

@@ -76,6 +76,23 @@ test('wide monitors expand the app container and give the panel the extra room',
   assert.match(css, /@media \(min-width: 1100px\)[\s\S]*\.session-main \{ max-width: 780px; \}/);
 });
 
+test('homepage study actions share a row when there is room and stack on phones', () => {
+  const welcome = html.indexOf('id="screen-welcome"');
+  const actions = html.indexOf('class="welcome-actions"', welcome);
+  const start = html.indexOf('id="start-session-btn"', actions);
+  const resume = html.indexOf('id="resume-btn"', actions);
+  const quickReview = html.indexOf('APP.startQuickReview()', actions);
+
+  assert.ok(actions > welcome);
+  assert.ok(start > actions);
+  assert.ok(resume > start);
+  assert.ok(quickReview > resume);
+  assert.match(css, /\.welcome-actions \{ display: flex; gap: 12px;/);
+  assert.match(css, /\.welcome-actions \.btn \{ flex: 1 1 190px;/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \{ flex-direction: column; \}/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \.btn \{ flex: 0 0 auto; width: 100%; \}/);
+});
+
 test('mobile post-answer tray is sticky and hides keyboard-only guidance', () => {
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.post-answer-actions:not\(\.hidden\)[\s\S]*position: sticky/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.keyboard-hint \{ display: none; \}/);

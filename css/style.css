@@ -46,6 +46,8 @@ footer a:hover { color: var(--primary); }
 .stat-card { flex: 1; background: var(--card-bg); border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 3px var(--stat-shadow); }
 .stat-card .stat-num { font-size: 1.8rem; font-weight: 700; color: var(--heading); }
 .stat-card .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.welcome-actions { display: flex; gap: 12px; margin: 12px 0 20px; }
+.welcome-actions .btn { flex: 1 1 190px; min-width: 0; margin: 0; text-align: center; }
 
 .topic-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.85rem; }
 .topic-row span:first-child { width: 140px; text-align: right; white-space: nowrap; }
@@ -145,6 +147,10 @@ footer a:hover { color: var(--primary); }
   .card-meta { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   .post-answer-actions:not(.hidden) { position: sticky; bottom: 0; z-index: 10; margin: 8px -16px -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--card-border); box-shadow: 0 -4px 12px var(--stat-shadow); }
   .keyboard-hint { display: none; }
+}
+@media (max-width: 560px) {
+  .welcome-actions { flex-direction: column; }
+  .welcome-actions .btn { flex: 0 0 auto; width: 100%; }
 }
 
 /* ——— Concept Wiki ——— */
