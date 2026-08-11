@@ -171,8 +171,7 @@ let currentSession = null;
 let currentPlan = 'free';
 
 function getOAuthRedirectUrl() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return origin && origin !== 'null' ? origin : 'https://decked.pages.dev';
+  return 'https://decked.pages.dev';
 }
 
 function isOAuthCallbackHash(hash = window.location.hash) {
