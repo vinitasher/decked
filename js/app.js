@@ -1392,6 +1392,7 @@ const APP = {
       `;
     }
     this.showScreen('stats');
+    this.drawRadarChart();
   },
 
   renderStudyCalendar() {
@@ -1985,8 +1986,12 @@ const APP = {
   drawRadarChart() {
     const canvas = document.getElementById('radar-canvas');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const size = canvas.width = Math.min(300, canvas.parentElement.clientWidth - 20);
+    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+    if (!ctx) return;
+    const availableWidth = canvas.parentElement?.clientWidth || 300;
+    const size = Math.max(220, Math.min(360, availableWidth - 24));
+    canvas.width = size;
+    canvas.height = size;
     const cx = size / 2, cy = size / 2, r = size * 0.35;
     const topics = ['caching', 'queues', 'databases', 'consensus', 'api-design', 'loadbalancing'];
     const labels = { caching: 'Cache', queues: 'Queue', databases: 'DB', consensus: 'Consensus', 'api-design': 'API', loadbalancing: 'LB' };
@@ -2009,7 +2014,7 @@ const APP = {
     ctx.beginPath();
     for (let i = 0; i <= n; i++) {
       const t = topics[i % n];
-      const score = this.getTopicScore(t);
+      const score = Math.max(0, Math.min(1, Number(this.getTopicScore(t)) || 0));
       const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
       const x = cx + Math.cos(angle) * r * score;
       const y = cy + Math.sin(angle) * r * score;
