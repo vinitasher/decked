@@ -28,10 +28,9 @@ test('app.js initializes accounts from the runtime config', () => {
   assert.match(app, /initAccount\(\)/);
 });
 
-test('OAuth callbacks return to the current app origin, including localhost', () => {
+test('OAuth callbacks always return to the Cloudflare production app', () => {
   assert.match(app, /function getOAuthRedirectUrl\(\) \{/);
-  assert.match(app, /const origin = typeof window !== 'undefined' \? window\.location\.origin : '';/);
-  assert.match(app, /return origin && origin !== 'null' \? origin : 'https:\/\/decked\.pages\.dev';/);
+  assert.match(app, /return 'https:\/\/decked\.pages\.dev';/);
   assert.match(app, /signInWithOAuth\(\{ provider: 'google', redirectTo: getOAuthRedirectUrl\(\) \}\)/);
   assert.match(app, /signInWithOAuth\(\{ provider: 'github', redirectTo: getOAuthRedirectUrl\(\) \}\)/);
 });
