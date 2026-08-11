@@ -289,6 +289,22 @@ test('mermaid edge labels strip characters the parser rejects', () => {
   assert.doesNotMatch(def.definition, /\(|\)/);
 });
 
+test('compare-mode Mermaid labels remain valid with parser punctuation', () => {
+  const def = context.RenderForTest._mermaidDefinition({
+    id: 'punctuation', topic: 'caching', difficulty: 2, correct: 'A',
+    nodes: ['User', 'API'],
+    options: [{
+      id: 'A', label: 'A', flows: [{
+        from: 'User', to: 'API', verb: 'reads | writes; "fast" <cached>`', kind: 'sync'
+      }]
+    }]
+  }, { reveal: true, compare: true });
+  const edgeLine = def.definition.split('\n').find(line => line.includes('-->'));
+  assert.match(edgeLine, /\|reads writes fast cached · A\|/);
+  const edgeLabel = edgeLine.match(/\|([^|]*)\|/)[1];
+  assert.doesNotMatch(edgeLabel, /[;"'`<>]/);
+});
+
 test('mermaid definitions label edges that arrive without a verb', () => {
   const def = context.RenderForTest._mermaidDefinition({
     id: 'missing-label', topic: 'caching', difficulty: 2, correct: 'A',

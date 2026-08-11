@@ -199,11 +199,13 @@ const Render = {
   _esc(label) { return String(label ?? '').replace(/"/g, '&quot;'); },
 
   /* Edge labels live inside Mermaid pipe syntax, which rejects parentheses
-     and brackets — strip them (verbs like "loads on miss (per second)" stay
-     readable) and collapse whitespace. */
+     and other parser delimiters — strip syntax-significant punctuation
+     (verbs like "loads on miss (per second)" stay readable) and collapse
+     whitespace. */
   _safeMermaidLabel(text) {
     return this._esc(String(text ?? '')
-      .replace(/[()[\]{}]/g, ' ')
+      .replace(/[\r\n]/g, ' ')
+      .replace(/[()[\]{}|;"'`<>\\]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim());
   },
