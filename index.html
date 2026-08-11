@@ -74,16 +74,20 @@
     </div>
     <h2 style="margin-top:20px">🏆 Achievements</h2>
     <div id="achievement-list" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
-    <h2 style="margin-top:20px">Your Profile</h2>
-    <div id="topic-breakdown"></div>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showStats()">📊 View Statistics</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showHistory()">📜 Session History</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showLearningPath()">🧭 Topic Map</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showWiki()">📚 Concept Wiki</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
-    <button class="btn btn-outline" style="width:100%;margin:12px 0;font-size:0.85rem" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
+    <section class="profile-section" aria-labelledby="profile-heading">
+      <h2 id="profile-heading">Your Profile</h2>
+      <div id="topic-breakdown"></div>
+      <nav class="profile-actions" aria-label="Profile tools">
+        <button class="btn btn-outline" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
+        <button class="btn btn-outline" onclick="APP.showStats()">📊 View Statistics</button>
+        <button class="btn btn-outline" onclick="APP.showHistory()">📜 Session History</button>
+        <button class="btn btn-outline" onclick="APP.showLearningPath()">🧭 Topic Map</button>
+        <button class="btn btn-outline" onclick="APP.showWiki()">📚 Concept Wiki</button>
+        <button class="btn btn-outline" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
+        <button class="btn btn-outline" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
+        <button class="btn btn-outline" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
+      </nav>
+    </section>
   </div>
 
   <!-- Create Card -->

@@ -96,6 +96,23 @@ test('homepage study actions share a row when there is room and stack on phones'
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \.btn \{ flex: 0 0 auto; width: 100%; \}/);
 });
 
+test('homepage profile tools stay compact inside a readable-width component', () => {
+  const welcome = html.indexOf('id="screen-welcome"');
+  const profile = html.indexOf('class="profile-section"', welcome);
+  const actions = html.indexOf('class="profile-actions"', profile);
+  const create = html.indexOf('APP.showCreateCard()', actions);
+  const stats = html.indexOf('APP.showStats()', actions);
+
+  assert.ok(profile > welcome);
+  assert.ok(actions > profile);
+  assert.ok(create > actions);
+  assert.ok(stats > create);
+  assert.match(css, /\.profile-section \{ width: 100%; max-width: 860px; margin: 24px auto 0; \}/);
+  assert.match(css, /\.profile-actions \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(180px, 1fr\)\);/);
+  assert.match(css, /\.profile-actions \.btn \{ width: 100%; margin: 0; padding: 10px 14px; font-size: 0\.9rem; \}/);
+  assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.profile-actions \{ grid-template-columns: 1fr; \}/);
+});
+
 test('profile does not expose data transfer or study reminder controls', () => {
   assert.doesNotMatch(html, /Export Data|Import Data|id="import-file"|Enable Study Reminders|id="study-reminder"/);
   assert.doesNotMatch(app, /exportProfile\(|importProfile\(|enableNudges\(|sendNudge\(|_requestNotificationPermission\(/);
