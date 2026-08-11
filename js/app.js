@@ -1397,7 +1397,8 @@ const APP = {
   renderStudyCalendar() {
     const el = document.getElementById('study-calendar');
     if (!el) return;
-    el.innerHTML = '';
+    if (typeof el.replaceChildren === 'function') el.replaceChildren();
+    else el.innerHTML = '';
     const today = new Date();
     const dayMs = 86400000;
     // count reviews on each calendar day from the persisted review timestamps,
@@ -1408,20 +1409,57 @@ const APP = {
       const key = new Date(review._createdAt || Date.now()).toISOString().split('T')[0];
       reviewsByDay[key] = (reviewsByDay[key] || 0) + 1;
     }
-    // show last 49 days
-    for (let i = 48; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * dayMs);
-      const key = d.toISOString().split('T')[0];
-      const reviewsOnDay = reviewsByDay[key] || 0;
-      const color = reviewsOnDay === 0 ? '#f0f0f0' :
-        reviewsOnDay <= 1 ? '#c8e6c9' :
-        reviewsOnDay <= 3 ? '#81c784' :
-        reviewsOnDay <= 6 ? '#43a047' : '#1b5e20';
-      const dot = document.createElement('div');
-      dot.style.cssText = `width:14px;height:14px;border-radius:3px;background:${color};position:relative;`;
-      dot.title = `${key}: ${reviewsOnDay} reviews`;
-      el.appendChild(dot);
+
+    const makeElement = (className, text = '') => {
+      const node = document.createElement('span');
+      node.className = className;
+      node.textContent = text;
+      return node;
+    };
+    const weekCount = 53;
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (6 - today.getDay()));
+    const start = new Date(end.getTime() - (weekCount * 7 - 1) * dayMs);
+    const shell = document.createElement('div');
+    shell.className = 'study-calendar-shell';
+
+    const weekdays = document.createElement('div');
+    weekdays.className = 'study-calendar-weekdays';
+    ['', 'Mon', '', 'Wed', '', 'Fri', ''].forEach(label => weekdays.appendChild(makeElement('', label)));
+    shell.appendChild(weekdays);
+
+    const main = document.createElement('div');
+    main.className = 'study-calendar-main';
+    const months = document.createElement('div');
+    months.className = 'study-calendar-months';
+    const days = document.createElement('div');
+    days.className = 'study-calendar-days';
+    days.setAttribute('role', 'grid');
+
+    for (let week = 0; week < weekCount; week++) {
+      const weekStart = new Date(start.getTime() + week * 7 * dayMs);
+      const previousWeekStart = new Date(start.getTime() + (week - 1) * 7 * dayMs);
+      const monthLabel = weekStart.toLocaleDateString(undefined, { month: 'short' });
+      const month = makeElement('', week === 0 || weekStart.getMonth() !== previousWeekStart.getMonth() ? monthLabel : '');
+      month.style.gridColumn = String(week + 1);
+      months.appendChild(month);
+
+      for (let day = 0; day < 7; day++) {
+        const date = new Date(weekStart.getTime() + day * dayMs);
+        const key = date.toISOString().split('T')[0];
+        const reviewsOnDay = reviewsByDay[key] || 0;
+        const level = date > today ? 'is-future' : reviewsOnDay === 0 ? 'level-0' : reviewsOnDay === 1 ? 'level-1' : reviewsOnDay <= 2 ? 'level-2' : reviewsOnDay <= 4 ? 'level-3' : 'level-4';
+        const cell = makeElement(`study-calendar-cell ${level}`);
+        cell.title = `${key}: ${reviewsOnDay} review${reviewsOnDay === 1 ? '' : 's'}`;
+        cell.setAttribute('role', 'gridcell');
+        cell.setAttribute('aria-label', cell.title);
+        days.appendChild(cell);
+      }
     }
+
+    main.appendChild(months);
+    main.appendChild(days);
+    shell.appendChild(main);
+    el.appendChild(shell);
   },
 
   renderMasteryChart() {

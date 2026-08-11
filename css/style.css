@@ -1,5 +1,5 @@
-:root { --bg: #f5f7fa; --fg: #333; --card-bg: #fff; --card-border: #e0e0e0; --primary: #3949ab; --primary-hover: #303f9f; --primary-bg: #e8eaf6; --success: #43a047; --success-bg: #e8f5e9; --danger: #e53935; --danger-bg: #ffebee; --muted: #888; --muted-text: #666; --diagram-bg: #f8f9fa; --heading: #1a237e; --welcome-sub: #666; --toast-bg: #1a237e; --stat-shadow: rgba(0,0,0,0.1); --topic-bar-bg: #e0e0e0; }
-[data-theme="dark"] { --bg: #121212; --fg: #e0e0e0; --card-bg: #1e1e1e; --card-border: #333; --primary: #5c6bc0; --primary-hover: #7986cb; --primary-bg: #283593; --success-bg: #1b5e20; --danger-bg: #b71c1c; --muted: #999; --muted-text: #aaa; --diagram-bg: #2a2a2a; --heading: #9fa8da; --welcome-sub: #999; --toast-bg: #37474f; --stat-shadow: rgba(0,0,0,0.3); --topic-bar-bg: #444; }
+:root { --bg: #f5f7fa; --fg: #333; --card-bg: #fff; --card-border: #e0e0e0; --primary: #3949ab; --primary-hover: #303f9f; --primary-bg: #e8eaf6; --success: #43a047; --success-bg: #e8f5e9; --danger: #e53935; --danger-bg: #ffebee; --muted: #888; --muted-text: #666; --diagram-bg: #f8f9fa; --heading: #1a237e; --welcome-sub: #666; --toast-bg: #1a237e; --stat-shadow: rgba(0,0,0,0.1); --topic-bar-bg: #e0e0e0; --calendar-level-0: #ebedf0; --calendar-level-1: #c6e48b; --calendar-level-2: #7bc96f; --calendar-level-3: #239a3b; --calendar-level-4: #196127; }
+[data-theme="dark"] { --bg: #121212; --fg: #e0e0e0; --card-bg: #1e1e1e; --card-border: #333; --primary: #5c6bc0; --primary-hover: #7986cb; --primary-bg: #283593; --success-bg: #1b5e20; --danger-bg: #b71c1c; --muted: #999; --muted-text: #aaa; --diagram-bg: #2a2a2a; --heading: #9fa8da; --welcome-sub: #999; --toast-bg: #37474f; --stat-shadow: rgba(0,0,0,0.3); --topic-bar-bg: #444; --calendar-level-0: #2d333b; --calendar-level-1: #0e4429; --calendar-level-2: #006d32; --calendar-level-3: #26a641; --calendar-level-4: #39d353; }
 [data-theme="high-contrast"] { --bg: #fff; --fg: #000; --card-bg: #fff; --card-border: #000; --primary: #000; --primary-hover: #333; --primary-bg: #e0e0e0; --success-bg: #c8e6c9; --danger-bg: #ffcdd2; --muted: #000; --muted-text: #000; --heading: #000; --welcome-sub: #000; --toast-bg: #000; --topic-bar-bg: #999; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--fg); transition: background 0.2s, color 0.2s; }
@@ -122,6 +122,21 @@ footer a:hover { color: var(--primary); }
 .actions .btn { flex: 1; text-align: center; }
 
 @media (prefers-reduced-motion) { *, *::before, *::after { transition: none !important; } }
+.study-calendar { overflow-x: auto; margin: 12px 0 20px; padding: 4px 0 8px; }
+.study-calendar-shell { display: grid; grid-template-columns: 28px max-content; gap: 8px; width: max-content; min-width: 100%; }
+.study-calendar-weekdays { display: grid; grid-template-rows: 16px repeat(7, 14px); gap: 4px; color: var(--muted); font-size: 0.65rem; line-height: 14px; }
+.study-calendar-weekdays span { height: 14px; }
+.study-calendar-main { display: grid; grid-template-rows: 16px max-content; gap: 4px; }
+.study-calendar-months { display: grid; grid-template-columns: repeat(53, 14px); column-gap: 4px; height: 16px; color: var(--muted); font-size: 0.65rem; line-height: 16px; }
+.study-calendar-months span { white-space: nowrap; }
+.study-calendar-days { display: grid; grid-template-rows: repeat(7, 14px); grid-auto-flow: column; grid-auto-columns: 14px; gap: 4px; }
+.study-calendar-cell { width: 14px; height: 14px; border-radius: 3px; }
+.study-calendar-cell.level-0 { background: var(--calendar-level-0); }
+.study-calendar-cell.level-1 { background: var(--calendar-level-1); }
+.study-calendar-cell.level-2 { background: var(--calendar-level-2); }
+.study-calendar-cell.level-3 { background: var(--calendar-level-3); }
+.study-calendar-cell.level-4 { background: var(--calendar-level-4); }
+.study-calendar-cell.is-future { background: transparent; border: 1px solid var(--card-border); }
 .coverage-heatmap { margin: 20px 0; }
 .heatmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; margin: 12px 0; }
 .heatmap-cell { min-width: 0; min-height: 44px; border-radius: 6px; font-size: 0.72rem; display: flex; align-items: center; justify-content: center; font-weight: 600; padding: 6px; text-align: center; }

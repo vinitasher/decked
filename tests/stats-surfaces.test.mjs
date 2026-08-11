@@ -33,6 +33,7 @@ function makeElement(id) {
     children: [],
     parentNode: null,
     nextSibling: null,
+    replaceChildren(...children) { this.children = children; },
     setAttribute() {},
     appendChild(child) { this.children.push(child); },
     querySelectorAll() { return []; },
@@ -230,9 +231,14 @@ test('study calendar counts generated-card reviews on the correct day', () => {
   app.renderStudyCalendar();
 
   const calendar = context.document.getElementById('study-calendar');
-  const titles = calendar.children.map(dot => dot.title);
+  const shell = calendar.children[0];
+  const main = shell.children[1];
+  const dayGrid = main.children[1];
+  const titles = dayGrid.children.map(cell => cell.title);
   assert.equal(titles.includes(`${key3}: 2 reviews`), true);
-  assert.equal(titles.includes(`${key2}: 1 reviews`), true);
+  assert.equal(titles.includes(`${key2}: 1 review`), true);
+  assert.equal(dayGrid.children.length, 53 * 7);
+  assert.equal(main.children[0].children.length, 53);
 });
 
 test('study calendar tolerates legacy records without a snapshot or timestamp', () => {
