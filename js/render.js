@@ -21,6 +21,12 @@ const Render = {
 
   FONT_CHAR_W: 5.4,
 
+  _flowLabel(edge) {
+    const label = typeof edge?.verb === 'string' ? edge.verb.trim() : '';
+    if (label) return label;
+    return { sync: 'sends', async: 'publishes', callback: 'returns' }[edge?.kind] || 'connects';
+  },
+
   /* Wrap a node label into at most two lines of the given width. */
   _wrap(label, maxChars) {
     const words = String(label).split(/\s+/).filter(Boolean);
@@ -57,6 +63,7 @@ const Render = {
     const index = new Map(names.map((name, i) => [name, i]));
     const valid = (Array.isArray(flows) ? flows : [])
       .filter(edge => edge && index.has(edge.from) && index.has(edge.to) && edge.from !== edge.to);
+    const labeled = valid.map(edge => ({ ...edge, verb: this._flowLabel(edge) }));
 
     // Layering: place nodes level by level; a node is ready once every
     // incoming edge comes from an already-placed node (longest-path order).
@@ -67,7 +74,7 @@ const Render = {
     // layout always terminates and stays readable.
     const END_USER_NODE = /^(end[- ]?user|user|web client|mobile app|browser|client|customer|app)$/i;
     const isEndUser = i => END_USER_NODE.test(String(names[i] || ''));
-    const edges = [...valid];
+    const edges = [...labeled];
     const dropped = new Set();
     const layer = new Array(names.length).fill(null);
     const placed = new Set();
@@ -248,7 +255,7 @@ const Render = {
       const to = nodeIds.get(edge.to);
       if (from === undefined || to === undefined || from === to) continue;
       const dotted = edge.kind === 'async' || edge.kind === 'callback';
-      let label = edge.verb || '';
+      let label = this._flowLabel(edge);
       if (compare && edge.options && edge.options.length) {
         // Mermaid pipe labels reject parentheses; use a middle dot instead
         label = label ? `${label} · ${edge.options.join(',')}` : `${edge.options.join(',')}`;
@@ -400,7 +407,8 @@ const Render = {
       html += this._edgeSvg(edge, edge.c1x, edge.c1y, edge.c2x, edge.c2y, color, 2, dash, edgeOpacity);
 
       // verb pill at the bezier midpoint
-      if (edge.verb) {
+      const edgeLabel = this._flowLabel(edge);
+      if (edgeLabel) {
         const mid = this._bezierPoint(
           { x: edge.x1, y: edge.y1 },
           { x: edge.c1x, y: edge.c1y },
@@ -408,10 +416,10 @@ const Render = {
           { x: edge.x2, y: edge.y2 },
           0.5
         );
-        const pw = edge.verb.length * 4.6 + 12;
+        const pw = edgeLabel.length * 4.6 + 12;
         const ph = 14;
         html += `<rect x="${mid.x - pw / 2}" y="${mid.y - ph / 2}" width="${pw}" height="${ph}" rx="7" fill="var(--diagram-bg)" stroke="${color}" stroke-width="1" opacity="0.95"/>`;
-        html += `<text x="${mid.x}" y="${mid.y + 3}" text-anchor="middle" font-size="8" fill="var(--muted-text)" font-family="sans-serif">${edge.verb}</text>`;
+        html += `<text x="${mid.x}" y="${mid.y + 3}" text-anchor="middle" font-size="8" fill="var(--muted-text)" font-family="sans-serif">${edgeLabel}</text>`;
       }
     }
 

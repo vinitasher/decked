@@ -86,6 +86,12 @@ function normalizePrerequisiteTopics(topics, cardTopic) {
    their nodes, so legacy and cached cards still work. */
 
 const FLOW_KINDS = ['sync', 'async', 'callback'];
+const DEFAULT_FLOW_VERBS = { sync: 'sends', async: 'publishes', callback: 'returns' };
+
+function normalizeFlowVerb(verb, kind) {
+  const label = typeof verb === 'string' ? verb.trim() : '';
+  return label || DEFAULT_FLOW_VERBS[kind] || 'connects';
+}
 
 /* Nodes that represent the end user / client of the system. Every diagram's
    flows must start here; cards without such a node get one synthesized. */
@@ -103,8 +109,8 @@ function normalizeFlows(flows, nodes) {
     .map(flow => ({
       from: typeof flow.from === 'string' ? flow.from : '',
       to: typeof flow.to === 'string' ? flow.to : '',
-      verb: typeof flow.verb === 'string' ? flow.verb : '',
-      kind: FLOW_KINDS.includes(flow.kind) ? flow.kind : 'sync'
+      kind: FLOW_KINDS.includes(flow.kind) ? flow.kind : 'sync',
+      verb: normalizeFlowVerb(flow.verb, FLOW_KINDS.includes(flow.kind) ? flow.kind : 'sync')
     }))
     .filter(flow =>
       flow.from && flow.to && flow.from !== flow.to &&
@@ -126,7 +132,7 @@ function anchorFlowsOnEndUser(card) {
     const entry = card.flows[0]?.from
       || card.nodes.find((name, index) => index !== userIndex && name);
     card.nodes.unshift('End User');
-    card.flows.unshift({ from: 'End User', to: entry, verb: '', kind: 'sync' });
+    card.flows.unshift({ from: 'End User', to: entry, verb: 'sends', kind: 'sync' });
     userIndex = 0;
   }
   const userName = card.nodes[userIndex];
@@ -135,7 +141,7 @@ function anchorFlowsOnEndUser(card) {
     const target = card.flows.find(flow => flow.from !== userName)?.from
       || card.nodes.find((name, index) => index !== userIndex && name !== userName)
       || card.nodes[0];
-    card.flows.unshift({ from: userName, to: target, verb: '', kind: 'sync' });
+    card.flows.unshift({ from: userName, to: target, verb: 'sends', kind: 'sync' });
   } else {
     // Repair: a synthesized edge may point at a node that is not the graph's
     // entry (e.g. an arbitrary nodes[0]); retarget the user's first outgoing
@@ -156,7 +162,7 @@ function normalizeCardFlows(card) {
   card.flows = (flows.length || !Array.isArray(card.nodes) || card.nodes.length < 2)
     ? flows
     : card.nodes.slice(0, -1).map((node, index) => ({
-        from: node, to: card.nodes[index + 1], verb: '', kind: 'sync'
+        from: node, to: card.nodes[index + 1], verb: 'sends', kind: 'sync'
       }));
   if (Array.isArray(card.options)) {
     for (const option of card.options) {

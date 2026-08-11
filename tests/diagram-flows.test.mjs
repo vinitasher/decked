@@ -71,7 +71,17 @@ test('flow kinds are whitelisted and unknown verbs are kept as-is', () => {
   ]));
   assert.equal(card.flows[0].kind, 'sync');
   assert.equal(card.flows[1].kind, 'async');
-  assert.equal(card.flows[1].verb, '');
+  assert.equal(card.flows[1].verb, 'publishes');
+});
+
+test('every normalized flow receives a visible label when its source is blank', () => {
+  const card = normalizeCardFlows(cardWithFlows([
+    { from: 'client', to: 'api', verb: '  ', kind: 'sync' },
+    { from: 'api', to: 'cache', kind: 'async' },
+    { from: 'cache', to: 'db', verb: '', kind: 'callback' }
+  ]));
+  assert.deepEqual(card.flows.map(flow => flow.verb), ['sends', 'publishes', 'returns']);
+  assert.ok(card.flows.every(flow => flow.verb.trim().length > 0));
 });
 
 test('option flows are normalized and emptied options become undefined', () => {
@@ -277,6 +287,15 @@ test('mermaid edge labels strip characters the parser rejects', () => {
   }, { reveal: true, compare: true });
   assert.match(def.definition, /\|loads on miss per second · A\|/);
   assert.doesNotMatch(def.definition, /\(|\)/);
+});
+
+test('mermaid definitions label edges that arrive without a verb', () => {
+  const def = context.RenderForTest._mermaidDefinition({
+    id: 'missing-label', topic: 'caching', difficulty: 2, correct: 'A',
+    nodes: ['User', 'API'],
+    options: [{ id: 'A', label: 'A', flows: [{ from: 'User', to: 'API', kind: 'async' }] }]
+  }, { reveal: true });
+  assert.match(def.definition, /\|publishes\|/);
 });
 
 test('diagram prefers mermaid and falls back to the custom renderer', () => {

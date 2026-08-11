@@ -45,7 +45,7 @@ Return a JSON object with these exact keys:
 - prerequisiteTopics: the aggregate list of topics needed to understand the whole question.
 - scenario: a 2-3 sentence system design problem with concrete numbers (QPS, latency, data size). Must force a trade-off. The scenario must contain exactly ${difficulty} distinct requirements (quantified SLAs, throughput targets, latency budgets, data volumes, consistency guarantees, or deadlines).
 - nodes: array of 4-5 system components with real technology names.
-- flows: array of directed edges {from, to, verb, kind} describing the base architecture in the scenario. from/to are node names, verb is the action ("requests", "publishes", "queries", "caches", "acks"), kind is "sync", "async", or "callback". Every node must appear in at least one flow; keep the topology realistic (fan-out, callbacks, back-edges), never a plain linear chain when the architecture is not one.
+- flows: array of directed edges {from, to, verb, kind} describing the base architecture in the scenario. from/to are node names, verb is a required non-empty action label ("requests", "publishes", "queries", "caches", "acks"), kind is "sync", "async", or "callback". Every node must appear in at least one flow; keep the topology realistic (fan-out, callbacks, back-edges), never a plain linear chain when the architecture is not one.
 - options: array of exactly 4 objects {id, label, prerequisiteTopics, flows}, with ids A, B, C, D. Each option's flows array describes the exact wiring that option implies ({from, to, verb, kind} edges between nodes, using only the nodes that option connects, consistent with the option label); omit the flows key entirely when an option has no specific wiring — never send an empty array. Each option needs 2-4 prerequisite concepts required to evaluate its trade-off. Use specific lowercase kebab-case concepts such as "cache-invalidation", "replication-lag", or "message-ordering"; never use a technology/product name merely because it appears in the option, and avoid broad categories such as "databases", "caching", or "api-design". Do not include "${topic}". Option ${designatedCorrect} is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
 - prerequisiteTopics must include the union of all four options' prerequisiteTopics.
 - correct: "${designatedCorrect}"
@@ -179,6 +179,9 @@ export function validateGeneratedCard(generatedCard, designatedCorrect) {
       throw new Error('Invalid field: flows must reference distinct node names');
     }
   }
+  if (generatedCard.flows.some(flow => !flow || typeof flow.verb !== 'string' || !flow.verb.trim())) {
+    throw new Error('Invalid field: flows must have non-empty labels');
+  }
   for (const node of generatedCard.nodes) {
     if (!generatedCard.flows.some(flow => flow.from === node || flow.to === node)) {
       throw new Error(`Invalid field: node "${node}" appears in no flow`);
@@ -201,6 +204,10 @@ export function validateGeneratedCard(generatedCard, designatedCorrect) {
   }
   if (generatedCard.options.some(option => option.flows !== undefined && !Array.isArray(option.flows))) {
     throw new Error('Invalid field: option flows must be arrays when present');
+  }
+  if (generatedCard.options.some(option => Array.isArray(option.flows)
+      && option.flows.some(flow => !flow || typeof flow.verb !== 'string' || !flow.verb.trim()))) {
+    throw new Error('Invalid field: option flows must have non-empty labels');
   }
   if (generatedCard.correct !== designatedCorrect) {
     throw new Error(`Invalid field: correct must match designated option ${designatedCorrect}`);

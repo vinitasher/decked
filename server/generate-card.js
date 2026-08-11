@@ -23,7 +23,7 @@ The card must be a single JSON object with these exact keys:
 - difficulty: ${cardDifficulty}
 - scenario: a realistic system design problem as 2-3 sentences. MUST include concrete numbers (QPS, latency in ms, data volume in GB/TB, users, or RPS). The problem must force a trade-off between two approaches. The scenario must contain exactly ${cardDifficulty} distinct requirements (quantified SLAs, throughput targets, latency budgets, data volumes, consistency guarantees, or deadlines).
 - nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
-- flows: array of directed edges describing the base architecture the scenario describes. Each edge is {from, to, verb, kind} where from/to are node names, verb is the action on that edge ("requests", "publishes", "queries", "caches", "loads on miss", "acks"), and kind is one of "sync", "async", "callback". Every node must appear in at least one flow, and the topology must be realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
+- flows: array of directed edges describing the base architecture the scenario describes. Each edge is {from, to, verb, kind} where from/to are node names, verb is a required non-empty action label on that edge ("requests", "publishes", "queries", "caches", "loads on miss", "acks"), and kind is one of "sync", "async", "callback". Every node must appear in at least one flow, and the topology must be realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
 - options: exactly 4 objects {id, label, prerequisiteTopics, flows} with ids A, B, C, D, where ${designatedCorrect} is correct. Each option's flows array describes the exact wiring that option implies: {from, to, verb, kind} edges between nodes, using only the nodes that option connects, consistent with the option label. If an option omits flows, omit the key entirely — never send an empty array. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topicName}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
 - prerequisiteTopics: the deduplicated union of all four options' prerequisiteTopics.
 - correct: "${designatedCorrect}"
@@ -99,6 +99,9 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
         break;
       }
     }
+    if (card.flows.some(flow => !flow || typeof flow.verb !== 'string' || !flow.verb.trim())) {
+      errors.push('flows must have non-empty labels');
+    }
     for (const node of card.nodes) {
       if (!card.flows.some(flow => flow.from === node || flow.to === node)) {
         errors.push(`node "${node}" appears in no flow`);
@@ -118,6 +121,10 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
   }
   if (card.options.some(o => o.flows !== undefined && !Array.isArray(o.flows))) {
     errors.push('option flows must be arrays when present');
+  }
+  if (card.options.some(o => Array.isArray(o.flows)
+      && o.flows.some(flow => !flow || typeof flow.verb !== 'string' || !flow.verb.trim()))) {
+    errors.push('option flows must have non-empty labels');
   }
   if (!card.options.map(o => o.id).includes(card.correct)) errors.push('correct not in options');
   if (card.correct !== designatedCorrect) errors.push(`correct must match designated option ${designatedCorrect}`);

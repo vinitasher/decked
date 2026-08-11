@@ -205,6 +205,19 @@ test('local validation rejects a designated-letter mismatch', () => {
   );
 });
 
+test('local validation rejects an unlabeled flow', () => {
+  const localCard = {
+    ...card,
+    flows: card.flows.map((flow, index) => index === 0 ? { ...flow, verb: ' ' } : flow),
+    explanation: 'This detailed explanation is intentionally longer than eighty characters and compares each distinct system design trade-off.'
+  };
+
+  assert.throws(
+    () => localGenerator.extractAndValidate(JSON.stringify(localCard), 'B'),
+    /flows must have non-empty labels/
+  );
+});
+
 test('cached legacy cards gain canonical prerequisites without an expiration', async () => {
   const legacyCard = {
     ...card,

@@ -207,6 +207,25 @@ test('generation validation rejects flows that reference unknown nodes', () => {
   );
 });
 
+test('generation validation rejects unlabeled base flows', () => {
+  assert.throws(
+    () => validateGeneratedCard({
+      id: 'x', topic: 'caching', difficulty: 2,
+      prerequisiteTopics: [],
+      scenario: 'An API serves 20,000 QPS and must keep data fresh within 500ms.',
+      nodes: ['a', 'b', 'c'],
+      flows: [
+        { from: 'a', to: 'b', verb: '', kind: 'sync' },
+        { from: 'b', to: 'c', verb: 'queries', kind: 'sync' }
+      ],
+      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      correct: 'A',
+      explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
+    }, 'A'),
+    /flows must have non-empty labels/
+  );
+});
+
 test('generation validation rejects flows that leave a node unconnected', () => {
   assert.throws(
     () => validateGeneratedCard({
