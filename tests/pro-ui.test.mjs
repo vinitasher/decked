@@ -31,7 +31,6 @@ test('app.js initializes accounts from the runtime config', () => {
 test('OAuth callbacks always return to the Cloudflare production app', () => {
   assert.match(app, /function getOAuthRedirectUrl\(\) \{/);
   assert.match(app, /return 'https:\/\/decked\.pages\.dev';/);
-  assert.match(app, /signInWithOAuth\(\{ provider: 'google', redirectTo: getOAuthRedirectUrl\(\) \}\)/);
   assert.match(app, /signInWithOAuth\(\{ provider: 'github', redirectTo: getOAuthRedirectUrl\(\) \}\)/);
 });
 
@@ -67,9 +66,10 @@ test('app.js handles quota-exceeded responses with an upgrade notice', () => {
 });
 
 test('app.js wires sign-in, sign-out, and the checkout flow', () => {
-  assert.match(app, /signInGoogle\(\) \{\s*if \(!supabaseClient\) return;/);
   assert.match(app, /signInGithub\(\) \{\s*if \(!supabaseClient\) return;/);
   assert.match(app, /Sign in with GitHub/);
+  assert.doesNotMatch(app, /Sign in with Google/);
+  assert.doesNotMatch(app, /signInGoogle/);
   assert.match(app, /signOut\(\) \{\s*if \(supabaseClient\) supabaseClient\.auth\.signOut\(\);/);
   assert.match(app, /api\/billing\/checkout/);
   assert.match(app, /window\.location\.href = body\.url;/);

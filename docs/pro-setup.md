@@ -10,10 +10,7 @@ entitlement into KV. No database is required — KV is the source of truth.
 
 1. Create a project at https://supabase.com (free tier is fine).
 2. Enable sign-in providers under **Authentication → Providers**:
-   - **Google**: create OAuth credentials in Google Cloud Console (Authorized
-     redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`), paste
-     the client id + secret.
-   - **GitHub** (optional): create an OAuth app in GitHub → paste id/secret.
+   - **GitHub**: create an OAuth app in GitHub → paste id/secret.
 3. Copy from **Project Settings → API**:
    - Project URL → `SUPABASE_URL`
    - `anon` public key → `SUPABASE_ANON_KEY` (public, safe for the client)
@@ -26,7 +23,7 @@ entitlement into KV. No database is required — KV is the source of truth.
    - `http://127.0.0.1:3000`
 
    The app returns to the origin where sign-in started, so both the deployed
-   site and local GitHub/Google development logins need to be allow-listed.
+   site and local GitHub development logins need to be allow-listed.
 
 No tables are needed. Accounts exist purely so Pro can be attached to a
 stable identity; entitlements live in Cloudflare KV.
@@ -63,7 +60,7 @@ Saving environment variables triggers a redeploy.
 - `GET /api/config` returns `supabaseUrl`, `supabaseAnonKey`, and
   `stripePriceId`.
 - `GET /api/quota` (with `X-Device-Id` header) returns today's usage.
-- Signing in with Google updates the account bar; "Upgrade" opens Stripe
+- Signing in with GitHub updates the account bar; "Upgrade" opens Stripe
   Checkout; after paying, the webhook flips the plan to Pro and `GET
   /api/quota` reports `plan: "pro"` with unlimited generation.
 - Quota counters live in KV under `quota:cards:<identity>:<date>` and
