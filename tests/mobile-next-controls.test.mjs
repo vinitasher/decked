@@ -96,6 +96,22 @@ test('homepage study actions share a row when there is room and stack on phones'
   assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \.btn \{ flex: 0 0 auto; width: 100%; \}/);
 });
 
+test('homepage progress components stay within a readable width', () => {
+  const welcome = html.indexOf('id="screen-welcome"');
+  const progress = html.indexOf('class="progress-section"', welcome);
+  const goal = html.indexOf('id="study-goal"', progress);
+  const achievements = html.indexOf('class="achievements-section"', goal);
+  const list = html.indexOf('id="achievement-list"', achievements);
+
+  assert.ok(progress > welcome);
+  assert.ok(goal > progress);
+  assert.ok(achievements > goal);
+  assert.ok(list > achievements);
+  assert.match(css, /\.progress-section \{ width: 100%; max-width: 860px; margin: 0 auto; \}/);
+  assert.match(css, /\.study-goal \{ margin: 12px 0; padding: 12px;/);
+  assert.match(css, /#achievement-list \{ display: flex; flex-wrap: wrap; gap: 6px;/);
+});
+
 test('profile does not expose data transfer or study reminder controls', () => {
   assert.doesNotMatch(html, /Export Data|Import Data|id="import-file"|Enable Study Reminders|id="study-reminder"/);
   assert.doesNotMatch(app, /exportProfile\(|importProfile\(|enableNudges\(|sendNudge\(|_requestNotificationPermission\(/);

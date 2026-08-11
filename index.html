@@ -65,15 +65,19 @@
       <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
       <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
     </div>
-    <div id="study-goal" style="margin:12px 0;padding:12px;background:var(--card-bg);border-radius:10px;box-shadow:0 1px 3px var(--stat-shadow);">
-      <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+    <section class="progress-section" aria-label="Study progress">
+      <div id="study-goal" class="study-goal">
+      <div class="study-goal-header">
         <span>🎯 Daily Goal</span>
         <span><input type="number" id="goal-target" value="10" min="1" max="50" style="width:50px;padding:2px 4px;border:1px solid var(--card-border);border-radius:4px;background:var(--card-bg);color:var(--fg);font-size:0.85rem;" onchange="APP.setGoal(this.value)"> cards</span>
       </div>
-      <div id="goal-progress" style="height:8px;background:var(--topic-bar-bg);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="goal-fill" style="height:100%;width:0%;background:var(--primary);border-radius:4px;transition:width 0.3s;"></div></div>
-    </div>
-    <h2 style="margin-top:20px">🏆 Achievements</h2>
-    <div id="achievement-list" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
+      <div id="goal-progress"><div id="goal-fill"></div></div>
+      </div>
+      <section class="achievements-section" aria-labelledby="achievements-heading">
+        <h2 id="achievements-heading">🏆 Achievements</h2>
+        <div id="achievement-list"></div>
+      </section>
+    </section>
     <h2 style="margin-top:20px">Your Profile</h2>
     <div id="topic-breakdown"></div>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
