@@ -85,11 +85,6 @@
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showWiki()">📚 Concept Wiki</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
     <button class="btn btn-outline" style="width:100%;margin:12px 0" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
-    <div style="display:flex;gap:8px;margin:12px 0;">
-      <button class="btn btn-outline" style="flex:1;font-size:0.85rem" onclick="APP.exportProfile()">📤 Export Data</button>
-      <button class="btn btn-outline" style="flex:1;font-size:0.85rem" onclick="document.getElementById('import-file').click()">📥 Import Data</button>
-      <input type="file" id="import-file" accept=".json" style="display:none" onchange="APP.importProfile(this.files[0])">
-    </div>
     <button class="btn btn-outline" style="width:100%;margin:12px 0;font-size:0.85rem" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
   </div>
 

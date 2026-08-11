@@ -2054,32 +2054,6 @@ const APP = {
       : results.slice(0, 20).map(c => `<div style="padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;font-size:0.8rem;"><strong>${c.topic}</strong> ★${c.difficulty}: ${c.scenario.substring(0, 80)}… <span style="color:var(--muted)">[${c.correct}]</span></div>`).join('');
   },
 
-  /* ——— Export / Import Profile ——— */
-
-  exportProfile() {
-    const data = { profile: this.profile, customCards: JSON.parse(localStorage.getItem('sdf_custom_cards') || '[]'), bookmarks: JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]') };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'sdf-profile.json'; a.click();
-  },
-
-  importProfile(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target.result);
-        if (data.profile) {
-          this.profile = data.profile;
-          this.saveProfile();
-        }
-        if (data.customCards) localStorage.setItem('sdf_custom_cards', JSON.stringify(data.customCards));
-        if (data.bookmarks) localStorage.setItem('sdf_bookmarks', JSON.stringify(data.bookmarks));
-        this.renderDeckStats();
-        alert('Profile imported successfully!');
-      } catch { alert('Invalid profile file.'); }
-    };
-    reader.readAsText(file);
-  },
-
   /* ——— Session Resume ——— */
 
   _saveSessionState() {
