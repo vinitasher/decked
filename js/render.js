@@ -181,14 +181,18 @@ const Render = {
   /* Per-option wiring colors for the compare view. */
   OPTION_COLORS: { A: '#1976d2', B: '#2e7d32', C: '#e65100', D: '#7b1fa2' },
 
-  /* Entry point: render the card's flows as a Mermaid flowchart when the
-     library is available (each edge gets its own clean routed line), falling
-     back to the bundled custom renderer when it is not (e.g. offline before
-     the first service-worker cache). */
+  /* Entry point: render normal card flows as Mermaid when available. Compare
+     mode always uses the bundled layered renderer because the option union
+     can contain branches and callback cycles that Mermaid may lay out
+     horizontally despite a top-to-bottom direction request. */
   diagram(card, containerId, opts = {}) {
     const el = document.getElementById(containerId);
     if (!el) return;
     if (typeof opts !== 'object') opts = { reveal: !!opts };
+    if (opts.compare) {
+      this._renderCustom(card, el, opts);
+      return;
+    }
     if (typeof window !== 'undefined' && window.mermaid && typeof window.mermaid.render === 'function') {
       this._renderMermaid(card, el, opts).catch(() => this._renderCustom(card, el, opts));
     } else {
@@ -197,6 +201,15 @@ const Render = {
   },
 
   _esc(label) { return String(label ?? '').replace(/"/g, '&quot;'); },
+
+  _escSvg(label) {
+    return String(label ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
 
   /* Edge labels live inside Mermaid pipe syntax, which rejects parentheses
      and other parser delimiters — strip syntax-significant punctuation
@@ -393,8 +406,18 @@ const Render = {
             { x: c2x, y: c2y }, { x: edge.x2, y: edge.y2 }, 0.5
           );
           html += `<circle cx="${mid.x}" cy="${mid.y}" r="6" fill="${color}" opacity="0.95"/>`;
-          html += `<text x="${mid.x}" y="${mid.y + 2.6}" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">${optionId}</text>`;
+          html += `<text x="${mid.x}" y="${mid.y + 2.6}" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">${this._escSvg(optionId)}</text>`;
         });
+        const edgeLabel = `${this._flowLabel(edge)} · ${ids.join(',')}`;
+        const mid = this._bezierPoint(
+          { x: edge.x1, y: edge.y1 }, { x: edge.c1x, y: edge.c1y },
+          { x: edge.c2x, y: edge.c2y }, { x: edge.x2, y: edge.y2 }, 0.5
+        );
+        const labelY = mid.y - 11;
+        const pw = edgeLabel.length * 4.6 + 12;
+        const ph = 14;
+        html += `<rect x="${mid.x - pw / 2}" y="${labelY - ph / 2}" width="${pw}" height="${ph}" rx="7" fill="var(--diagram-bg)" stroke="var(--muted)" stroke-width="1" opacity="0.95"/>`;
+        html += `<text x="${mid.x}" y="${labelY + 3}" text-anchor="middle" font-size="8" fill="var(--muted-text)" font-family="sans-serif">${this._escSvg(edgeLabel)}</text>`;
         continue;
       }
       const inCorrect = correctKeys.has(this._edgeKey(edge));
@@ -432,7 +455,7 @@ const Render = {
       html += `<rect x="${pos.x}" y="${pos.y}" width="${pos.w}" height="${pos.h}" rx="8" fill="var(--card-bg)" stroke="${tc.stroke}" stroke-width="${active ? 2 : 1}" stroke-dasharray="${active ? '' : '3,3'}" opacity="${opacity}"/>`;
       pos.lines.forEach((line, li) => {
         const lineY = pos.y + (pos.lines.length > 1 ? pos.h / 2 - 2 + li * 13 : pos.h / 2 + 4);
-        html += `<text x="${pos.x + pos.w / 2}" y="${lineY}" text-anchor="middle" font-size="9.5" fill="var(--fg)" font-weight="600" opacity="${opacity}" font-family="sans-serif">${line}</text>`;
+        html += `<text x="${pos.x + pos.w / 2}" y="${lineY}" text-anchor="middle" font-size="9.5" fill="var(--fg)" font-weight="600" opacity="${opacity}" font-family="sans-serif">${this._escSvg(line)}</text>`;
       });
     });
 

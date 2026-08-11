@@ -232,8 +232,24 @@ test('compare mode overlays every option wiring, color-coded with a legend', () 
   }
   // every distinct edge is drawn with an option letter badge
   assert.equal((htmlOut.match(/<circle /g) || []).length, 6); // Client→API ×2, API→Cache, API→DB ×2, Cache→DB
+  assert.match(htmlOut, /requests · A,B/);
+  assert.match(htmlOut, /loads on miss · B/);
   assert.match(htmlOut, /B ✓/);
   assert.doesNotMatch(htmlOut, /<script/);
+});
+
+test('compare mode escapes generated labels in its SVG text', () => {
+  const holder = { innerHTML: '' };
+  context.document = { getElementById: () => holder };
+  context.RenderForTest.diagram({
+    id: 'cmp-escaped', topic: 'caching', correct: 'A',
+    nodes: ['User', 'API'],
+    options: [{ id: 'A', label: 'A', flows: [{
+      from: 'User', to: 'API', verb: 'reads <cache> & "fast"', kind: 'sync'
+    }] }]
+  }, 'diagram-container', { reveal: true, compare: true });
+  assert.match(holder.innerHTML, /reads &lt;cache&gt; &amp; &quot;fast&quot; · A/);
+  assert.doesNotMatch(holder.innerHTML, /<text[^>]*>reads <cache>/);
 });
 
 test('compare mode is wired to a toggle button in the app', () => {
@@ -316,6 +332,7 @@ test('mermaid definitions label edges that arrive without a verb', () => {
 
 test('diagram prefers mermaid and falls back to the custom renderer', () => {
   assert.match(renderSource, /window\.mermaid && typeof window\.mermaid\.render === 'function'/);
+  assert.match(renderSource, /if \(opts\.compare\) \{\s*this\._renderCustom\(card, el, opts\);\s*return;/);
   assert.match(renderSource, /_renderMermaid\(card, el, opts\)\.catch\(\(\) => this\._renderCustom/);
   assert.match(renderSource, /async _renderMermaid/);
   assert.match(renderSource, /mermaid\.initialize\(\{ startOnLoad: false, theme/);

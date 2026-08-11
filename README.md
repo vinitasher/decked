@@ -78,7 +78,9 @@ decision-based practice with adaptive difficulty.
   with `from`/`to`/`verb`/`kind`) and each option carries the exact wiring it
   implies. Diagrams use a layered graph layout (parallel branches, callback
   back-edges, verb-labeled edges), theme-aware colors, and on reveal they
-  highlight the correct wiring — red where the chosen option diverges.
+  highlight the correct wiring — red where the chosen option diverges. The
+  compare view uses the deterministic layered renderer so every option graph
+  stays top-to-bottom, including branching and callback flows.
 
 **Data model:**
 ```json
