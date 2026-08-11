@@ -240,6 +240,7 @@ Score each capability from 0 to 3:
 | Adaptive scheduling | 1 | 2 | Useful heuristics exist, but selection optimizes topic accuracy and coverage rather than demonstrated skill transfer. Base scheduling on evidence quality, uncertainty, and goal. |
 | Diagnostic and study plan | 0 | 2 | The topic map is static. Create a short diagnostic and an editable plan that says what to do next, why, and how readiness will be checked. |
 | Interactive lessons | 0 | 1 | Wiki entries are references. Start with a few atomic lessons generated from repeated misconceptions; do not build a full course library yet. |
+| Interactive concept labs | 0 | 2 | Learners can read about components but cannot vary workload, predict behavior, or observe a modeled bottleneck. Add reviewed, deterministic micro-simulations linked from the wiki; label every result as an educational model, not a vendor benchmark or capacity recommendation. |
 | Verified content corpus | 1 | 2 | Validation checks schema, not technical truth or pedagogical quality. Introduce review status, provenance, item versions, rubrics, and retirement rules. |
 | Item quality feedback loop | 0 | 2 | There are no shared item statistics. Track ambiguity, option selection, reports, hints, completion, discrimination, and version-level outcomes. |
 | Held-out assessment | 0 | 2 | Mastery is based on practiced items. Use unseen scenario variants and reduced-support checkpoints to measure transfer and delayed retention. |
@@ -373,7 +374,77 @@ A Survey](https://doi.org/10.1145/3569576)). The project does not need a deep
 model now. It needs a clean evidence model and calibrated baselines before model
 complexity is justified.
 
-### 6. Transfer from micro-decisions to complete designs
+### 6. Turn the concept wiki into a predict-run-explain laboratory
+
+The wiki should remain the canonical explanation surface, but high-leverage
+entries should also offer a small experiment. Reading that a cache reduces
+database load is weaker than predicting the effect of a 90% hit rate, running a
+model, seeing downstream requests fall from 10 RPS to 1 RPS, and explaining
+what assumption would invalidate that result.
+
+Use one generic concept-lab architecture rather than a separate simulator for
+each named technology:
+
+| Layer | Responsibility |
+|---|---|
+| Component model contract | Versioned definition of component family, workload inputs, capacity assumptions, state, flow-transformation rules, observable metrics, explanation rules, sources, reviewed skills, and misconceptions |
+| Deterministic engine | Pure, seeded browser-side evaluation of steady state and short time steps; propagates traffic and backpressure without provisioning infrastructure |
+| Reviewed presets | Educational configurations such as relational database, cache, queue, stateless service, MySQL, PostgreSQL, and Redis; product names refine behavior and caveats rather than claim universal throughput |
+| Learning activity | A prediction, a small set of controls, modeled output, causal explanation, changed-constraint challenge, and independent transfer check linked to the learner evidence model |
+
+The shared workload vocabulary should initially cover arrival rate (including
+simple 1/10/100 RPS steps), read/write mix, payload size, service time,
+concurrency, burst duration, key or request skew, cache hit rate, working-set
+size, and failure state. A component opts into only the inputs it can explain.
+Common outputs include accepted throughput, utilization, queue or lag, modeled
+latency, drops or errors, cache misses, backend traffic, memory pressure, and
+freshness risk. The UI must distinguish user-supplied assumptions, derived
+values, and teaching conclusions.
+
+Start with two reviewed lab families:
+
+1. A relational-store lab that compares indexed and unindexed access, read/write
+   mix, connection limits, replication eligibility, and a hot partition. MySQL
+   and PostgreSQL may be presets, but the lab must not present a universal
+   “maximum RPS.” MySQL's own benchmarking guidance says results depend on the
+   workload and environment and can reverse under different conditions
+   ([MySQL benchmarking guidance](https://dev.mysql.com/doc/refman/8.0/en/optimize-benchmarking.html)).
+   PostgreSQL likewise notes that query-plan estimates vary with sampled
+   statistics, data, and platform-dependent costs
+   ([PostgreSQL `EXPLAIN`](https://www.postgresql.org/docs/current/using-explain.html)).
+2. A cache lab that exposes hit rate, working set, TTL or eviction, hot keys,
+   command cost, and round trips, with a Redis preset. Redis documentation
+   identifies latency, cache hit rate, eviction, traffic mix, memory, and
+   connections as distinct observability concerns, and explains that network
+   round trips and command complexity affect latency
+   ([Redis observability](https://redis.io/docs/latest/operate/rs/monitoring/observability/),
+   [Redis latency guidance](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/latency/)).
+
+After those isolated labs are trustworthy, allow small guided compositions such
+as `client -> service -> cache -> database` or
+`service -> queue -> worker -> database`. Propagate flow using explicit rules:
+cache misses continue to the backing store, eligible reads split across
+replicas, queues accumulate when consumers fall behind, and the slowest
+saturated stage constrains delivered throughput. Keep the first UI recipe-based
+and bounded; it should teach causal behavior, not become an unrestricted
+architecture drawing tool.
+
+Every output needs a persistent notice: **educational model, not a benchmark,
+load test, production capacity plan, or vendor comparison**. Real database
+performance depends on hardware, data, schema, indexes, query plans,
+configuration, clients, and network. The lab should teach which variables to
+measure in a real system and link to first-party diagnostic tools, not imply
+that a browser formula measured MySQL, PostgreSQL, or Redis.
+
+There is a portfolio boundary to preserve. The separately promoted
+`system-design-playground` owns free-form architecture composition and
+interview-coaching workflows. The flashcards concept lab should own wiki-linked
+micro-experiments and learning evidence. Do not share runtime code or recreate
+the playground canvas. If real demand later supports interoperability, use a
+small versioned deep-link or export contract handled in a separately reviewed
+change.
+
+### 7. Transfer from micro-decisions to complete designs
 
 Flashcards should remain daily practice, not the final outcome. The platform
 must test whether learners can combine skills when the answer is not present.
@@ -389,7 +460,7 @@ component palette, labeled edges, bottleneck annotations, and short rationale.
 Freeform diagram and voice can be added once the rubric works on structured
 evidence.
 
-### 7. Learning and product instrumentation
+### 8. Learning and product instrumentation
 
 Before driving traffic, define a privacy-respecting event model. Minimum events
 include:
@@ -486,6 +557,9 @@ The activation target is a starting hypothesis, not an industry benchmark.
 
 - Ship guided reasoning steps and escalating hints for the two-domain slice.
 - Map distractors and wrong steps to stable misconceptions.
+- Turn the caching wiki entry into one reviewed predict-run-explain lab using
+  the generic component contract and deterministic engine; test whether the
+  interaction improves a held-out explanation over the static wiki alone.
 - Add a persistent mistake bank with variant retry and resolution state.
 - Add a short pre-test and unseen post-test with reduced support.
 - Compare the guided loop with the existing answer-and-explanation card loop.
@@ -522,6 +596,10 @@ trust.
 
 - Expand the reviewed skill graph and case bank based on diagnosed demand, not
   nominal topic coverage.
+- Expand concept labs only through the shared model contract, prioritizing
+  components and combinations implicated by observed misconceptions; add a
+  relational-store lab and bounded cache/database and queue/worker recipes
+  before accepting community-authored models.
 - Use item statistics to prioritize ambiguity fixes and weak explanations.
 - Introduce timed simulations, dynamic follow-ups, and text-first interview
   dialogue; add voice only if it changes readiness outcomes.
@@ -565,6 +643,12 @@ engineering judgment.
   and distribution.
 - A fully freeform collaborative whiteboard. Structured design evidence should
   establish the rubric first.
+- Browser-hosted MySQL, PostgreSQL, or Redis instances and claims of real
+  component throughput. The first concept labs are deterministic teaching
+  models, not infrastructure sandboxes, vendor benchmarks, or capacity tools.
+- A separate simulator implementation for every named technology. Add behavior
+  through the reviewed component-model contract and use named presets only when
+  their documented differences teach a consequential decision.
 - Native mobile applications. The PWA is sufficient until usage proves a native
   capability is necessary.
 - Teacher classrooms, assignments, or school administration. They introduce a
@@ -597,6 +681,8 @@ weekly learners completing at least one full correction or verification loop.
 - delayed retention at 7 and 21 days;
 - transfer from drill to guided case;
 - misconception correction and recurrence rate;
+- concept-lab prediction error, explanation quality, and transfer to an unseen
+  changed-constraint task—not runs, slider changes, or time spent alone;
 - success by hint level and the rate at which support fades;
 - calibration between confidence and performance;
 - rubric inter-rater agreement for human and AI scoring; and
@@ -769,6 +855,8 @@ If only one quarter is available, do this:
 
 - Implement three to five structured reasoning steps on a small set of items.
 - Add progressive hints and option-specific misconception feedback.
+- Prototype the generic component contract and one cache lab behind a test
+  route; compare predict-run-explain with the current static wiki entry.
 - Add unseen transfer variants and a persistent mistake view.
 - Run usability sessions weekly and correct content immediately.
 
@@ -818,6 +906,12 @@ These decisions should be made with evidence before broad implementation:
    rather than monetizing model calls by default.
 10. **Post-interview retention:** test whether production architecture practice
     creates a credible continuing job before building team features.
+11. **Simulation fidelity:** determine the smallest deterministic model that
+    produces correct causal explanations without creating false confidence or
+    drifting into production capacity planning.
+12. **Portfolio interoperability:** keep concept labs independent from
+    `system-design-playground` unless observed user journeys justify a narrow,
+    versioned handoff between the products.
 
 ## Source notes and limits
 
@@ -831,6 +925,11 @@ public first-party pages reviewed on 2026-08-11:
 - [Exponent: System Design Interviews](https://www.tryexponent.com/courses/system-design-interviews)
 - [ByteByteGo](https://bytebytego.com/)
 - [Design Gurus](https://www.designgurus.io/)
+- [MySQL performance measurement and benchmarking](https://dev.mysql.com/doc/refman/8.0/en/optimize-benchmarking.html)
+- [PostgreSQL: using `EXPLAIN`](https://www.postgresql.org/docs/current/using-explain.html)
+- [Redis observability guidance](https://redis.io/docs/latest/operate/rs/monitoring/observability/)
+- [Redis latency diagnosis](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/latency/)
+- [MDN: Web Workers API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API)
 
 Public marketing pages show intended positioning and advertised capabilities,
 not independently verified learning outcomes. MathPath itself is early and
