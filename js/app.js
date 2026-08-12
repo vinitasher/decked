@@ -475,20 +475,23 @@ const APP = {
     return keys;
   },
 
-  async fetchCard(topic, difficulty, avoidList = []) {
+  async fetchCard(topic, difficulty, avoidList = [], options = {}) {
     const key = this._cacheKey(topic, difficulty);
     const excludedFingerprints = new Set(this._excludedScenarioFingerprints(avoidList));
     const localPool = this._readCardPool(key);
     const memoryPool = this._normalizeCardPool(this._cardCache[key] || { cards: [] });
     const available = this._normalizeCardPool({ cards: [...localPool.cards, ...memoryPool.cards] });
-    const unseen = available.cards.find(card => !excludedFingerprints.has(this._scenarioFingerprint(card.scenario)));
-    if (unseen) {
-      this._writeCardPool(key, available.cards);
-      return unseen;
+    if (!options.force) {
+      const unseen = available.cards.find(card => !excludedFingerprints.has(this._scenarioFingerprint(card.scenario)));
+      if (unseen) {
+        this._writeCardPool(key, available.cards);
+        return unseen;
+      }
     }
 
     try {
       const params = new URLSearchParams({ topic, difficulty: String(difficulty) });
+      if (options.force) params.set('force', '1');
       for (const fingerprint of excludedFingerprints) params.append('exclude', fingerprint);
       const res = await fetch(`${SERVER_BASE}/api/generate?${params}`, { headers: apiHeaders() });
       if (res.status === 429) {
@@ -507,15 +510,18 @@ const APP = {
       return card;
     } catch (err) {
       // server unavailable — continue to the existing offline fallback
+      if (options.force) throw err;
     }
 
     // seed fallback: only a topic-matched, unseen seed card may substitute so
     // offline sessions never pad a slot with cross-topic content.
-    const topicCards = SEED_CARDS.filter(c =>
-      c.topic === topic && !excludedFingerprints.has(this._scenarioFingerprint(c.scenario))
-    );
-    if (topicCards.length > 0) {
-      return normalizeCardPrerequisites(topicCards[Math.floor(Math.random() * topicCards.length)]);
+    if (!options.force) {
+      const topicCards = SEED_CARDS.filter(c =>
+        c.topic === topic && !excludedFingerprints.has(this._scenarioFingerprint(c.scenario))
+      );
+      if (topicCards.length > 0) {
+        return normalizeCardPrerequisites(topicCards[Math.floor(Math.random() * topicCards.length)]);
+      }
     }
     return null;
   },
@@ -1241,22 +1247,60 @@ const APP = {
   },
 
   async regenerateCard() {
-    document.getElementById('regenerate-btn').disabled = true;
-    document.getElementById('regenerate-btn').textContent = '⏳ Generating...';
-    const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const newCard = await this.fetchCard(this.currentCard.topic, this.currentCard.difficulty, [this.currentCard, ...avoidList]);
-      if (!newCard) break;
-      if (this.sessionIndex < this.sessionCards.length) {
-        this.sessionCards[this.sessionIndex] = newCard;
-      }
-      this.currentCard = newCard;
-      this.showCard();
-      this._regenerated = true;
-      break;
+    if (this._regenerating) return;
+    this._regenerating = true;
+    const button = document.getElementById('regenerate-btn');
+    const snapshotCard = this.currentCard;
+    const snapshotIndex = this.sessionIndex;
+    if (button) {
+      button.disabled = true;
+      button.textContent = '⏳ Generating...';
     }
-    document.getElementById('regenerate-btn').disabled = false;
-    document.getElementById('regenerate-btn').textContent = '🔄 Regenerate';
+    let newCard = null;
+    try {
+      const avoidList = this.sessionCards.filter(c => c && c.id !== snapshotCard?.id);
+      newCard = await this.fetchCard(snapshotCard.topic, snapshotCard.difficulty,
+        [snapshotCard, ...avoidList], { force: true });
+      if (!newCard) throw new Error('fresh generation returned no card');
+    } catch (error) {
+      if (this.currentCard === snapshotCard && this.sessionCards[snapshotIndex] !== snapshotCard) {
+        this.sessionCards[snapshotIndex] = snapshotCard;
+      }
+      this._announceRegenerate('Fresh generation is unavailable right now — please try again.', true);
+      return;
+    } finally {
+      this._regenerating = false;
+      if (button) {
+        button.disabled = false;
+        button.textContent = '🔄 Regenerate';
+      }
+    }
+    if (this.sessionIndex < this.sessionCards.length) this.sessionCards[this.sessionIndex] = newCard;
+    this.currentCard = newCard;
+    this.showCard();
+    this._regenerated = true;
+    this._announceRegenerate('');
+  },
+
+  _announceRegenerate(message, isError = false) {
+    try {
+      let el = document.getElementById('regenerate-status');
+      if (!el) {
+        el = document.createElement('span');
+        el.id = 'regenerate-status';
+        el.setAttribute('role', 'status');
+        const button = document.getElementById('regenerate-btn');
+        if (button && button.parentNode) {
+          button.parentNode.insertBefore(el, button.nextSibling);
+        } else if (document.body) {
+          document.body.appendChild(el);
+        }
+      }
+      el.textContent = message;
+      el.style.color = isError ? '#e53935' : '';
+    } catch (_) {
+      // announcement is best-effort; never break regeneration over DOM issues
+    }
   },
 
   _setupKeyboard() {

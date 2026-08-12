@@ -289,3 +289,186 @@ test('distinct generated IDs remain separate card history entries', () => {
   // Assert
   assert.deepEqual(Object.keys(app.profile.cardHistory).sort(), ['generated-1', 'generated-2']);
 });
+
+function installRegenerateDom() {
+  const button = { disabled: false, textContent: '🔄 Regenerate', nextSibling: null,
+    classList: { add() {}, remove() {}, contains() { return false; } } };
+  const parent = { child: null, insertBefore(child) { parent.child = child; } };
+  button.parentNode = parent;
+  const created = [];
+  const originalDocument = context.document;
+  const originalShowCard = context.appForTest.showCard;
+  context.document = {
+    addEventListener() {},
+    getElementById(id) {
+      if (id === 'regenerate-btn') return button;
+      if (id === 'regenerate-status') return created[0] || null;
+      return null;
+    },
+    createElement() {
+      const el = { id: '', textContent: '', style: {}, setAttribute(k, v) { this[k] = v; },
+        getAttribute(k) { return this[k]; } };
+      created.push(el);
+      return el;
+    },
+    body: { appendChild() {} }
+  };
+  return {
+    button, created, parent,
+    restore() { context.document = originalDocument; context.appForTest.showCard = originalShowCard; }
+  };
+}
+
+function setSession(app, cards) {
+  app.sessionCards = cards;
+  app.sessionIndex = 0;
+  app.currentCard = cards[0];
+}
+
+test('regenerate forces fresh generation with current, session, and profile exclusions, bypassing pools', async () => {
+  resetApp();
+  const app = context.appForTest;
+  const dom = installRegenerateDom();
+  try {
+    const current = generatedCard('current', 'Current scenario');
+    const other = generatedCard('other', 'Other session scenario');
+    const fresh = generatedCard('fresh', 'Fresh distinct scenario');
+    app.profile.seenScenarioFingerprints = [app._scenarioFingerprint('Profile scenario')];
+    context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [generatedCard('pool', 'Pooled scenario')] }));
+    app._cardCache['caching:3'] = { cards: [generatedCard('memory', 'Memory scenario')] };
+    setSession(app, [current, other]);
+    let requestUrl;
+    context.fetch = async url => {
+      requestUrl = new URL(url, 'https://example.com');
+      return { ok: true, async json() { return { card: fresh }; } };
+    };
+    app.showCard = () => { app.currentCard = app.sessionCards[app.sessionIndex]; app._recordDisplayedScenario(app.currentCard); };
+
+    await app.regenerateCard();
+
+    assert.equal(requestUrl.searchParams.get('force'), '1');
+    assert.deepEqual(requestUrl.searchParams.getAll('exclude').sort(), [
+      app._scenarioFingerprint(current.scenario),
+      app._scenarioFingerprint(other.scenario),
+      app._scenarioFingerprint('Profile scenario')
+    ].sort());
+    assert.deepEqual(app.sessionCards.map(c => c.id), ['fresh', 'other']);
+    assert.equal(app.currentCard.id, 'fresh');
+    assert.equal(JSON.parse(context.localStorage.getItem('sdf_gen_caching:3')).cards.map(c => c.id).includes('fresh'), true);
+    assert.equal(app.profile.seenScenarioFingerprints.includes(app._scenarioFingerprint(fresh.scenario)), true);
+    assert.equal(dom.button.disabled, false);
+    assert.equal(dom.button.textContent, '🔄 Regenerate');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('regenerate failures retain the current card, session slot, and seen ledger, and restore the control', async () => {
+  resetApp();
+  const app = context.appForTest;
+  const dom = installRegenerateDom();
+  try {
+    const current = generatedCard('current', 'Current scenario');
+    const other = generatedCard('other', 'Other session scenario');
+    const cases = [
+      ['http error', async () => ({ ok: false, status: 500, async json() { return { error: 'unavailable' }; } })],
+      ['network failure', async () => { throw new TypeError('network down'); }],
+      ['timeout', async () => { throw new Error('aborted'); }],
+      ['malformed payload', async () => ({ ok: true, async json() { return {}; } })],
+      ['duplicate response', async () => ({ ok: true, async json() { return { card: generatedCard('dup', current.scenario) }; } })],
+      ['unconfigured generation', async () => ({ ok: false, status: 500, async json() { return { error: 'not configured' }; } })]
+    ];
+    for (const [name, fetchImpl] of cases) {
+      setSession(app, [current, other]);
+      app.profile.seenScenarioFingerprints = ['profile-seen-fp'];
+      context.fetch = fetchImpl;
+      await app.regenerateCard();
+      assert.equal(app.currentCard.id, 'current', name);
+      assert.deepEqual(app.sessionCards.map(c => c.id), ['current', 'other'], name);
+      assert.deepEqual(app.profile.seenScenarioFingerprints, ['profile-seen-fp'], name);
+      assert.equal(dom.button.disabled, false, name);
+      assert.equal(dom.button.textContent, '🔄 Regenerate', name);
+    }
+  } finally {
+    dom.restore();
+  }
+});
+
+test('forced regenerate never falls back to a seed and announces retry in an aria-live region', async () => {
+  resetApp();
+  const app = context.appForTest;
+  const dom = installRegenerateDom();
+  context.SEED_CARDS.push(generatedCard('seed', 'Offline seed scenario'));
+  try {
+    const current = generatedCard('current', 'Current scenario');
+    context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [generatedCard('cached', 'Cached scenario')] }));
+    context.fetch = async () => { throw new Error('offline'); };
+    setSession(app, [current]);
+
+    await app.regenerateCard();
+
+    assert.equal(app.currentCard.id, 'current');
+    const status = dom.created[0];
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.equal(dom.parent.child, status);
+    assert.match(status.textContent, /Fresh generation is unavailable.*try again/);
+  } finally {
+    context.SEED_CARDS.pop();
+    dom.restore();
+  }
+});
+
+test('regenerate guards concurrency and disables the control while in flight', async () => {
+  resetApp();
+  const app = context.appForTest;
+  const dom = installRegenerateDom();
+  try {
+    const current = generatedCard('current', 'Current scenario');
+    const fresh = generatedCard('fresh', 'Fresh distinct scenario');
+    let requests = 0;
+    let resolveFetch;
+    context.fetch = () => {
+      requests++;
+      return new Promise(resolve => { resolveFetch = resolve; });
+    };
+    app.showCard = () => {};
+    setSession(app, [current]);
+
+    const first = app.regenerateCard();
+    const second = app.regenerateCard();
+    assert.equal(requests, 1);
+    assert.equal(dom.button.disabled, true);
+    assert.equal(dom.button.textContent, '⏳ Generating...');
+
+    resolveFetch({ ok: true, async json() { return { card: fresh }; } });
+    await Promise.all([first, second]);
+
+    assert.equal(requests, 1);
+    assert.equal(app.currentCard.id, 'fresh');
+    assert.deepEqual(app.sessionCards.map(c => c.id), ['fresh']);
+    assert.equal(dom.button.disabled, false);
+    assert.equal(dom.button.textContent, '🔄 Regenerate');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('regenerate restores the control when an unexpected exception escapes', async () => {
+  resetApp();
+  const app = context.appForTest;
+  const dom = installRegenerateDom();
+  try {
+    const current = generatedCard('current', 'Current scenario');
+    context.fetch = async () => ({ ok: true, async json() { return { card: generatedCard('fresh', 'Fresh distinct scenario') }; } });
+    app.showCard = () => { throw new Error('render failed'); };
+    setSession(app, [current]);
+
+    await assert.rejects(() => app.regenerateCard(), /render failed/);
+
+    assert.equal(dom.button.disabled, false);
+    assert.equal(dom.button.textContent, '🔄 Regenerate');
+    assert.equal(app._regenerating, false);
+  } finally {
+    dom.restore();
+  }
+});

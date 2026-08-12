@@ -227,6 +227,16 @@ persisted ledger of scenario fingerprints actually displayed. Unseen cached
 cards are used before a server request; prefetching does not mark a card seen.
 Normal study sessions retain the existing seed-card fallback when generation is
 offline, and seed cards are never stored or presented as newly generated cards.
+The Regenerate control always requests forced fresh generation: it sends
+`force=1` with the current card, all active session cards, and the profile-seen
+ledger as repeated `exclude` parameters, bypassing local, in-memory, and seed
+pools. The current session slot is replaced and marked seen only after a valid
+fingerprint-distinct response arrives; HTTP errors, network failures, timeouts,
+malformed or duplicate payloads, and unconfigured generation all leave the
+current card and session intact and announce in an accessible live region that
+fresh generation is unavailable and can be retried. The control disables itself
+while generating and always restores its enabled state, and overlapping clicks
+or keyboard presses never issue concurrent requests.
 Session planning draws from every topic in the 13-topic catalog (never just the
 seed topics) at each topic's mastery-derived target difficulty, ranked by the
 existing adaptive weight with a random tie-break; sessions that need more cards
