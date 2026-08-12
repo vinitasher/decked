@@ -1584,7 +1584,7 @@ const APP = {
     { id: 'master', label: 'Master', desc: 'Master 3 topics', check: () => Object.keys(this.profile.topicScores).filter(t => this.isTopicMastered(t)).length >= 3 },
     { id: 'dedicated', label: 'Dedicated', desc: 'Answer 50 cards', check: () => this.profile.totalAnswered >= 50 },
     { id: 'architect', label: 'Architect', desc: 'Answer 100 cards', check: () => this.profile.totalAnswered >= 100 },
-    { id: 'deck-explorer', label: 'Deck Explorer', desc: 'Review every card once', check: () => Object.keys(this.profile.cardHistory).length >= SEED_CARDS.length }
+    { id: 'deck-explorer', label: 'Card Explorer', desc: 'Review 25 distinct cards', check: () => Object.keys(this.profile.cardHistory).length >= 25 }
   ],
 
   _checkAchievements() {
