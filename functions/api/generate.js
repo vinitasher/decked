@@ -2,6 +2,7 @@
 
 import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
 import { countScenarioRequirements, difficultyFromScenario } from '../shared/requirement-count.js';
+import { getOptionPrerequisites } from '../shared/production-option-prerequisites.js';
 
 const TOPIC_PREREQUISITES = {
   'api-design': [],
@@ -65,10 +66,18 @@ function normalizeTopics(topics, cardTopic) {
 
 export function normalizeCard(card, topic, difficulty) {
   const options = Array.isArray(card.options)
-    ? card.options.map(option => ({
-        ...option,
-        prerequisiteTopics: normalizeTopics(option.prerequisiteTopics, topic)
-      }))
+    ? card.options.map(option => {
+        const storedTopics = option.prerequisiteTopics;
+        return {
+          ...option,
+          prerequisiteTopics: normalizeTopics(
+            Array.isArray(storedTopics) && storedTopics.length > 0
+              ? storedTopics
+              : getOptionPrerequisites(card?.id, option?.id),
+            topic
+          )
+        };
+      })
     : [];
   const prerequisiteTopics = normalizeTopics([
     ...(TOPIC_PREREQUISITES[topic] || []),

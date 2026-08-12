@@ -251,6 +251,116 @@ test('cached legacy cards gain canonical prerequisites without an expiration', a
   assert.equal(rewritten.options, undefined);
 });
 
+test('cached curated cards backfill option prerequisites once and stay idempotent', async () => {
+  const legacyCard = {
+    ...card,
+    id: 'caching-gen-1785366879678',
+    topic: 'caching',
+    options: card.options.map(({ prerequisiteTopics: _, ...option }) => option)
+  };
+  let stored = JSON.stringify({ cards: [legacyCard] });
+  let cacheWrites = 0;
+
+  const cache = {
+    get: async () => stored,
+    put: async (key, value, options) => {
+      assert.equal(key, 'caching:2');
+      assert.equal(options, undefined);
+      cacheWrites++;
+      stored = value;
+    }
+  };
+  const request = new Request('https://example.com/api/generate?topic=caching&difficulty=2');
+
+  const first = await onRequest({ request, env: { CARD_CACHE: cache } });
+  const firstBody = await first.json();
+
+  assert.equal(firstBody.cached, true);
+  assert.deepEqual(
+    firstBody.card.options.map(option => option.prerequisiteTopics),
+    [
+      ['cdn-caching', 'cache-invalidation', 'content-freshness'],
+      ['cache-aside', 'cache-eviction', 'aggregation-latency'],
+      ['read-replication', 'replication-lag', 'connection-pooling'],
+      ['write-through-caching', 'write-latency', 'cache-coherence']
+    ]
+  );
+  assert.deepEqual(firstBody.card.prerequisiteTopics, [
+    'api-design', 'cdn-caching', 'cache-invalidation', 'content-freshness',
+    'cache-aside', 'cache-eviction', 'aggregation-latency', 'read-replication',
+    'replication-lag', 'connection-pooling', 'write-through-caching',
+    'write-latency', 'cache-coherence'
+  ]);
+  assert.equal(cacheWrites, 1);
+
+  const second = await onRequest({ request, env: { CARD_CACHE: cache } });
+  const secondBody = await second.json();
+  assert.deepEqual(secondBody.card, JSON.parse(stored).cards[0]);
+  assert.equal(cacheWrites, 1);
+});
+
+test('cached cards without a curated entry preserve empty option prerequisites', async () => {
+  const emptyOptionsCard = {
+    ...card,
+    difficulty: difficultyFromScenario(card.scenario),
+    options: card.options.map(option => ({ ...option, prerequisiteTopics: [] }))
+  };
+  let cacheWrites = 0;
+
+  const response = await onRequest({
+    request: new Request('https://example.com/api/generate?topic=queues&difficulty=2'),
+    env: {
+      CARD_CACHE: {
+        get: async () => JSON.stringify({ cards: [emptyOptionsCard] }),
+        put: async () => { cacheWrites++; }
+      }
+    }
+  });
+  const body = await response.json();
+
+  assert.equal(body.cached, true);
+  assert.deepEqual(body.card.options.map(option => option.prerequisiteTopics), [[], [], [], []]);
+  assert.equal(cacheWrites, 0);
+});
+
+test('cached curated cards with authored option prerequisites stay byte-identical', async () => {
+  const authoredCard = {
+    ...card,
+    id: 'caching-gen-1785366879678',
+    topic: 'caching',
+    difficulty: difficultyFromScenario(card.scenario),
+    prerequisiteTopics: [
+      'api-design', 'cdn-caching', 'cache-invalidation', 'content-freshness',
+      'cache-aside', 'cache-eviction', 'aggregation-latency', 'read-replication',
+      'replication-lag', 'connection-pooling', 'write-through-caching',
+      'write-latency', 'cache-coherence'
+    ],
+    options: [
+      { ...card.options[0], prerequisiteTopics: ['cdn-caching', 'cache-invalidation', 'content-freshness'] },
+      { ...card.options[1], prerequisiteTopics: ['cache-aside', 'cache-eviction', 'aggregation-latency'] },
+      { ...card.options[2], prerequisiteTopics: ['read-replication', 'replication-lag', 'connection-pooling'] },
+      { ...card.options[3], prerequisiteTopics: ['write-through-caching', 'write-latency', 'cache-coherence'] }
+    ]
+  };
+  const stored = JSON.stringify({ cards: [authoredCard] });
+  let cacheWrites = 0;
+
+  const response = await onRequest({
+    request: new Request('https://example.com/api/generate?topic=caching&difficulty=2'),
+    env: {
+      CARD_CACHE: {
+        get: async () => stored,
+        put: async () => { cacheWrites++; }
+      }
+    }
+  });
+  const body = await response.json();
+
+  assert.equal(body.cached, true);
+  assert.deepEqual(body.card, authoredCard);
+  assert.equal(cacheWrites, 0);
+});
+
 test('generation rejects an option without prerequisite topics', async () => {
   const originalFetch = globalThis.fetch;
   const invalidCard = {
