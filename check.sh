@@ -2,52 +2,40 @@
 set -Eeuo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$DIR"
 
-scripts=(
-  js/app.js
-  js/cards.js
-  js/render.js
-  js/srs.js
-  js/wiki.js
-  sw.js
-  functions/api/generate.js
-  functions/api/cache-stats.js
-  functions/api/wiki.js
-  functions/api/feedback.js
-  functions/api/feedback/diagnostic.js
-  functions/api/feedback/config.js
-  functions/api/quota.js
-  functions/api/config.js
-  functions/api/billing/checkout.js
-  functions/api/billing/webhook.js
-  functions/shared/production-option-prerequisites.js
-  functions/shared/server-logger.js
-  functions/shared/feedback-security.js
-  functions/shared/feedback-diagnostics.js
-  functions/shared/entitlement.js
-  functions/shared/requirement-count.js
-  server/generate-card.js
-  server/server.js
-  scripts/migrate-option-prerequisites.mjs
-  scripts/dump-production-card-cache.mjs
-  scripts/upgrade-cached-card-flows.mjs
-  scripts/generate-wiki.mjs
-  scripts/audit-card-difficulties.mjs
-)
+syntax_check_sources() {
+  local source_dir script
+  local -a source_dirs=(js functions scripts server)
 
-for script in "${scripts[@]}"; do
-  node --check "$script"
-done
+  {
+    for source_dir in "${source_dirs[@]}"; do
+      [[ -d "$source_dir" ]] || continue
+      find "$source_dir" -type f \( -name '*.js' -o -name '*.mjs' \) -print0
+    done
+    find . -maxdepth 1 -type f \( -name '*.js' -o -name '*.mjs' \) -print0
+  } | while IFS= read -r -d '' script; do
+    node --check "$script"
+  done
+}
 
-node scripts/audit-card-difficulties.mjs
-node --test tests/*.test.mjs
-bash -n build.sh
-bash -n deploy.sh
+run_checks() {
+  cd "$DIR"
 
-if grep -q "__FILL_ME_IN__" wrangler.toml; then
-  echo "wrangler.toml contains placeholder resource IDs" >&2
-  exit 1
+  syntax_check_sources
+
+  node scripts/audit-card-difficulties.mjs
+  node --test tests/*.test.mjs
+  bash -n build.sh
+  bash -n deploy.sh
+
+  if grep -q "__FILL_ME_IN__" wrangler.toml; then
+    echo "wrangler.toml contains placeholder resource IDs" >&2
+    exit 1
+  fi
+
+  echo "System Design Flashcards checks passed."
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  run_checks
 fi
-
-echo "System Design Flashcards checks passed."
