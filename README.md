@@ -75,9 +75,11 @@ decision-based practice with adaptive difficulty.
 - Session end shows a "Review your mistakes" list with the correct answer and
   explanation for every card answered wrong
 - Architecture diagrams: every card carries a directed flow graph (`flows`
-  with `from`/`to`/`verb`/`kind`) and each option carries the exact wiring it
-  implies. Diagrams use Mermaid flowcharts with parallel branches, callback
-  back-edges, verb-labeled edges, theme-aware colors, and on reveal they
+  with `from`/`to`/`verb`/`kind`) and each option carries a non-empty set of the
+  exact wiring it implies. Legacy cards with incomplete option wiring use the
+  validated base graph as a visible compare fallback. Diagrams use Mermaid
+  flowcharts with parallel branches, callback back-edges, verb-labeled edges,
+  theme-aware colors, and on reveal they
   highlight the correct wiring — red where the chosen option diverges. Every
   diagram uses top-to-bottom flowchart mode, including the compare view. If
   Mermaid is unavailable or fails to render, the app shows a reload message

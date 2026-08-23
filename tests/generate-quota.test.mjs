@@ -18,10 +18,35 @@ const card = {
     { from: 'consumer', to: 'database', verb: 'writes', kind: 'sync' }
   ],
   options: [
-    { id: 'A', label: 'Call the consumer synchronously', prerequisiteTopics: ['api-design', 'real-time'] },
-    { id: 'B', label: 'Buffer work in a queue and drain asynchronously', prerequisiteTopics: ['api-design', 'queues'] },
-    { id: 'C', label: 'Drop excess work', prerequisiteTopics: ['api-design', 'rate-limiting'] },
-    { id: 'D', label: 'Persist every event in the database', prerequisiteTopics: ['api-design', 'databases'] }
+    {
+      id: 'A', label: 'Call the consumer synchronously', prerequisiteTopics: ['api-design', 'real-time'],
+      flows: [
+        { from: 'producer', to: 'consumer', verb: 'calls', kind: 'sync' },
+        { from: 'consumer', to: 'database', verb: 'writes', kind: 'sync' }
+      ]
+    },
+    {
+      id: 'B', label: 'Buffer work in a queue and drain asynchronously', prerequisiteTopics: ['api-design', 'queues'],
+      flows: [
+        { from: 'producer', to: 'queue', verb: 'publishes', kind: 'async' },
+        { from: 'queue', to: 'consumer', verb: 'delivers', kind: 'async' },
+        { from: 'consumer', to: 'database', verb: 'writes', kind: 'sync' }
+      ]
+    },
+    {
+      id: 'C', label: 'Drop excess work', prerequisiteTopics: ['api-design', 'rate-limiting'],
+      flows: [
+        { from: 'producer', to: 'database', verb: 'writes', kind: 'sync' },
+        { from: 'consumer', to: 'database', verb: 'polls', kind: 'async' }
+      ]
+    },
+    {
+      id: 'D', label: 'Persist every event in the database', prerequisiteTopics: ['api-design', 'databases'],
+      flows: [
+        { from: 'producer', to: 'queue', verb: 'publishes', kind: 'async' },
+        { from: 'queue', to: 'consumer', verb: 'delivers', kind: 'async' }
+      ]
+    }
   ],
   correct: 'B',
   explanation: 'A queue decouples the producer from the consumer.'

@@ -9,7 +9,8 @@
    (option.flows) from the card's scenario, nodes, and options. Results are
    validated against the generator's rules (every node in at least one base
    flow, from/to must reference node names, kind whitelisted) with one retry;
-   on failure the card falls back to a linear chain over its nodes.
+   options without distinct wiring inherit the validated base graph, and on
+   failure the card falls back to a linear chain over its nodes.
 
    Usage:
      node scripts/upgrade-cached-card-flows.mjs          # dry run
@@ -80,7 +81,7 @@ RULES:
 - "flows" describes the base architecture the scenario describes. from/to MUST be exact node names from the nodes array. verb is the action on that edge ("requests", "publishes", "queries", "caches", "loads on miss", "acks", "enqueues", "delivers", ...). kind is "sync", "async", or "callback".
 - The base flows MUST start from the end user: the first edge leaves the end-user node (the client, web app, mobile app, browser, or similar node when the nodes array includes one). If the nodes array has no end-user node, start from the node closest to the user (the entry point, e.g. the CDN or load balancer).
 - Every node MUST appear in at least one base flow. Keep the topology realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
-- "optionFlows" maps each option id to the exact wiring that option implies: edges between the nodes that option connects, consistent with the option label. Omit an option's key entirely when it has no meaningful wiring. Never send empty arrays.
+- "optionFlows" maps every option id to a non-empty array of the exact wiring that option implies: edges between the nodes that option connects, consistent with the option label. Use the base graph when an option has no distinct wiring. Never send empty arrays.
 
 Card:
 ${JSON.stringify({
@@ -126,7 +127,7 @@ async function deriveFlows(card, attemptCount = 2) {
       for (const option of card.options || []) {
         if (!option?.id) continue;
         const flows = normalizeFlows(parsed.optionFlows?.[option.id], nodes);
-        if (flows.length) optionFlows[option.id] = flows;
+        optionFlows[option.id] = (flows.length ? flows : base).map(flow => ({ ...flow }));
       }
       return { flows: base, optionFlows };
     } catch (error) {
@@ -141,18 +142,28 @@ async function deriveFlows(card, attemptCount = 2) {
    end-user anchoring + validation always runs. */
 async function upgradeCard(card, stats) {
   if (!card || typeof card !== 'object' || !Array.isArray(card.nodes)) return card;
+  let changed = false;
   if (!(Array.isArray(card.flows) && card.flows.length)) {
     const result = await deriveFlows(card);
     card.flows = result.flows;
     for (const option of Array.isArray(card.options) ? card.options : []) {
       if (option && result.optionFlows[option.id]) option.flows = result.optionFlows[option.id];
     }
-    stats.updated++;
+    changed = true;
     if (result.error) stats.errors++;
-  } else {
-    stats.skipped++;
   }
   normalizeCachedFlows(card);
+  const fallbackFlows = normalizeFlows(card.flows, card.nodes);
+  for (const option of Array.isArray(card.options) ? card.options : []) {
+    if (!option || typeof option !== 'object') continue;
+    const explicitFlows = normalizeFlows(option.flows, card.nodes);
+    const nextFlows = (explicitFlows.length ? explicitFlows : fallbackFlows)
+      .map(flow => ({ ...flow }));
+    if (JSON.stringify(option.flows) !== JSON.stringify(nextFlows)) changed = true;
+    option.flows = nextFlows;
+  }
+  if (changed) stats.updated++;
+  else stats.skipped++;
   return card;
 }
 

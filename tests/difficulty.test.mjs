@@ -10,6 +10,15 @@ import {
 } from '../functions/shared/requirement-count.js';
 import { normalizeCard, validateGeneratedCard } from '../functions/api/generate.js';
 
+function validGeneratedOptions() {
+  return ['A', 'B', 'C', 'D'].map(id => ({
+    id,
+    label: 'Option ' + id,
+    prerequisiteTopics: ['a', 'b'],
+    flows: [{ from: 'a', to: 'b', verb: 'connects', kind: 'sync' }]
+  }));
+}
+
 /* Hand-computed requirement counts for every card in the corpus. Keeping
    these expectations explicit makes the classifier's rules auditable. */
 const CORPUS = [
@@ -180,7 +189,7 @@ test('generation validation rejects scenarios with no concrete requirements', ()
         { from: 'a', to: 'b', verb: 'requests', kind: 'sync' },
         { from: 'b', to: 'c', verb: 'queries', kind: 'sync' }
       ],
-      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      options: validGeneratedOptions(),
       correct: 'A',
       explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
     }, 'A'),
@@ -199,7 +208,7 @@ test('generation validation rejects flows that reference unknown nodes', () => {
         { from: 'a', to: 'ghost', verb: 'requests', kind: 'sync' },
         { from: 'ghost', to: 'c', verb: 'queries', kind: 'sync' }
       ],
-      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      options: validGeneratedOptions(),
       correct: 'A',
       explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
     }, 'A'),
@@ -218,7 +227,7 @@ test('generation validation rejects unlabeled base flows', () => {
         { from: 'a', to: 'b', verb: '', kind: 'sync' },
         { from: 'b', to: 'c', verb: 'queries', kind: 'sync' }
       ],
-      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      options: validGeneratedOptions(),
       correct: 'A',
       explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
     }, 'A'),
@@ -238,10 +247,54 @@ test('generation validation rejects flows that leave a node unconnected', () => 
         { from: 'b', to: 'c', verb: 'queries', kind: 'sync' },
         { from: 'c', to: 'b', verb: 'acks', kind: 'callback' }
       ],
-      options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Option ' + id, prerequisiteTopics: ['a', 'b'] })),
+      options: validGeneratedOptions(),
       correct: 'A',
       explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
     }, 'A'),
     /appears in no flow/
+  );
+});
+
+test('generation validation rejects option flows that reference unknown nodes', () => {
+  const options = validGeneratedOptions();
+  options[0].flows = [{ from: 'a', to: 'ghost', verb: 'connects', kind: 'sync' }];
+
+  assert.throws(
+    () => validateGeneratedCard({
+      id: 'x', topic: 'caching', difficulty: 2,
+      prerequisiteTopics: [],
+      scenario: 'An API serves 20,000 QPS and must keep data fresh within 500ms.',
+      nodes: ['a', 'b', 'c'],
+      flows: [
+        { from: 'a', to: 'b', verb: 'requests', kind: 'sync' },
+        { from: 'b', to: 'c', verb: 'queries', kind: 'sync' }
+      ],
+      options,
+      correct: 'A',
+      explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
+    }, 'A'),
+    /option flows must reference distinct node names/
+  );
+});
+
+test('generation validation rejects options without explicit wiring', () => {
+  const options = validGeneratedOptions();
+  delete options[0].flows;
+
+  assert.throws(
+    () => validateGeneratedCard({
+      id: 'x', topic: 'caching', difficulty: 2,
+      prerequisiteTopics: [],
+      scenario: 'An API serves 20,000 QPS and must keep data fresh within 500ms.',
+      nodes: ['a', 'b', 'c'],
+      flows: [
+        { from: 'a', to: 'b', verb: 'requests', kind: 'sync' },
+        { from: 'b', to: 'c', verb: 'queries', kind: 'sync' }
+      ],
+      options,
+      correct: 'A',
+      explanation: 'This explanation is intentionally long enough to pass the minimum length check.'
+    }, 'A'),
+    /option flows must be non-empty arrays/
   );
 });

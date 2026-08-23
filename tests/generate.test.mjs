@@ -14,6 +14,7 @@ import {
 import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
 const require = createRequire(import.meta.url);
 const localGenerator = require('../server/generate-card.js');
+const { buildPrompt: buildFlowUpgradePrompt } = await import('../scripts/upgrade-cached-card-flows.mjs');
 
 const card = {
   id: 'queues-generated',
@@ -96,8 +97,15 @@ test('both generation prompts consistently apply every designated correct letter
       assert.match(prompt, new RegExp(`(?:Option |where )${expected} is correct`));
       assert.match(prompt, new RegExp(`correct: "${expected}"`));
       assert.match(prompt, new RegExp(`why ${expected} wins`));
+      assert.match(prompt, /Every option must include a non-empty flows array/);
     }
   }
+  assert.match(buildFlowUpgradePrompt({
+    scenario: 'A queue serves 1000 requests per second.',
+    nodes: ['Client', 'Queue'],
+    options: [{ id: 'A', label: 'Use the queue' }],
+    correct: 'A'
+  }), /non-empty array/);
 });
 
 test('generation retries a temporary provider failure and caches the card', async () => {
@@ -215,6 +223,22 @@ test('local validation rejects an unlabeled flow', () => {
   assert.throws(
     () => localGenerator.extractAndValidate(JSON.stringify(localCard), 'B'),
     /flows must have non-empty labels/
+  );
+});
+
+test('local validation rejects option flows that reference unknown nodes', () => {
+  const localCard = {
+    ...card,
+    scenario: 'A service handles 1000 requests per second under burst traffic.',
+    options: card.options.map((option, index) => index === 0
+      ? { ...option, flows: [{ from: 'producer', to: 'ghost', verb: 'connects', kind: 'sync' }] }
+      : option),
+    explanation: 'This detailed explanation is intentionally longer than eighty characters and compares each distinct system design trade-off.'
+  };
+
+  assert.throws(
+    () => localGenerator.extractAndValidate(JSON.stringify(localCard), 'B'),
+    /option flows must reference distinct node names/
   );
 });
 

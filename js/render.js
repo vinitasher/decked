@@ -151,6 +151,31 @@ const Render = {
 
   _edgeKey(edge) { return edge.from + '\u0000' + edge.to; },
 
+  _validDiagramFlows(flows, nodes) {
+    const nodeSet = new Set(Array.isArray(nodes) ? nodes : []);
+    return (Array.isArray(flows) ? flows : [])
+      .filter(flow => flow && typeof flow === 'object'
+        && typeof flow.from === 'string' && typeof flow.to === 'string'
+        && flow.from && flow.to && flow.from !== flow.to
+        && nodeSet.has(flow.from) && nodeSet.has(flow.to))
+      .map(flow => ({ ...flow }));
+  },
+
+  /* A valid card normally has base flows. Keep legacy and partially generated
+     cards renderable by synthesizing the same linear fallback used by the
+     card normalizer when no valid base flow survives validation. */
+  _baseDiagramFlows(card) {
+    const valid = this._validDiagramFlows(card?.flows, card?.nodes);
+    if (valid.length) return valid;
+    const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+    return nodes.slice(0, -1).map((from, index) => ({
+      from,
+      to: nodes[index + 1],
+      verb: 'sends',
+      kind: 'sync'
+    }));
+  },
+
   /* Per-option wiring colors for the compare view. */
   OPTION_COLORS: { A: '#1976d2', B: '#2e7d32', C: '#e65100', D: '#7b1fa2' },
 
@@ -191,12 +216,22 @@ const Render = {
     const compare = !!opts.compare;
     const chosenOption = opts.option;
     const correctOption = (card?.options || []).find(option => option?.id === card.correct);
+    const baseEdges = this._baseDiagramFlows(card);
+    const correctOptionEdges = this._validDiagramFlows(correctOption?.flows, card?.nodes);
+    const chosenOptionEdges = this._validDiagramFlows(chosenOption?.flows, card?.nodes);
+    const optionWiring = new Map();
 
     let edges;
     if (compare) {
       const byKey = new Map();
       for (const option of card?.options || []) {
-        for (const flow of option?.flows || []) {
+        const explicitEdges = this._validDiagramFlows(option?.flows, card?.nodes);
+        const optionEdges = explicitEdges.length ? explicitEdges : baseEdges;
+        optionWiring.set(option.id, {
+          hasExplicitWiring: explicitEdges.length > 0,
+          usesBaseFallback: explicitEdges.length === 0 && baseEdges.length > 0
+        });
+        for (const flow of optionEdges) {
           const key = this._edgeKey(flow);
           let group = byKey.get(key);
           if (!group) {
@@ -207,10 +242,13 @@ const Render = {
         }
       }
       edges = [...byKey.values()];
+      if (!edges.length) {
+        edges = baseEdges.map(flow => ({ ...flow, options: [] }));
+      }
     } else {
-      edges = ((chosenOption?.flows && chosenOption.flows.length) ? chosenOption.flows : null)
-        || ((correctOption?.flows && correctOption.flows.length) ? correctOption.flows : null)
-        || card?.flows || [];
+      edges = chosenOptionEdges.length ? chosenOptionEdges
+        : correctOptionEdges.length ? correctOptionEdges
+          : baseEdges;
       edges = edges.map(flow => ({ ...flow, options: [] }));
     }
 
@@ -219,9 +257,9 @@ const Render = {
       def.push(`n${i}["${this._esc(name)}"]`);
     });
 
-    const correctKeys = new Set((correctOption?.flows || []).map(this._edgeKey));
-    const chosenKeys = new Set((chosenOption?.flows || []).map(this._edgeKey));
-    const revealHighlight = reveal && chosenOption && chosenOption.flows && chosenOption.flows.length;
+    const correctKeys = new Set(correctOptionEdges.map(this._edgeKey));
+    const chosenKeys = new Set(chosenOptionEdges.map(this._edgeKey));
+    const revealHighlight = reveal && chosenOption && chosenOptionEdges.length;
     const nodeIds = new Map((card?.nodes || []).map((name, i) => [name, `n${i}`]));
 
     const linkStyles = [];
@@ -261,10 +299,15 @@ const Render = {
     if (compare) {
       legendHtml = '<div class="diagram-legend" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-top:8px;font-size:0.72rem;color:var(--muted-text);">';
       for (const option of card?.options || []) {
-        const hasWiring = Array.isArray(option?.flows) && option.flows.length;
+        const wiring = optionWiring.get(option.id);
+        const hasWiring = wiring?.hasExplicitWiring || false;
+        const usesBaseFallback = wiring?.usesBaseFallback || false;
         const color = this.OPTION_COLORS[option.id] || '#888';
         const isCorrect = option.id === card.correct;
-        legendHtml += `<span style="opacity:${hasWiring ? 1 : 0.45};" title="${hasWiring ? '' : 'no wiring data'}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
+        const title = hasWiring ? '' : usesBaseFallback
+          ? 'using base wiring fallback'
+          : 'no wiring data';
+        legendHtml += `<span style="opacity:${hasWiring || usesBaseFallback ? 1 : 0.45};" title="${title}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
       }
       legendHtml += '</div>';
     }
