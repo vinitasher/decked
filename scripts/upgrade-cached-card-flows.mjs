@@ -9,8 +9,9 @@
    (option.flows) from the card's scenario, nodes, and options. Results are
    validated against the generator's rules (every node in at least one base
    flow, from/to must reference node names, kind whitelisted) with one retry;
-   options without distinct wiring inherit the validated base graph, and on
-   failure the card falls back to a linear chain over its nodes.
+   options without distinct wiring inherit the validated correct-option graph,
+   and on failure the card falls back to a linear chain over its nodes without
+   inventing a correct answer graph.
 
    Usage:
      node scripts/upgrade-cached-card-flows.mjs          # dry run
@@ -81,7 +82,7 @@ RULES:
 - "flows" describes the base architecture the scenario describes. from/to MUST be exact node names from the nodes array. verb is the action on that edge ("requests", "publishes", "queries", "caches", "loads on miss", "acks", "enqueues", "delivers", ...). kind is "sync", "async", or "callback".
 - The base flows MUST start from the end user: the first edge leaves the end-user node (the client, web app, mobile app, browser, or similar node when the nodes array includes one). If the nodes array has no end-user node, start from the node closest to the user (the entry point, e.g. the CDN or load balancer).
 - Every node MUST appear in at least one base flow. Keep the topology realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
-- "optionFlows" maps every option id to a non-empty array of the exact wiring that option implies: edges between the nodes that option connects, consistent with the option label. Use the base graph when an option has no distinct wiring. Never send empty arrays.
+- "optionFlows" maps every option id to the exact wiring that option implies: edges between the nodes that option connects, consistent with the option label. Every option must have wiring; use the correct option's graph only when an alternative has no distinct wiring. Never send empty arrays.
 
 Card:
 ${JSON.stringify({
@@ -114,20 +115,28 @@ function extractJson(stdout) {
   return JSON.parse(cleaned.substring(start, end + 1));
 }
 
-async function deriveFlows(card, attemptCount = 2) {
+async function deriveFlows(card, attemptCount = 2, modelCall = callModel) {
   if (!Array.isArray(card.nodes) || card.nodes.length < 2) return { flows: [], optionFlows: {} };
   const nodes = card.nodes;
   let lastError;
   for (let attempt = 0; attempt < attemptCount; attempt++) {
     try {
-      const parsed = extractJson(callModel(buildPrompt(card)));
+      const parsed = extractJson(modelCall(buildPrompt(card)));
       const base = validateBaseFlows(parsed.flows, nodes);
       if (!base) throw new Error('base flows do not connect every node');
-      const optionFlows = {};
+      const parsedOptionFlows = {};
       for (const option of card.options || []) {
         if (!option?.id) continue;
         const flows = normalizeFlows(parsed.optionFlows?.[option.id], nodes);
-        optionFlows[option.id] = (flows.length ? flows : base).map(flow => ({ ...flow }));
+        if (flows.length) parsedOptionFlows[option.id] = flows;
+      }
+      const correctFlows = parsedOptionFlows[card.correct] || [];
+      if (!correctFlows.length) throw new Error('correct option wiring is unavailable');
+      const optionFlows = {};
+      for (const option of card.options || []) {
+        if (!option?.id) continue;
+        const flows = parsedOptionFlows[option.id] || correctFlows;
+        if (flows.length) optionFlows[option.id] = flows.map(flow => ({ ...flow }));
       }
       return { flows: base, optionFlows };
     } catch (error) {
@@ -153,11 +162,14 @@ async function upgradeCard(card, stats) {
     if (result.error) stats.errors++;
   }
   normalizeCachedFlows(card);
-  const fallbackFlows = normalizeFlows(card.flows, card.nodes);
+  const correctOption = Array.isArray(card.options)
+    ? card.options.find(option => option?.id === card.correct)
+    : null;
+  const correctFlows = normalizeFlows(correctOption?.flows, card.nodes);
   for (const option of Array.isArray(card.options) ? card.options : []) {
     if (!option || typeof option !== 'object') continue;
     const explicitFlows = normalizeFlows(option.flows, card.nodes);
-    const nextFlows = (explicitFlows.length ? explicitFlows : fallbackFlows)
+    const nextFlows = (explicitFlows.length ? explicitFlows : correctFlows)
       .map(flow => ({ ...flow }));
     if (JSON.stringify(option.flows) !== JSON.stringify(nextFlows)) changed = true;
     option.flows = nextFlows;

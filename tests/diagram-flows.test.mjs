@@ -98,25 +98,48 @@ test('option flows are normalized and emptied options become undefined', () => {
   assert.equal(card.options[1].flows, undefined);
 });
 
-test('compare diagrams fall back to base wiring when option wiring is unavailable', () => {
+test('compare diagrams use correct-option wiring when option wiring is unavailable', () => {
   const result = Render._mermaidDefinition({
     id: 'missing-option-wiring', topic: 'caching', difficulty: 2, correct: 'B',
-    nodes: ['Client', 'API', 'Database'],
+    nodes: ['Client', 'API', 'Cache', 'Database'],
     flows: [
       { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
       { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
     ],
     options: [
       { id: 'A', label: 'A' },
-      { id: 'B', label: 'B', flows: [] },
+      { id: 'B', label: 'B', flows: [
+        { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+        { from: 'API', to: 'Cache', verb: 'checks', kind: 'sync' },
+        { from: 'Cache', to: 'Database', verb: 'loads on miss', kind: 'sync' }
+      ] },
       { id: 'C', label: 'C', flows: [{ from: 'API', to: 'Unknown', verb: 'queries', kind: 'sync' }] },
       { id: 'D', label: 'D' }
     ]
   }, { reveal: true, compare: true });
 
-  assert.match(result.definition, /n0 -->\|requests · A,B,C,D\| n1/);
-  assert.match(result.definition, /n1 -->\|queries · A,B,C,D\| n2/);
-  assert.match(result.legendHtml, /base wiring fallback/);
+  assert.match(result.definition, /n1 -->\|checks · A,B,C,D\| n2/);
+  assert.match(result.definition, /n2 -->\|loads on miss · A,B,C,D\| n3/);
+  assert.doesNotMatch(result.definition, /queries ·/);
+  assert.match(result.legendHtml, /inherits correct option wiring/);
+});
+
+test('compare diagrams refuse to render a wrong graph when correct wiring is unavailable', () => {
+  const result = Render._mermaidDefinition({
+    id: 'missing-correct-wiring', topic: 'caching', difficulty: 2, correct: 'B',
+    nodes: ['Client', 'API', 'Database'],
+    flows: [
+      { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+      { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+    ],
+    options: [
+      { id: 'A', label: 'A', flows: [{ from: 'Client', to: 'API', verb: 'requests', kind: 'sync' }] },
+      { id: 'B', label: 'B' }
+    ]
+  }, { reveal: true, compare: true });
+
+  assert.equal(result.error, 'Correct option wiring is unavailable.');
+  assert.equal(result.definition, '');
 });
 
 test('cards without an end-user node get one synthesized at the graph entry', () => {

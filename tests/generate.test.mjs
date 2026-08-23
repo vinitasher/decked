@@ -14,7 +14,10 @@ import {
 import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
 const require = createRequire(import.meta.url);
 const localGenerator = require('../server/generate-card.js');
-const { buildPrompt: buildFlowUpgradePrompt } = await import('../scripts/upgrade-cached-card-flows.mjs');
+const {
+  buildPrompt: buildFlowUpgradePrompt,
+  deriveFlows: deriveCachedFlows
+} = await import('../scripts/upgrade-cached-card-flows.mjs');
 
 const card = {
   id: 'queues-generated',
@@ -105,7 +108,29 @@ test('both generation prompts consistently apply every designated correct letter
     nodes: ['Client', 'Queue'],
     options: [{ id: 'A', label: 'Use the queue' }],
     correct: 'A'
-  }), /non-empty array/);
+  }), /Every option must have wiring/);
+});
+
+test('cached flow migration refuses to invent a correct option diagram', async () => {
+  const result = await deriveCachedFlows({
+    nodes: ['Client', 'API', 'Database'],
+    options: [
+      { id: 'A', label: 'A' },
+      { id: 'B', label: 'B' }
+    ],
+    correct: 'B'
+  }, 1, () => JSON.stringify({
+    flows: [
+      { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+      { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+    ],
+    optionFlows: {
+      A: [{ from: 'Client', to: 'API', verb: 'requests', kind: 'sync' }]
+    }
+  }));
+
+  assert.match(result.error, /correct option wiring is unavailable/);
+  assert.deepEqual(result.optionFlows, {});
 });
 
 test('generation retries a temporary provider failure and caches the card', async () => {

@@ -76,8 +76,10 @@ decision-based practice with adaptive difficulty.
   explanation for every card answered wrong
 - Architecture diagrams: every card carries a directed flow graph (`flows`
   with `from`/`to`/`verb`/`kind`) and each option carries a non-empty set of the
-  exact wiring it implies. Legacy cards with incomplete option wiring use the
-  validated base graph as a visible compare fallback. Diagrams use Mermaid
+  exact wiring it implies. Legacy cards with incomplete option wiring inherit
+  the validated correct-option graph for comparison; if that graph is
+  unavailable, the compare view reports that it cannot render a correct graph.
+  Diagrams use Mermaid
   flowcharts with parallel branches, callback back-edges, verb-labeled edges,
   theme-aware colors, and on reveal they
   highlight the correct wiring — red where the chosen option diverges. Every

@@ -102,6 +102,9 @@ test('every cached card carries validated diagram flows', () => {
       assert.ok(endUser.test(card.nodes[0]), `${key}/${card.id} must start from the end user`);
       assert.equal(card.flows[0].from, card.nodes[0],
         `${key}/${card.id} first flow must leave the end-user node`);
+      const correctOption = card.options.find(option => option?.id === card.correct);
+      assert.ok(Array.isArray(correctOption?.flows) && correctOption.flows.length > 0,
+        `${key}/${card.id} correct option must carry wiring for compare diagrams`);
       for (const option of card.options) {
         if (!option.flows) continue;
         for (const flow of option.flows) {

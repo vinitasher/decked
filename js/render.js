@@ -193,8 +193,8 @@ const Render = {
 
   _esc(label) { return String(label ?? '').replace(/"/g, '&quot;'); },
 
-  _showDiagramError(el) {
-    el.innerHTML = '<p class="diagram-error" role="status">Diagram unavailable. Please reload and try again.</p>';
+  _showDiagramError(el, message = 'Diagram unavailable. Please reload and try again.') {
+    el.innerHTML = `<p class="diagram-error" role="status">${this._esc(message)}</p>`;
   },
 
   /* Edge labels live inside Mermaid pipe syntax, which rejects parentheses
@@ -223,13 +223,21 @@ const Render = {
 
     let edges;
     if (compare) {
+      if (!correctOptionEdges.length) {
+        return {
+          definition: '',
+          linkStyles: [],
+          legendHtml: '',
+          error: 'Correct option wiring is unavailable.'
+        };
+      }
       const byKey = new Map();
       for (const option of card?.options || []) {
         const explicitEdges = this._validDiagramFlows(option?.flows, card?.nodes);
-        const optionEdges = explicitEdges.length ? explicitEdges : baseEdges;
+        const optionEdges = explicitEdges.length ? explicitEdges : correctOptionEdges;
         optionWiring.set(option.id, {
           hasExplicitWiring: explicitEdges.length > 0,
-          usesBaseFallback: explicitEdges.length === 0 && baseEdges.length > 0
+          inheritsCorrectWiring: explicitEdges.length === 0
         });
         for (const flow of optionEdges) {
           const key = this._edgeKey(flow);
@@ -242,9 +250,6 @@ const Render = {
         }
       }
       edges = [...byKey.values()];
-      if (!edges.length) {
-        edges = baseEdges.map(flow => ({ ...flow, options: [] }));
-      }
     } else {
       edges = chosenOptionEdges.length ? chosenOptionEdges
         : correctOptionEdges.length ? correctOptionEdges
@@ -301,13 +306,13 @@ const Render = {
       for (const option of card?.options || []) {
         const wiring = optionWiring.get(option.id);
         const hasWiring = wiring?.hasExplicitWiring || false;
-        const usesBaseFallback = wiring?.usesBaseFallback || false;
+        const inheritsCorrectWiring = wiring?.inheritsCorrectWiring || false;
         const color = this.OPTION_COLORS[option.id] || '#888';
         const isCorrect = option.id === card.correct;
-        const title = hasWiring ? '' : usesBaseFallback
-          ? 'using base wiring fallback'
+        const title = hasWiring ? '' : inheritsCorrectWiring
+          ? 'inherits correct option wiring'
           : 'no wiring data';
-        legendHtml += `<span style="opacity:${hasWiring || usesBaseFallback ? 1 : 0.45};" title="${title}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
+        legendHtml += `<span style="opacity:${hasWiring || inheritsCorrectWiring ? 1 : 0.45};" title="${title}"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>${option.id}${isCorrect ? ' ✓' : ''}</span>`;
       }
       legendHtml += '</div>';
     }
@@ -316,7 +321,11 @@ const Render = {
   },
 
   async _renderMermaid(card, el, opts) {
-    const { definition, legendHtml } = this._mermaidDefinition(card, opts);
+    const { definition, legendHtml, error } = this._mermaidDefinition(card, opts);
+    if (error) {
+      this._showDiagramError(el, error);
+      return;
+    }
     const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'neutral';
     if (typeof window.mermaid.initialize === 'function') {
       window.mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
