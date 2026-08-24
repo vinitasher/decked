@@ -169,6 +169,7 @@ let appConfig = { supabaseUrl: '', supabaseAnonKey: '', stripePriceId: '', freeD
 let supabaseClient = null;
 let currentSession = null;
 let currentPlan = 'free';
+const PROFILE_SYNC_DELAY_MS = 250;
 
 function getOAuthRedirectUrl() {
   return 'https://decked.pages.dev';
@@ -213,6 +214,7 @@ async function initAccount() {
   if (!appConfig.supabaseUrl || !appConfig.supabaseAnonKey) {
     if (callbackError) renderAccountError(callbackError);
     renderQuotaBar();
+    if (typeof APP !== 'undefined') APP._onAccountIdentityReady().catch(() => {});
     return;
   }
   try {
@@ -237,11 +239,13 @@ async function initAccount() {
     currentSession = session;
     renderAccountBar();
     renderQuotaBar();
+    if (typeof APP !== 'undefined') APP._onAccountIdentityReady().catch(() => {});
   });
   if (authError) renderAccountError(authError);
   else renderAccountBar();
   renderQuotaBar();
   handleUpgradeReturn();
+  if (typeof APP !== 'undefined') await APP._onAccountIdentityReady();
 }
 
 function renderAccountError(message) {
@@ -309,6 +313,14 @@ const APP = {
   _retriedCardIds: new Set(),
   _sessionResults: {},
   _compareMode: false,
+  _profileSyncReady: false,
+  _profileSyncInFlight: false,
+  _profileSyncTimer: null,
+  _profileSyncIdentity: null,
+  _profileLocalUpdatedAt: 0,
+  _profileLastSyncedClientUpdatedAt: 0,
+  _profileChangeVersion: 0,
+  _profilePendingMigration: null,
 
   init() {
     this.loadProfile();
@@ -323,6 +335,9 @@ const APP = {
     this._checkServerHealth();
     this._initTheme();
     this._initSwipe();
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this._onAccountIdentityReady().catch(() => {});
+    });
     initAccount();
     // auto-resume prompt: show button if session was interrupted
     if (localStorage.getItem('sdf_resume')) {
@@ -615,32 +630,217 @@ const APP = {
     }
   },
 
-  loadProfile() {
-    const raw = localStorage.getItem('sdf_profile');
-    if (raw) {
-      try {
-        this.profile = normalizeProfileData(JSON.parse(raw));
-        this.saveProfile();
-      } catch (_) {
-        localStorage.removeItem('sdf_profile');
-        this.profile = normalizeProfileData({});
-      }
-    } else {
-      this.profile = normalizeProfileData({
-        userId: localStorage.getItem('sdf_profile_id') || 'local-' + Date.now().toString(36),
-        topicScores: {},
-        cardHistory: {},
-        streaks: { current: 0, best: 0, lastDate: null },
-        totalSessions: 0,
-        totalAnswered: 0,
-        totalCorrect: 0
-      });
-      this.saveProfile();
+  _profileIdentity() {
+    if (currentSession?.user?.id) return `user:${currentSession.user.id}`;
+    try {
+      const deviceId = getOrCreateDeviceId();
+      return deviceId ? `dev:${deviceId}` : null;
+    } catch (_) {
+      return null;
     }
   },
 
+  _profileStorageKey(identity = this._profileSyncIdentity || this._profileIdentity()) {
+    if (identity?.startsWith('user:')) {
+      return `sdf_profile_user_${encodeURIComponent(identity.slice(5))}`;
+    }
+    return 'sdf_profile';
+  },
+
+  _profileMetaKey(identity = this._profileSyncIdentity || this._profileIdentity()) {
+    return `${this._profileStorageKey(identity)}:meta`;
+  },
+
+  _emptyProfile(identity) {
+    return normalizeProfileData({
+      userId: identity?.startsWith('user:')
+        ? identity.slice(5)
+        : (localStorage.getItem('sdf_profile_id') || 'local-' + Date.now().toString(36)),
+      topicScores: {},
+      cardHistory: {},
+      streaks: { current: 0, best: 0, lastDate: null },
+      totalSessions: 0,
+      totalAnswered: 0,
+      totalCorrect: 0
+    });
+  },
+
+  _profileHasData(profile = this.profile) {
+    if (!profile || typeof profile !== 'object') return false;
+    return Object.keys(profile.cardHistory || {}).length > 0
+      || Object.keys(profile.topicScores || {}).length > 0
+      || Object.keys(profile.topicAccuracy || {}).length > 0
+      || Object.keys(profile._topicCardSeen || {}).length > 0
+      || (profile.seenScenarioFingerprints || []).length > 0
+      || Number(profile.totalSessions) > 0
+      || Number(profile.totalAnswered) > 0
+      || Number(profile.totalCorrect) > 0;
+  },
+
+  _persistLocalProfile(identity, updatedAt = 0) {
+    const profileKey = this._profileStorageKey(identity);
+    try {
+      localStorage.setItem(profileKey, JSON.stringify(this.profile));
+      localStorage.setItem(this._profileMetaKey(identity), JSON.stringify({ clientUpdatedAt: updatedAt }));
+    } catch (_) { /* local storage is an optional offline cache */ }
+  },
+
+  loadProfile(identity = this._profileIdentity()) {
+    this._profileSyncIdentity = identity || null;
+    this._profileSyncReady = false;
+    const profileKey = this._profileStorageKey(identity);
+    const raw = localStorage.getItem(profileKey);
+    if (raw) {
+      try {
+        this.profile = normalizeProfileData(JSON.parse(raw));
+      } catch (_) {
+        localStorage.removeItem(profileKey);
+        this.profile = this._emptyProfile(identity);
+      }
+    } else {
+      this.profile = this._emptyProfile(identity);
+    }
+    let updatedAt = 0;
+    try {
+      const metadata = JSON.parse(localStorage.getItem(this._profileMetaKey(identity)) || '{}');
+      updatedAt = Number(metadata.clientUpdatedAt);
+    } catch (_) {}
+    this._profileLocalUpdatedAt = Number.isFinite(updatedAt) && updatedAt > 0
+      ? updatedAt
+      : (this._profileHasData() ? Date.now() : 0);
+    this._profileLastSyncedClientUpdatedAt = 0;
+    this._persistLocalProfile(identity, this._profileLocalUpdatedAt);
+  },
+
   saveProfile() {
-    localStorage.setItem('sdf_profile', JSON.stringify(this.profile));
+    const identity = this._profileSyncIdentity || this._profileIdentity();
+    this._profileChangeVersion++;
+    this._profileLocalUpdatedAt = Date.now();
+    this._persistLocalProfile(identity, this._profileLocalUpdatedAt);
+    if (this._profileSyncReady) this._scheduleProfileSync();
+  },
+
+  _cancelProfileSync() {
+    if (this._profileSyncTimer) clearTimeout(this._profileSyncTimer);
+    this._profileSyncTimer = null;
+  },
+
+  _scheduleProfileSync(delay = PROFILE_SYNC_DELAY_MS) {
+    if (!this._profileSyncReady || !this._profileSyncIdentity) return;
+    this._cancelProfileSync();
+    this._profileSyncTimer = setTimeout(() => {
+      this._profileSyncTimer = null;
+      this._flushProfileSync();
+    }, delay);
+  },
+
+  async _flushProfileSync() {
+    if (this._profileSyncInFlight || !this._profileSyncReady || !this._profileSyncIdentity) return;
+    const identity = this._profileSyncIdentity;
+    const clientUpdatedAt = this._profileLocalUpdatedAt || Date.now();
+    const profileChangeVersion = this._profileChangeVersion;
+    this._profileSyncInFlight = true;
+    try {
+      const response = await fetch(`${SERVER_BASE}/api/profile`, {
+        method: 'PUT',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: this.profile, clientUpdatedAt })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 409 && body.profile && identity === this._profileSyncIdentity
+          && profileChangeVersion === this._profileChangeVersion) {
+        this.profile = normalizeProfileData(body.profile);
+        this._profileLocalUpdatedAt = Number(body.clientUpdatedAt) || Date.now();
+        this._profileLastSyncedClientUpdatedAt = this._profileLocalUpdatedAt;
+        this._persistLocalProfile(identity, this._profileLocalUpdatedAt);
+      } else if (!response.ok) {
+        throw new Error(body.error || `profile sync failed: ${response.status}`);
+      } else if (identity === this._profileSyncIdentity) {
+        this._profileLastSyncedClientUpdatedAt = Number(body.clientUpdatedAt) || clientUpdatedAt;
+        this._profilePendingMigration = null;
+        this._persistLocalProfile(identity, this._profileLocalUpdatedAt);
+      }
+    } catch (_) {
+      // Local state remains authoritative until a later visibility/auth sync.
+    } finally {
+      this._profileSyncInFlight = false;
+      if (identity === this._profileSyncIdentity && this._profileChangeVersion > profileChangeVersion) {
+        this._scheduleProfileSync(0);
+      }
+    }
+  },
+
+  async _pullRemoteProfile(identity) {
+    this._profileSyncReady = false;
+    try {
+      const response = await fetch(`${SERVER_BASE}/api/profile`, { headers: apiHeaders() });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `profile load failed: ${response.status}`);
+      if (identity !== this._profileSyncIdentity) return false;
+
+      const remoteUpdatedAt = Number(body.clientUpdatedAt) || 0;
+      const pending = this._profilePendingMigration;
+      const localProfile = pending?.profile || this.profile;
+      const localUpdatedAt = pending?.updatedAt || this._profileLocalUpdatedAt;
+      if (body.profile && localUpdatedAt > remoteUpdatedAt && this._profileHasData(localProfile)) {
+        this.profile = normalizeProfileData(localProfile);
+        this.profile.userId = identity;
+        this._profileLocalUpdatedAt = localUpdatedAt;
+        this._profilePendingMigration = null;
+        this._profileSyncReady = true;
+        this._scheduleProfileSync(0);
+      } else if (body.profile) {
+        this.profile = normalizeProfileData(body.profile);
+        this._profileLocalUpdatedAt = remoteUpdatedAt;
+        this._profileLastSyncedClientUpdatedAt = remoteUpdatedAt;
+        this._profilePendingMigration = null;
+        this._profilePersistAfterRemote(identity);
+      } else {
+        this.profile = normalizeProfileData(localProfile);
+        this.profile.userId = identity;
+        this._profileLocalUpdatedAt = localUpdatedAt || Date.now();
+        this._profilePendingMigration = null;
+        this._profileSyncReady = true;
+        this._scheduleProfileSync(0);
+      }
+      this.renderDeckStats();
+      return true;
+    } catch (_) {
+      this._profileSyncReady = true;
+      if (this._profileHasData()) this._scheduleProfileSync();
+      return false;
+    }
+  },
+
+  _profilePersistAfterRemote(identity) {
+    this._profileSyncReady = true;
+    this._persistLocalProfile(identity, this._profileLocalUpdatedAt);
+  },
+
+  async _onAccountIdentityReady() {
+    const identity = this._profileIdentity();
+    if (!identity) return false;
+    const previousIdentity = this._profileSyncIdentity;
+    if (previousIdentity && previousIdentity !== identity) {
+      const previousProfile = this.profile;
+      const previousUpdatedAt = this._profileLocalUpdatedAt || (this._profileHasData() ? Date.now() : 0);
+      this._profileSyncReady = false;
+      this._cancelProfileSync();
+      this._persistLocalProfile(previousIdentity, previousUpdatedAt);
+      this._profilePendingMigration = previousIdentity.startsWith('dev:') && identity.startsWith('user:')
+        && this._profileHasData(previousProfile)
+        ? { profile: JSON.parse(JSON.stringify(previousProfile)), updatedAt: previousUpdatedAt }
+        : null;
+      this.loadProfile(identity);
+      if (this._profilePendingMigration && this._profileHasData()
+          && this._profileLocalUpdatedAt >= this._profilePendingMigration.updatedAt) {
+        this._profilePendingMigration = null;
+      }
+    } else if (!previousIdentity) {
+      this.loadProfile(identity);
+    }
+    this._profileSyncIdentity = identity;
+    return this._pullRemoteProfile(identity);
   },
 
   /* ——— Topic scores ——— */

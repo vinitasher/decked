@@ -16,7 +16,10 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) {
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET'
+      || url.origin !== self.location.origin
+      || url.pathname === '/api/profile') {
     return;
   }
   e.respondWith(

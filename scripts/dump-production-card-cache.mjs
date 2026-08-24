@@ -2,9 +2,10 @@
 
 /* Read-only dump of the production CARD_CACHE KV into a reviewable snapshot.
  *
- * Lists every key in the production CARD_CACHE namespace and stores each value
- * verbatim in server/production-card-cache.json as a topic:difficulty -> value
- * map. It never writes to KV; the only side effect is the snapshot file.
+ * Lists generated-card keys in the production CARD_CACHE namespace and stores
+ * each value verbatim in server/production-card-cache.json as a
+ * topic:difficulty -> value map. Identity-scoped profile keys are excluded.
+ * It never writes to KV; the only side effect is the snapshot file.
  *
  * Usage:
  *   node scripts/dump-production-card-cache.mjs
@@ -24,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 const DEFAULT_OUT = fileURLToPath(new URL('../server/production-card-cache.json', import.meta.url));
 const WRANGLER_TOML = fileURLToPath(new URL('../wrangler.toml', import.meta.url));
 const TOPIC_DIFFICULTY_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*:[0-9]+$/;
+const PROFILE_KEY_PREFIX = 'profile:v1:';
 
 function parseWranglerKvNamespaces(tomlText) {
   const namespaces = [];
@@ -99,7 +101,7 @@ export async function buildSnapshot(kv) {
   }
 
   const snapshot = {};
-  for (const key of [...new Set(keys)].sort()) {
+  for (const key of [...new Set(keys)].filter(key => !key.startsWith(PROFILE_KEY_PREFIX)).sort()) {
     if (!TOPIC_DIFFICULTY_KEY.test(key)) {
       warnings.push(`key ${JSON.stringify(key)} does not match the topic:difficulty pattern`);
     }

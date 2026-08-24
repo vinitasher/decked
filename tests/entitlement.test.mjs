@@ -6,6 +6,7 @@ import {
   base64urlEncode,
   base64urlDecode,
   identityKey,
+  resolveStableIdentity,
   dailyBucket,
   quotaKey,
   freeLimit,
@@ -69,6 +70,27 @@ test('identityKey prefers the signed-in user, then device id, then IP', () => {
   assert.equal(identityKey(request({ 'X-Device-Id': 'dev-1' }), null), 'dev:dev-1');
   assert.equal(identityKey(request({}), null), 'ip:unknown');
   assert.equal(identityKey(request({ 'CF-Connecting-IP': '1.2.3.4' }), null), 'ip:1.2.3.4');
+});
+
+test('resolveStableIdentity isolates signed-in and anonymous profile keys', async () => {
+  const token = await signJwt({ sub: 'user-9' }, 'jwt-secret');
+  const signedIn = await resolveStableIdentity(
+    { SUPABASE_JWT_SECRET: 'jwt-secret' },
+    request({ Authorization: `Bearer ${token}`, 'X-Device-Id': 'device-9' })
+  );
+  const anonymous = await resolveStableIdentity(
+    {},
+    request({ 'X-Device-Id': 'device-9' })
+  );
+  const missing = await resolveStableIdentity({}, request());
+  const invalidDevice = await resolveStableIdentity({}, request({ 'X-Device-Id': 'bad id' }));
+
+  assert.equal(signedIn.identity, 'user:user-9');
+  assert.equal(signedIn.claims.sub, 'user-9');
+  assert.equal(anonymous.identity, 'dev:device-9');
+  assert.equal(anonymous.claims, null);
+  assert.equal(missing.identity, null);
+  assert.equal(invalidDevice.identity, null);
 });
 
 test('dailyBucket and quotaKey rotate with the UTC date', () => {

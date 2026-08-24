@@ -8,6 +8,8 @@ const context = {
   window: { location: { hostname: 'example.com' } },
   URLSearchParams,
   document: { addEventListener() {} },
+  setTimeout,
+  clearTimeout,
   localStorage: {
     values: new Map(),
     get length() { return this.values.size; },
@@ -209,12 +211,51 @@ function generatedCard(id, scenario, topic = 'caching', difficulty = 3) {
 
 function resetApp() {
   context.localStorage.values.clear();
+  vm.runInContext('currentSession = null', context);
   context.appForTest._cardCache = {};
   context.appForTest.sessionCards = [];
+  context.appForTest._profileSyncReady = false;
+  context.appForTest._profileSyncInFlight = false;
+  context.appForTest._profileSyncIdentity = null;
+  context.appForTest._profileSyncTimer = null;
+  context.appForTest._profilePendingMigration = null;
+  context.appForTest._profileLocalUpdatedAt = 0;
+  context.appForTest._profileLastSyncedClientUpdatedAt = 0;
+  context.appForTest._profileChangeVersion = 0;
   context.appForTest.profile = context.normalizeProfileDataForTest({
     userId: 'profile-a', topicScores: {}, cardHistory: {}, streaks: {}, _topicCardSeen: {}
   });
 }
+
+function setAuthUser(userId) {
+  vm.runInContext(`currentSession = { user: { id: ${JSON.stringify(userId)} } }`, context);
+}
+
+test('signed-in users load isolated local profile caches before remote hydration', () => {
+  resetApp();
+  const app = context.appForTest;
+  const userOneProfile = context.normalizeProfileDataForTest({
+    userId: 'user-one', topicScores: {}, cardHistory: {}, streaks: {},
+    _topicCardSeen: {}, totalAnswered: 8
+  });
+  const userOneKey = app._profileStorageKey('user:user-one');
+  context.localStorage.setItem(userOneKey, JSON.stringify(userOneProfile));
+
+  try {
+    setAuthUser('user-one');
+    app.loadProfile();
+    assert.equal(app._profileSyncIdentity, 'user:user-one');
+    assert.equal(app.profile.totalAnswered, 8);
+
+    setAuthUser('user-two');
+    app.loadProfile();
+    assert.equal(app._profileSyncIdentity, 'user:user-two');
+    assert.equal(app.profile.totalAnswered, 0);
+  } finally {
+    vm.runInContext('currentSession = null', context);
+    context.localStorage.values.clear();
+  }
+});
 
 test('card pools preserve valid legacy cards and deduplicate scenarios', () => {
   // Arrange
@@ -355,6 +396,228 @@ test('custom-card and reviewed-card fallbacks reject missing correct wiring', ()
   assert.equal(context.SEED_CARDS.some(card => card.id === invalid.id), false);
   assert.equal(context.appForTest._resolveCardContent(invalid.id), null);
   context.localStorage.removeItem('sdf_custom_cards');
+});
+
+test('remote profile hydration replaces the local cache for the active identity', async () => {
+  resetApp();
+  const app = context.appForTest;
+  context.localStorage.setItem('sdf_device_id', 'device-sync');
+  const remote = {
+    userId: 'dev:device-sync',
+    topicScores: { caching: { raw: 0.8, cardsReviewed: 2, daysSpanned: [] } },
+    cardHistory: {},
+    streaks: { current: 2, best: 2, lastDate: '2026-08-24' },
+    totalSessions: 3,
+    totalAnswered: 4,
+    totalCorrect: 3,
+    _topicCardSeen: {},
+    seenScenarioFingerprints: []
+  };
+  const originalFetch = context.fetch;
+  const originalRenderDeckStats = app.renderDeckStats;
+  context.fetch = async (url, options) => {
+    assert.equal(url, '/api/profile');
+    assert.equal(options.headers['X-Device-Id'], 'device-sync');
+    return { ok: true, status: 200, async json() {
+      return { ok: true, profile: remote, clientUpdatedAt: 500, updatedAt: '2026-08-24T00:00:00.000Z' };
+    } };
+  };
+  app.renderDeckStats = () => {};
+
+  try {
+    app.loadProfile();
+    assert.equal(await app._onAccountIdentityReady(), true);
+    assert.equal(app.profile.totalAnswered, 4);
+    assert.equal(JSON.parse(context.localStorage.getItem('sdf_profile')).totalAnswered, 4);
+  } finally {
+    app._cancelProfileSync();
+    context.fetch = originalFetch;
+    app.renderDeckStats = originalRenderDeckStats;
+    context.localStorage.values.clear();
+  }
+});
+
+test('local progress migrates to KV when the remote profile is empty', async () => {
+  resetApp();
+  const app = context.appForTest;
+  context.localStorage.setItem('sdf_device_id', 'device-migrate');
+  const local = context.normalizeProfileDataForTest({
+    userId: 'local-profile', topicScores: {}, cardHistory: {}, streaks: {},
+    _topicCardSeen: {}, totalAnswered: 7, totalCorrect: 5
+  });
+  let putBody;
+  const originalFetch = context.fetch;
+  const originalRenderDeckStats = app.renderDeckStats;
+  context.fetch = async (_url, options = {}) => {
+    if (options.method === 'PUT') {
+      putBody = JSON.parse(options.body);
+      return { ok: true, status: 200, async json() {
+        return { ok: true, ...putBody, updatedAt: '2026-08-24T00:00:00.000Z' };
+      } };
+    }
+    return { ok: true, status: 200, async json() {
+      return { ok: true, profile: null, clientUpdatedAt: 0, updatedAt: null };
+    } };
+  };
+  app.renderDeckStats = () => {};
+
+  try {
+    app.loadProfile();
+    app.profile = local;
+    app._profileLocalUpdatedAt = 100;
+    assert.equal(await app._onAccountIdentityReady(), true);
+    app._cancelProfileSync();
+    await app._flushProfileSync();
+    assert.equal(putBody.profile.totalAnswered, 7);
+    assert.equal(putBody.profile.userId, 'dev:device-migrate');
+  } finally {
+    app._cancelProfileSync();
+    context.fetch = originalFetch;
+    app.renderDeckStats = originalRenderDeckStats;
+    context.localStorage.values.clear();
+  }
+});
+
+test('a newer user-local profile is preserved when an anonymous profile is promoted', async () => {
+  resetApp();
+  const app = context.appForTest;
+  context.localStorage.setItem('sdf_device_id', 'device-promote');
+  const deviceProfile = context.normalizeProfileDataForTest({
+    userId: 'device-profile', topicScores: {}, cardHistory: {}, streaks: {},
+    _topicCardSeen: {}, totalAnswered: 3
+  });
+  const userProfile = context.normalizeProfileDataForTest({
+    userId: 'user-profile', topicScores: {}, cardHistory: {}, streaks: {},
+    _topicCardSeen: {}, totalAnswered: 8
+  });
+  let putBody;
+  const originalFetch = context.fetch;
+  const originalRenderDeckStats = app.renderDeckStats;
+  context.fetch = async (_url, options = {}) => {
+    if (options.method === 'PUT') {
+      putBody = JSON.parse(options.body);
+      return { ok: true, status: 200, async json() {
+        return { ok: true, ...putBody, updatedAt: '2026-08-24T00:00:00.000Z' };
+      } };
+    }
+    return { ok: true, status: 200, async json() {
+      return { ok: true, profile: null, clientUpdatedAt: 0, updatedAt: null };
+    } };
+  };
+  app.renderDeckStats = () => {};
+
+  try {
+    app.loadProfile();
+    app.profile = deviceProfile;
+    app._profileLocalUpdatedAt = 100;
+    app._persistLocalProfile('dev:device-promote', 100);
+    context.localStorage.setItem(
+      app._profileStorageKey('user:user-promote'), JSON.stringify(userProfile)
+    );
+    context.localStorage.setItem(
+      app._profileMetaKey('user:user-promote'), JSON.stringify({ clientUpdatedAt: 200 })
+    );
+    setAuthUser('user-promote');
+    assert.equal(await app._onAccountIdentityReady(), true);
+    app._cancelProfileSync();
+    await app._flushProfileSync();
+
+    assert.equal(putBody.profile.totalAnswered, 8);
+  } finally {
+    app._cancelProfileSync();
+    context.fetch = originalFetch;
+    app.renderDeckStats = originalRenderDeckStats;
+    vm.runInContext('currentSession = null', context);
+    context.localStorage.values.clear();
+  }
+});
+
+test('profile changes persist locally before an asynchronous KV write', async () => {
+  resetApp();
+  const app = context.appForTest;
+  context.localStorage.setItem('sdf_device_id', 'device-write');
+  let putBody;
+  const originalFetch = context.fetch;
+  context.fetch = async (_url, options = {}) => {
+    putBody = JSON.parse(options.body);
+    return { ok: true, status: 200, async json() {
+      return { ok: true, ...putBody, updatedAt: '2026-08-24T00:00:00.000Z' };
+    } };
+  };
+
+  try {
+    app.loadProfile();
+    app._profileSyncReady = true;
+    app.profile.totalAnswered = 9;
+    app.saveProfile();
+    assert.equal(JSON.parse(context.localStorage.getItem('sdf_profile')).totalAnswered, 9);
+    app._cancelProfileSync();
+    await app._flushProfileSync();
+    assert.equal(putBody.profile.totalAnswered, 9);
+  } finally {
+    app._cancelProfileSync();
+    context.fetch = originalFetch;
+    context.localStorage.values.clear();
+  }
+});
+
+test('a local profile change during a stale-write response is never replaced', async () => {
+  resetApp();
+  const app = context.appForTest;
+  context.localStorage.setItem('sdf_device_id', 'device-conflict');
+  let resolveFetch;
+  const originalFetch = context.fetch;
+  context.fetch = () => new Promise(resolve => { resolveFetch = resolve; });
+
+  try {
+    app.loadProfile();
+    app._profileSyncReady = true;
+    app.profile.totalAnswered = 1;
+    app.saveProfile();
+    const sync = app._flushProfileSync();
+    app.profile.totalAnswered = 2;
+    app.saveProfile();
+    resolveFetch({ ok: false, status: 409, async json() {
+      return {
+        profile: context.normalizeProfileDataForTest({
+          totalAnswered: 4, totalCorrect: 4, topicScores: {}, cardHistory: {},
+          streaks: {}, _topicCardSeen: {}
+        }),
+        clientUpdatedAt: 500
+      };
+    } });
+    await sync;
+
+    assert.equal(app.profile.totalAnswered, 2);
+    assert.ok(app._profileSyncTimer);
+  } finally {
+    app._cancelProfileSync();
+    context.fetch = originalFetch;
+    context.localStorage.values.clear();
+  }
+});
+
+test('profile sync failure keeps local progress available', async () => {
+  resetApp();
+  const app = context.appForTest;
+  context.localStorage.setItem('sdf_device_id', 'device-offline');
+  const originalFetch = context.fetch;
+  context.fetch = async () => { throw new Error('offline'); };
+  app.renderDeckStats = () => {};
+
+  try {
+    app.loadProfile();
+    app.profile.totalAnswered = 11;
+    app.saveProfile();
+    app._cancelProfileSync();
+    assert.equal(await app._onAccountIdentityReady(), false);
+    assert.equal(app.profile.totalAnswered, 11);
+    assert.equal(JSON.parse(context.localStorage.getItem('sdf_profile')).totalAnswered, 11);
+  } finally {
+    app._cancelProfileSync();
+    context.fetch = originalFetch;
+    context.localStorage.values.clear();
+  }
 });
 
 test('seen ledgers persist per profile and prefetch does not mark cards seen', async () => {

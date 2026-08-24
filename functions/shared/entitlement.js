@@ -53,12 +53,37 @@ export async function verifySupabaseJwt(token, secret) {
   return claims;
 }
 
+function requestDeviceId(request) {
+  const deviceId = request.headers.get('X-Device-Id')?.trim() || '';
+  return /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/.test(deviceId) ? deviceId : '';
+}
+
+/* Resolve only identities that are stable enough for user-owned data. Quota
+   callers may still use the IP fallback below, but profile data must never be
+   keyed only by a shared network address. */
+export async function resolveStableIdentity(env, request) {
+  const authorization = request.headers.get('Authorization') || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  let claims = null;
+  try {
+    claims = token ? await verifySupabaseJwt(token, env.SUPABASE_JWT_SECRET) : null;
+  } catch (_) {
+    claims = null;
+  }
+  if (typeof claims?.sub === 'string'
+      && /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/.test(claims.sub)) {
+    return { identity: `user:${claims.sub}`, claims };
+  }
+  const deviceId = requestDeviceId(request);
+  return { identity: deviceId ? `dev:${deviceId}` : null, claims: null };
+}
+
 /* Identity for quota keys: authenticated users are stable and tracked by
    Supabase id; anonymous users by their device id (with an IP fallback so
    requests without the header still get a bucket). */
 export function identityKey(request, claims) {
   if (claims?.sub) return `user:${claims.sub}`;
-  const deviceId = request.headers.get('X-Device-Id')?.trim() || '';
+  const deviceId = requestDeviceId(request);
   if (deviceId) return `dev:${deviceId}`;
   const ip = request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
   return `ip:${ip}`;
@@ -135,10 +160,9 @@ export async function consumeQuota(env, identity, kind, now = Date.now()) {
    present; otherwise fall back to the device/ip key. Returns { identity,
    claims, pro } and performs a quota check. */
 export async function resolveEntitlement(env, request, kind, now = Date.now()) {
-  const authorization = request.headers.get('Authorization') || '';
-  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
-  const claims = token ? await verifySupabaseJwt(token, env.SUPABASE_JWT_SECRET) : null;
-  const identity = identityKey(request, claims);
+  const resolved = await resolveStableIdentity(env, request);
+  const claims = resolved.claims;
+  const identity = resolved.identity || identityKey(request, claims);
   const pro = await isPro(env, identity);
   const limit = freeLimit(env, kind);
   const used = pro ? 0 : await getUsage(env, identity, kind, now);

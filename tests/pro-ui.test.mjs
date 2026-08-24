@@ -57,6 +57,18 @@ test('app.js sends device id and bearer token headers on API calls', () => {
   assert.match(app, /api\/quota/, 'quota fetch');
 });
 
+test('app.js synchronizes the identity-scoped learner profile through KV', () => {
+  assert.match(app, /fetch\(`\$\{SERVER_BASE\}\/api\/profile`, \{ headers: apiHeaders\(\) \}\)/);
+  assert.match(app, /method: 'PUT'/);
+  assert.match(app, /body: JSON\.stringify\(\{ profile: this\.profile, clientUpdatedAt \}\)/);
+  assert.match(app, /_profilePendingMigration/);
+  assert.match(app, /_profileSyncReady/);
+});
+
+test('service worker never caches identity-scoped profile responses', () => {
+  assert.match(serviceWorker, /url\.pathname === '\/api\/profile'/);
+});
+
 test('app.js handles quota-exceeded responses with an upgrade notice', () => {
   assert.match(app, /if \(res\.status === 429\) \{\s*const quotaBody = await res\.json\(\)\.catch\(\(\) => \(\{\}\)\);/);
   assert.match(app, /quotaBody\.code === 'quota_exceeded'\) this\.showQuotaNotice\('cards'\)/);

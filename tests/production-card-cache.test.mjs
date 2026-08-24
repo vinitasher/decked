@@ -178,3 +178,20 @@ test('buildSnapshot reports malformed values and off-pattern keys without crashi
   assert.ok(messages.some(message => message.includes('not-a-valid-key')));
   assert.ok(messages.some(message => message.includes('unreadable:1')));
 });
+
+test('buildSnapshot excludes identity-scoped profile records from card snapshots', async () => {
+  const kv = {
+    async listKeys() {
+      return ['caching:1', 'profile:v1:dev:device-1'];
+    },
+    async getKey(key) {
+      assert.notEqual(key, 'profile:v1:dev:device-1');
+      return JSON.stringify({ id: 'card-1' });
+    }
+  };
+
+  const { snapshot: result, warnings } = await buildSnapshot(kv);
+
+  assert.deepEqual(Object.keys(result), ['caching:1']);
+  assert.deepEqual(warnings, []);
+});

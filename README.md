@@ -227,7 +227,19 @@ appends a distinct card. Pools retain the newest 20 distinct scenarios; legacy
 single-card values migrate to one-card pools when read. Responses include
 `cached`, `card`, `poolSize`, and `poolLimit` without exposing the other cards.
 At most 100 valid exclusion fingerprints are considered per request.
-Learner progress remains local to each browser.
+Learner profile progress is stored in the existing `CARD_CACHE` Cloudflare KV
+namespace under `profile:v1:<identity>` and is served through
+`GET/PUT /api/profile`. Signed-in profiles use the verified Supabase subject;
+anonymous profiles use the browser's device id. The browser still keeps a
+local copy for immediate rendering and offline use, then synchronizes changes
+asynchronously. Existing local profiles migrate on the first successful
+profile fetch, and newer local changes win over an older remote timestamp.
+SRS reviews and card snapshots (including diagram `nodes`, `flows`, and
+option wiring), topic scores, streaks, totals, and displayed-scenario ledgers
+are included in the synced profile. Session resume state, bookmarks, theme/UI
+preferences, and custom-card authoring remain browser-local.
+Generated-card cache metrics and snapshot tooling exclude `profile:v1:` keys.
+
 The browser mirrors the server format with bounded `{"cards": [...]}` pools
 under `sdf_gen_<topic>:<difficulty>`. Existing single-card entries migrate on
 read, malformed entries are ignored, and each local profile keeps its own
