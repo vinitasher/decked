@@ -1,6 +1,7 @@
 /* Cloudflare Pages Function — generate flash cards using OpenCode Go */
 
 import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+import { CARD_MODEL_SEQUENCE } from '../shared/model-routing.js';
 import { countScenarioRequirements, difficultyFromScenario } from '../shared/requirement-count.js';
 import { getOptionPrerequisites } from '../shared/production-option-prerequisites.js';
 
@@ -376,12 +377,7 @@ export async function onRequest(context) {
       });
     }
 
-    const models = [
-      'deepseek-v4-flash',
-      'deepseek-v4-flash',
-      'deepseek-v4-flash',
-      'deepseek-v4-flash'
-    ];
+    const models = CARD_MODEL_SEQUENCE;
     const distinctFrom = new Set([
       ...pool.cards.map(candidate => scenarioFingerprint(candidate.scenario)),
       ...exclusions
@@ -445,8 +441,9 @@ export async function onRequest(context) {
         status: aiResponse.status, ms: Date.now() - startedAt
       });
       lastError = new Error('Card generation provider is temporarily unavailable');
-      if (aiResponse.status !== 503) break;
-      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+      if (attempt + 1 < models.length && aiResponse.status >= 500) {
+        await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+      }
     }
 
     if (!card) {

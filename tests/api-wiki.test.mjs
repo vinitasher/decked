@@ -65,8 +65,10 @@ test('wiki endpoint generates, validates, and caches a fresh entry', async () =>
   const originalFetch = globalThis.fetch;
   let cached;
   let providerCalls = 0;
-  globalThis.fetch = async () => {
+  const models = [];
+  globalThis.fetch = async (_url, options) => {
     providerCalls++;
+    models.push(JSON.parse(options.body).model);
     return Response.json({
       choices: [{ message: { content: JSON.stringify(goodEntry) } }]
     });
@@ -88,6 +90,7 @@ test('wiki endpoint generates, validates, and caches a fresh entry', async () =>
     assert.equal(cached.key, 'wiki:hot-key-handling');
     assert.deepEqual(JSON.parse(cached.value).related_topics, ['cache-eviction', 'workload-skew']);
     assert.equal(providerCalls, 1);
+    assert.deepEqual(models, ['gpt-5.6-luna']);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -98,8 +101,10 @@ test('wiki endpoint rejects an entry that violates the schema without caching', 
   const bad = { ...goodEntry, key_points: [] };
   let cacheWrites = 0;
   let providerCalls = 0;
-  globalThis.fetch = async () => {
+  const models = [];
+  globalThis.fetch = async (_url, options) => {
     providerCalls++;
+    models.push(JSON.parse(options.body).model);
     return Response.json({ choices: [{ message: { content: JSON.stringify(bad) } }] });
   };
   try {
@@ -112,6 +117,7 @@ test('wiki endpoint rejects an entry that violates the schema without caching', 
     assert.equal(response.status, 503);
     assert.equal(cacheWrites, 0);
     assert.equal(providerCalls, 2, 'retries once then gives up');
+    assert.deepEqual(models, ['gpt-5.6-luna', 'deepseek-v4-flash']);
   } finally {
     globalThis.fetch = originalFetch;
   }

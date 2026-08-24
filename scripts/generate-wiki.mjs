@@ -5,15 +5,18 @@
    Topic universe = union of TOPIC_CATALOG prerequisites, every card/option
    prerequisiteTopic, and the production card cache.
 
-   Provider: opencode zen API (deepseek-v4-flash, thinking disabled — same
-   configuration as the card generator). Requests run 3-at-a-time with one
-   retry each; results are validated against the wiki schema before write.
+   Provider: opencode zen API (gpt-5.6-luna first, deepseek-v4-flash fallback,
+   thinking disabled — same configuration as the card generator). Requests run
+   3-at-a-time with one retry each; results are validated against the wiki
+   schema before write.
 
    Usage: OPENCODE_API_KEY=... node scripts/generate-wiki.mjs [--limit N]
 */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+
+import { API_MODEL_SEQUENCE } from '../functions/shared/model-routing.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const API_KEY = process.env.OPENCODE_API_KEY ||
@@ -55,7 +58,7 @@ try {
 const ordered = [...topics].sort();
 
 /* ---- Provider call (same params as the card generator) ---- */
-async function callModel(prompt, timeoutMs = 45000) {
+async function callModel(prompt, model, timeoutMs = 45000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -67,7 +70,7 @@ async function callModel(prompt, timeoutMs = 45000) {
         'User-Agent': 'opencode/1.18.9'
       },
       body: JSON.stringify({
-        model: 'deepseek-v4-flash',
+        model,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2048,
         temperature: 0.6,
@@ -154,7 +157,10 @@ async function worker() {
     let entry = null;
     for (let attempt = 1; attempt <= 2 && !entry; attempt++) {
       try {
-        entry = validate(await callModel(prompt), topic);
+        entry = validate(
+          await callModel(prompt, API_MODEL_SEQUENCE[Math.min(attempt - 1, API_MODEL_SEQUENCE.length - 1)]),
+          topic
+        );
         results[topic] = entry;
         console.log(`ok ${topic}${attempt > 1 ? ' (retry)' : ''}`);
       } catch (error) {

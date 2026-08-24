@@ -14,11 +14,17 @@ import {
   validateGeneratedCard
 } from '../functions/api/generate.js';
 import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
+import {
+  API_MODEL_SEQUENCE,
+  CARD_MODEL_SEQUENCE,
+  CLI_MODEL_SEQUENCE
+} from '../functions/shared/model-routing.js';
 const require = createRequire(import.meta.url);
 const localGenerator = require('../server/generate-card.js');
 const {
   buildPrompt: buildFlowUpgradePrompt,
-  deriveFlows: deriveCachedFlows
+  deriveFlows: deriveCachedFlows,
+  modelSequence: flowModelSequence
 } = await import('../scripts/upgrade-cached-card-flows.mjs');
 
 const card = {
@@ -91,6 +97,22 @@ test('correct-letter selection maps four equal intervals and safe boundaries to 
   assert.equal(selectCorrectLetter(() => 1), 'D');
   assert.equal(selectCorrectLetter(() => -1), 'A');
   assert.equal(selectCorrectLetter(() => Number.NaN), 'A');
+});
+
+test('generated content uses Luna first and DeepSeek as the fallback', () => {
+  assert.deepEqual(API_MODEL_SEQUENCE, ['gpt-5.6-luna', 'deepseek-v4-flash']);
+  assert.deepEqual(CARD_MODEL_SEQUENCE, [
+    'gpt-5.6-luna',
+    'deepseek-v4-flash',
+    'deepseek-v4-flash',
+    'deepseek-v4-flash'
+  ]);
+  assert.deepEqual(CLI_MODEL_SEQUENCE, [
+    'gpt-5.6-luna',
+    'opencode-go/deepseek-v4-flash'
+  ]);
+  assert.deepEqual(localGenerator.modelSequence, CLI_MODEL_SEQUENCE);
+  assert.deepEqual(flowModelSequence, CLI_MODEL_SEQUENCE);
 });
 
 test('both generation prompts consistently apply every designated correct letter', () => {
@@ -221,7 +243,7 @@ test('cached flow migration rejects an all-linear option topology', async () => 
   assert.deepEqual(result.optionFlows, {});
 });
 
-test('generation retries a temporary provider failure and caches the card', async () => {
+test('generation falls back when the primary model is unavailable and caches the card', async () => {
   const originalFetch = globalThis.fetch;
   const models = [];
   let attempts = 0;
@@ -231,7 +253,7 @@ test('generation retries a temporary provider failure and caches the card', asyn
     attempts++;
     models.push(JSON.parse(options.body).model);
     if (attempts === 1) {
-      return new Response('overloaded', { status: 503 });
+      return new Response('model unavailable', { status: 400 });
     }
     return Response.json({
       choices: [{ message: { content: JSON.stringify(card) } }]
@@ -257,7 +279,7 @@ test('generation retries a temporary provider failure and caches the card', asyn
     assert.equal(response.status, 200);
     assert.equal(body.cached, false);
     assert.equal(body.card.id, card.id);
-    assert.deepEqual(models, ['deepseek-v4-flash', 'deepseek-v4-flash']);
+    assert.deepEqual(models, ['gpt-5.6-luna', 'deepseek-v4-flash']);
     assert.equal(cached.key, 'queues:2');
     assert.equal(JSON.parse(cached.value).cards[0].id, card.id);
     assert.deepEqual(

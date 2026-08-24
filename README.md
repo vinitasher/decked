@@ -206,13 +206,14 @@ guided architecture judgment.
 ## Deploy
 
 The production site runs on Cloudflare Pages with OpenCode Go
-`deepseek-v4-flash` generation and a KV-backed generated-card cache. The
+`gpt-5.6-luna` generation and a KV-backed generated-card cache. The
 `OPENCODE_API_KEY` credential is stored as a Cloudflare Pages secret. Node.js
 22 or newer and an authenticated Wrangler session are required. Deploy from
 this directory:
 
-Generation retries transient Flash capacity failures and uses
-`deepseek-v4-pro` as the final OpenCode Go fallback.
+Generation tries `gpt-5.6-luna` first and uses `deepseek-v4-flash` as its
+OpenCode Go fallback when the primary attempt fails validation or the provider
+is unavailable. Further retries remain on the fallback model.
 Each generation attempt designates a uniformly selected correct letter from
 A-D, and model output is rejected unless it follows that prompt contract.
 
@@ -274,9 +275,9 @@ the current session, which remains available through Resume Unfinished Session.
 Unknown wiki topics are **lazily generated on first view** by
 `functions/api/wiki.js` and cached in the `WIKI_CACHE` Cloudflare KV binding
 for ~30 days (2592000 s), mirroring the `generate-wiki.mjs` schema and
-provider settings (`deepseek-v4-flash`, thinking disabled). Cached entries are
-served without a generation call, so each concept is generated at most once
-per cache window.
+provider settings (`gpt-5.6-luna` first, `deepseek-v4-flash` fallback,
+thinking disabled). Cached entries are served without a generation call, so
+each concept is generated at most once per cache window.
 
 ```sh
 bash check.sh

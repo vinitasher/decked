@@ -107,10 +107,13 @@ CRITICAL RULES:
 - DO NOT write any files. DO NOT create files. Your entire response must be the JSON object and nothing else.`;
 }
 
-const model = process.env.OPENCODE_MODEL || 'opencode-go/deepseek-v4-flash';
+const modelSequence = [
+  process.env.OPENCODE_MODEL || 'gpt-5.6-luna',
+  'opencode-go/deepseek-v4-flash'
+];
 const opencodeBin = '/home/pi/.nvm/versions/node/v22.23.1/bin/opencode';
 
-function callModel(prompt) {
+function callModel(prompt, model) {
   const escaped = prompt.replace(/"/g, '\\"');
   // Read-only enforcement: the model must not write files
   const env = { ...process.env, OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"deny","bash":"deny"}}' };
@@ -252,15 +255,16 @@ async function run() {
   }
   const { countScenarioRequirements, difficultyFromScenario } = classifier;
   for (let attempt = 1; attempt <= 3; attempt++) {
+    const model = modelSequence[Math.min(attempt - 1, modelSequence.length - 1)];
     try {
       const designatedCorrect = selectCorrectLetter();
-      const stdout = callModel(buildPrompt(topic, difficulty, designatedCorrect));
+      const stdout = callModel(buildPrompt(topic, difficulty, designatedCorrect), model);
       const card = extractAndValidate(stdout, designatedCorrect, countScenarioRequirements, difficultyFromScenario);
       console.log(JSON.stringify(card));
       return 0;
     } catch (err) {
       lastErr = err;
-      if (attempt < 3) process.stderr.write(`Attempt ${attempt} failed: ${err.message}\n`);
+      if (attempt < 3) process.stderr.write(`Attempt ${attempt} (${model}) failed: ${err.message}\n`);
     }
   }
 
@@ -268,7 +272,12 @@ async function run() {
   return 1;
 }
 
-module.exports = { buildPrompt, extractAndValidate, selectCorrectLetter };
+module.exports = {
+  buildPrompt,
+  extractAndValidate,
+  modelSequence: modelSequence.slice(),
+  selectCorrectLetter
+};
 
 if (require.main === module) {
   run().then(code => process.exit(code));

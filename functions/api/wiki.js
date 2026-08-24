@@ -3,6 +3,7 @@
    of scripts/generate-wiki.mjs so bulk and lazy entries are interchangeable. */
 
 import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+import { API_MODEL_SEQUENCE } from '../shared/model-routing.js';
 
 const TOPIC_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REQUIRED = ['topic', 'title', 'summary', 'why_it_matters', 'key_points', 'common_pitfalls', 'related_topics'];
@@ -109,7 +110,7 @@ export async function onRequest(context) {
             'User-Agent': 'opencode/1.18.9'
           },
           body: JSON.stringify({
-            model: 'deepseek-v4-flash',
+            model: API_MODEL_SEQUENCE[attempt],
             messages: [{ role: 'user', content: buildPrompt(topic) }],
             max_tokens: 2048,
             temperature: 0.6,

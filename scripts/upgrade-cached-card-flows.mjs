@@ -24,6 +24,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 import { hasDegenerateLinearOptionTopology } from '../functions/api/generate.js';
+import { CLI_MODEL_SEQUENCE } from '../functions/shared/model-routing.js';
 
 const FLOW_KINDS = new Set(['sync', 'async', 'callback']);
 const CACHE_FILES = [
@@ -40,7 +41,10 @@ const normalizeCachedFlows = card => cardsContext.normalizeCardFlowsForUpgrade(c
 
 const opencodeBin = process.env.OPENCODE_BIN
   || '/home/pi/.nvm/versions/node/v22.23.1/bin/opencode';
-const model = process.env.OPENCODE_MODEL || 'opencode-go/deepseek-v4-flash';
+const modelSequence = [
+  process.env.OPENCODE_MODEL || CLI_MODEL_SEQUENCE[0],
+  CLI_MODEL_SEQUENCE[1]
+];
 
 function normalizeFlows(flows, nodes) {
   const nodeSet = new Set(nodes || []);
@@ -99,7 +103,7 @@ ${JSON.stringify({
 CRITICAL: Output ONLY valid JSON — no markdown, no code fences, no surrounding text. DO NOT write any files. Your entire response must be the JSON object and nothing else.`;
 }
 
-function callModel(prompt) {
+function callModel(prompt, model) {
   const escaped = prompt.replace(/"/g, '\\"');
   const env = {
     ...process.env,
@@ -125,7 +129,8 @@ async function deriveFlows(card, attemptCount = 2, modelCall = callModel) {
   let lastError;
   for (let attempt = 0; attempt < attemptCount; attempt++) {
     try {
-      const parsed = extractJson(modelCall(buildPrompt(card)));
+      const model = modelSequence[Math.min(attempt, modelSequence.length - 1)];
+      const parsed = extractJson(modelCall(buildPrompt(card), model));
       const base = validateBaseFlows(parsed.flows, nodes);
       if (!base) throw new Error('base flows do not connect every node');
       const parsedOptionFlows = {};
@@ -217,7 +222,15 @@ async function main() {
   }
 }
 
-export { buildPrompt, deriveFlows, normalizeFlows, validateBaseFlows, chainFlows, extractJson };
+export {
+  buildPrompt,
+  deriveFlows,
+  normalizeFlows,
+  validateBaseFlows,
+  chainFlows,
+  extractJson,
+  modelSequence
+};
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   main().catch(error => {
