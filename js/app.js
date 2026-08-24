@@ -417,8 +417,10 @@ const APP = {
       if (!candidate || typeof candidate !== 'object') continue;
       const fingerprint = this._scenarioFingerprint(candidate.scenario);
       if (!fingerprint) continue;
+      const normalized = normalizeCardPrerequisites(candidate);
+      if (hasDegenerateLinearOptionTopology(normalized)) continue;
       byFingerprint.delete(fingerprint);
-      byFingerprint.set(fingerprint, normalizeCardPrerequisites(candidate));
+      byFingerprint.set(fingerprint, normalized);
     }
     return { cards: [...byFingerprint.values()].slice(-20) };
   },
@@ -503,7 +505,8 @@ const APP = {
       const data = await res.json();
       const card = normalizeCardPrerequisites(data?.card);
       const fingerprint = this._scenarioFingerprint(card?.scenario);
-      if (!card || !fingerprint || excludedFingerprints.has(fingerprint)) {
+      if (!card || !fingerprint || excludedFingerprints.has(fingerprint)
+          || hasDegenerateLinearOptionTopology(card)) {
         throw new Error('server returned an invalid or excluded card');
       }
       this._writeCardPool(key, [...available.cards, card]);
@@ -2128,8 +2131,22 @@ const APP = {
     if (!raw) return false;
     try {
       const state = JSON.parse(raw);
-      this.sessionCards = state.cards;
-      this.sessionIndex = state.index;
+      const savedCards = Array.isArray(state.cards) ? state.cards : [];
+      const savedIndex = Number.isInteger(state.index) ? state.index : 0;
+      let resumeIndex = 0;
+      const cards = [];
+      savedCards.forEach((candidate, index) => {
+        const card = normalizeCardPrerequisites(candidate);
+        if (hasDegenerateLinearOptionTopology(card)) return;
+        if (index < savedIndex) resumeIndex++;
+        cards.push(card);
+      });
+      if (!cards.length || resumeIndex >= cards.length) {
+        localStorage.removeItem('sdf_resume');
+        return false;
+      }
+      this.sessionCards = cards;
+      this.sessionIndex = resumeIndex;
       this.sessionStart = state.start || Date.now();
       this._startTimer();
       this.showCard();

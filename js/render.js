@@ -151,6 +151,10 @@ const Render = {
 
   _edgeKey(edge) { return edge.from + '\u0000' + edge.to; },
 
+  _compareEdgeKey(edge) {
+    return this._edgeKey(edge) + '\u0000' + (edge.kind || '') + '\u0000' + (edge.verb || '');
+  },
+
   _validDiagramFlows(flows, nodes) {
     const nodeSet = new Set(Array.isArray(nodes) ? nodes : []);
     return (Array.isArray(flows) ? flows : [])
@@ -240,7 +244,7 @@ const Render = {
           inheritsCorrectWiring: explicitEdges.length === 0
         });
         for (const flow of optionEdges) {
-          const key = this._edgeKey(flow);
+          const key = this._compareEdgeKey(flow);
           let group = byKey.get(key);
           if (!group) {
             group = { ...flow, options: [] };

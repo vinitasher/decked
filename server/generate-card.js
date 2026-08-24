@@ -14,6 +14,74 @@ function selectCorrectLetter(random = Math.random) {
   return OPTION_IDS[Math.min(Math.floor(bounded * OPTION_IDS.length), OPTION_IDS.length - 1)];
 }
 
+function validOptionEdges(flows, nodes) {
+  const nodeSet = new Set(Array.isArray(nodes) ? nodes : []);
+  return (Array.isArray(flows) ? flows : [])
+    .filter(flow => flow && typeof flow === 'object'
+      && typeof flow.from === 'string' && typeof flow.to === 'string'
+      && flow.from && flow.to && flow.from !== flow.to
+      && nodeSet.has(flow.from) && nodeSet.has(flow.to))
+    .map(flow => ({ from: flow.from, to: flow.to }));
+}
+
+function uniqueOptionEdges(edges) {
+  return [...new Map(edges.map(edge => [edge.from + '\u0000' + edge.to, edge])).values()];
+}
+
+function optionTopologyKey(edges) {
+  return uniqueOptionEdges(edges)
+    .map(edge => edge.from + '\u0000' + edge.to)
+    .sort()
+    .join('\u0000');
+}
+
+function isLinearOptionTopology(edges, nodes) {
+  const unique = uniqueOptionEdges(edges);
+  const vertices = new Set(unique.flatMap(edge => [edge.from, edge.to]));
+  if (!Array.isArray(nodes) || vertices.size !== nodes.length
+      || nodes.some(node => !vertices.has(node))
+      || unique.length !== vertices.size - 1) return false;
+
+  const incoming = new Map(nodes.map(node => [node, 0]));
+  const outgoing = new Map(nodes.map(node => [node, 0]));
+  const next = new Map(nodes.map(node => [node, []]));
+  for (const edge of unique) {
+    incoming.set(edge.to, incoming.get(edge.to) + 1);
+    outgoing.set(edge.from, outgoing.get(edge.from) + 1);
+    next.get(edge.from).push(edge.to);
+  }
+  const sources = nodes.filter(node => incoming.get(node) === 0 && outgoing.get(node) === 1);
+  const sinks = nodes.filter(node => incoming.get(node) === 1 && outgoing.get(node) === 0);
+  if (sources.length !== 1 || sinks.length !== 1
+      || nodes.some(node => incoming.get(node) > 1 || outgoing.get(node) > 1)) return false;
+
+  const seen = new Set();
+  let current = sources[0];
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    current = next.get(current)?.[0];
+  }
+  return seen.size === vertices.size;
+}
+
+function hasDegenerateLinearOptionTopology(card) {
+  const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+  const options = Array.isArray(card?.options) ? card.options : [];
+  if (nodes.length < 3 || options.length < 2) return false;
+
+  const correct = options.find(option => option?.id === card.correct);
+  const correctEdges = validOptionEdges(correct?.flows, nodes);
+  if (!isLinearOptionTopology(correctEdges, nodes)) return false;
+  const correctKey = optionTopologyKey(correctEdges);
+
+  return options.every(option => {
+    const explicitEdges = validOptionEdges(option?.flows, nodes);
+    const effectiveEdges = explicitEdges.length ? explicitEdges : correctEdges;
+    return isLinearOptionTopology(effectiveEdges, nodes)
+      && optionTopologyKey(effectiveEdges) === correctKey;
+  });
+}
+
 function buildPrompt(topicName, cardDifficulty, designatedCorrect, now = Date.now()) {
   return `Generate a system design flash card for the topic "${topicName}" at difficulty ${cardDifficulty}/5 (5 = hardest). This card will be used by engineers learning system design — it must be accurate, specific, and teach a real trade-off.
 
@@ -25,6 +93,7 @@ The card must be a single JSON object with these exact keys:
 - nodes: 4-5 system components, use real technology names (e.g. "Redis Cluster" not just "Cache", "Postgres with read replicas" not just "DB").
 - flows: array of directed edges describing the base architecture the scenario describes. Each edge is {from, to, verb, kind} where from/to are node names, verb is a required non-empty action label on that edge ("requests", "publishes", "queries", "caches", "loads on miss", "acks"), and kind is one of "sync", "async", "callback". Every node must appear in at least one flow, and the topology must be realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
 - options: exactly 4 objects {id, label, prerequisiteTopics, flows} with ids A, B, C, D, where ${designatedCorrect} is correct. Every option must include a non-empty flows array describing the exact wiring that option implies: {from, to, verb, kind} edges between nodes, using only nodes from the card's nodes list and consistent with the option label. Each option needs 2-4 specific lowercase kebab-case prerequisite concepts required to evaluate its trade-off (for example "cache-invalidation", "replication-lag", or "message-ordering"). Do not use technology names merely because they appear in the option, avoid broad categories, and do not include "${topicName}". Each option must be a real approach an experienced engineer might argue for. The three wrong options must fail for THREE COMPLETELY DIFFERENT reasons — one for cost/scalability, one for consistency/correctness, one for latency/complexity.
+- The four option flow topologies must not collapse into one identical linear chain through every card node. At least one option must show the topology implied by its trade-off (a branch, alternate component, callback, or different connection). Cards whose options all use the same linear topology are invalid and will be regenerated.
 - prerequisiteTopics: the deduplicated union of all four options' prerequisiteTopics.
 - correct: "${designatedCorrect}"
 - explanation: explain why each option other than ${designatedCorrect} fails (different reason per option) and why ${designatedCorrect} wins. Be specific: name the scalability bottleneck, the consistency anomaly, the cost trade-off. 4-6 sentences.
@@ -141,6 +210,9 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
   const labels = card.options.map(o => o.label.toLowerCase());
   if (new Set(labels).size < labels.length) errors.push('duplicate option labels');
   if (!card.options.every(o => o.label.length > 25)) errors.push('option labels too short');
+  if (hasDegenerateLinearOptionTopology(card)) {
+    errors.push('option flows collapse into the same linear topology');
+  }
 
   if (errors.length > 0) {
     throw new Error('validation: ' + errors.join('; ') + '\n' + JSON.stringify(card).substring(0, 200));

@@ -30,6 +30,74 @@ export function scenarioFingerprint(scenario) {
     : '';
 }
 
+function validOptionEdges(flows, nodes) {
+  const nodeSet = new Set(Array.isArray(nodes) ? nodes : []);
+  return (Array.isArray(flows) ? flows : [])
+    .filter(flow => flow && typeof flow === 'object'
+      && typeof flow.from === 'string' && typeof flow.to === 'string'
+      && flow.from && flow.to && flow.from !== flow.to
+      && nodeSet.has(flow.from) && nodeSet.has(flow.to))
+    .map(flow => ({ from: flow.from, to: flow.to }));
+}
+
+function uniqueOptionEdges(edges) {
+  return [...new Map(edges.map(edge => [edge.from + '\u0000' + edge.to, edge])).values()];
+}
+
+function optionTopologyKey(edges) {
+  return uniqueOptionEdges(edges)
+    .map(edge => edge.from + '\u0000' + edge.to)
+    .sort()
+    .join('\u0000');
+}
+
+function isLinearOptionTopology(edges, nodes) {
+  const unique = uniqueOptionEdges(edges);
+  const vertices = new Set(unique.flatMap(edge => [edge.from, edge.to]));
+  if (!Array.isArray(nodes) || vertices.size !== nodes.length
+      || nodes.some(node => !vertices.has(node))
+      || unique.length !== vertices.size - 1) return false;
+
+  const incoming = new Map(nodes.map(node => [node, 0]));
+  const outgoing = new Map(nodes.map(node => [node, 0]));
+  const next = new Map(nodes.map(node => [node, []]));
+  for (const edge of unique) {
+    incoming.set(edge.to, incoming.get(edge.to) + 1);
+    outgoing.set(edge.from, outgoing.get(edge.from) + 1);
+    next.get(edge.from).push(edge.to);
+  }
+  const sources = nodes.filter(node => incoming.get(node) === 0 && outgoing.get(node) === 1);
+  const sinks = nodes.filter(node => incoming.get(node) === 1 && outgoing.get(node) === 0);
+  if (sources.length !== 1 || sinks.length !== 1
+      || nodes.some(node => incoming.get(node) > 1 || outgoing.get(node) > 1)) return false;
+
+  const seen = new Set();
+  let current = sources[0];
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    current = next.get(current)?.[0];
+  }
+  return seen.size === vertices.size;
+}
+
+export function hasDegenerateLinearOptionTopology(card) {
+  const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+  const options = Array.isArray(card?.options) ? card.options : [];
+  if (nodes.length < 3 || options.length < 2) return false;
+
+  const correct = options.find(option => option?.id === card.correct);
+  const correctEdges = validOptionEdges(correct?.flows, nodes);
+  if (!isLinearOptionTopology(correctEdges, nodes)) return false;
+  const correctKey = optionTopologyKey(correctEdges);
+
+  return options.every(option => {
+    const explicitEdges = validOptionEdges(option?.flows, nodes);
+    const effectiveEdges = explicitEdges.length ? explicitEdges : correctEdges;
+    return isLinearOptionTopology(effectiveEdges, nodes)
+      && optionTopologyKey(effectiveEdges) === correctKey;
+  });
+}
+
 export function selectCorrectLetter(random = Math.random) {
   const value = Number(random());
   const bounded = Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0;
@@ -48,6 +116,7 @@ Return a JSON object with these exact keys:
 - nodes: array of 4-5 system components with real technology names.
 - flows: array of directed edges {from, to, verb, kind} describing the base architecture in the scenario. from/to are node names, verb is a required non-empty action label ("requests", "publishes", "queries", "caches", "acks"), kind is "sync", "async", or "callback". Every node must appear in at least one flow; keep the topology realistic (fan-out, callbacks, back-edges), never a plain linear chain when the architecture is not one.
 - options: array of exactly 4 objects {id, label, prerequisiteTopics, flows}, with ids A, B, C, D. Every option must include a non-empty flows array describing the exact wiring that option implies ({from, to, verb, kind} edges between named nodes, using only nodes from the card's nodes list and consistent with the option label). Each option needs 2-4 prerequisite concepts required to evaluate its trade-off. Use specific lowercase kebab-case concepts such as "cache-invalidation", "replication-lag", or "message-ordering"; never use a technology/product name merely because it appears in the option, and avoid broad categories such as "databases", "caching", or "api-design". Do not include "${topic}". Option ${designatedCorrect} is correct. Each wrong option fails for a DIFFERENT reason (cost, consistency, latency).
+- The four option flow topologies must not collapse into one identical linear chain through every card node. At least one option must show the topology implied by its trade-off (a branch, alternate component, callback, or different connection). Cards whose options all use the same linear topology are invalid and will be regenerated.
 - prerequisiteTopics must include the union of all four options' prerequisiteTopics.
 - correct: "${designatedCorrect}"
 - explanation: 3-5 sentences on why each other option fails and why ${designatedCorrect} wins. Name specific bottlenecks and trade-offs.
@@ -128,6 +197,7 @@ export function normalizeCacheValue(value, topic, difficulty) {
       cards
         .filter(card => card && typeof card === 'object' && !Array.isArray(card))
         .map(card => normalizeCard(card, topic, difficulty))
+        .filter(card => !hasDegenerateLinearOptionTopology(card))
     )
   };
 }
@@ -222,6 +292,9 @@ export function validateGeneratedCard(generatedCard, designatedCorrect) {
     if (option.flows.some(flow => typeof flow.verb !== 'string' || !flow.verb.trim())) {
       throw new Error('Invalid field: option flows must have non-empty labels');
     }
+  }
+  if (hasDegenerateLinearOptionTopology(generatedCard)) {
+    throw new Error('Invalid field: option flows collapse into the same linear topology');
   }
   if (generatedCard.correct !== designatedCorrect) {
     throw new Error(`Invalid field: correct must match designated option ${designatedCorrect}`);

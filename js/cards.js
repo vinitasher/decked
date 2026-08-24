@@ -118,6 +118,60 @@ function normalizeFlows(flows, nodes) {
     );
 }
 
+function diagramOptionTopologyKey(flows) {
+  return [...new Map(flows.map(flow => [flow.from + '\u0000' + flow.to, flow])).values()]
+    .map(flow => flow.from + '\u0000' + flow.to)
+    .sort()
+    .join('\u0000');
+}
+
+function isLinearDiagramTopology(flows, nodes) {
+  const unique = [...new Map(flows.map(flow => [flow.from + '\u0000' + flow.to, flow])).values()];
+  const vertices = new Set(unique.flatMap(flow => [flow.from, flow.to]));
+  if (!Array.isArray(nodes) || vertices.size !== nodes.length
+      || nodes.some(node => !vertices.has(node))
+      || unique.length !== vertices.size - 1) return false;
+
+  const incoming = new Map(nodes.map(node => [node, 0]));
+  const outgoing = new Map(nodes.map(node => [node, 0]));
+  const next = new Map(nodes.map(node => [node, []]));
+  for (const flow of unique) {
+    incoming.set(flow.to, incoming.get(flow.to) + 1);
+    outgoing.set(flow.from, outgoing.get(flow.from) + 1);
+    next.get(flow.from).push(flow.to);
+  }
+  const sources = nodes.filter(node => incoming.get(node) === 0 && outgoing.get(node) === 1);
+  const sinks = nodes.filter(node => incoming.get(node) === 1 && outgoing.get(node) === 0);
+  if (sources.length !== 1 || sinks.length !== 1
+      || nodes.some(node => incoming.get(node) > 1 || outgoing.get(node) > 1)) return false;
+
+  const seen = new Set();
+  let current = sources[0];
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    current = next.get(current)?.[0];
+  }
+  return seen.size === vertices.size;
+}
+
+function hasDegenerateLinearOptionTopology(card) {
+  const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+  const options = Array.isArray(card?.options) ? card.options : [];
+  if (nodes.length < 3 || options.length < 2) return false;
+
+  const correct = options.find(option => option?.id === card.correct);
+  const correctFlows = normalizeFlows(correct?.flows, nodes);
+  if (!isLinearDiagramTopology(correctFlows, nodes)) return false;
+  const correctKey = diagramOptionTopologyKey(correctFlows);
+
+  return options.every(option => {
+    const explicitFlows = normalizeFlows(option?.flows, nodes);
+    const effectiveFlows = explicitFlows.length ? explicitFlows : correctFlows;
+    return isLinearDiagramTopology(effectiveFlows, nodes)
+      && diagramOptionTopologyKey(effectiveFlows) === correctKey;
+  });
+}
+
 /* Anchor the flow graph on the end user: the user node is found by name (or
    synthesized when absent) and always has an outgoing edge, so diagrams start
    from the person using the system. The synthesized edge connects to the

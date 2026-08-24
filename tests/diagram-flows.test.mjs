@@ -16,6 +16,7 @@ vm.runInContext(`${cardsSource}
 globalThis.normalizeFlowsForTest = normalizeFlows;
 globalThis.normalizeCardFlowsForTest = normalizeCardFlows;
 globalThis.normalizeCardPrerequisitesForTest = normalizeCardPrerequisites;
+globalThis.hasDegenerateLinearOptionTopologyForTest = hasDegenerateLinearOptionTopology;
 globalThis.SEED_FLOWS_FOR_TEST = SEED_FLOWS;
 globalThis.SEED_CARDS_FOR_TEST = SEED_CARDS;
 ${renderSource}
@@ -24,6 +25,7 @@ globalThis.RenderForTest = Render;`, context);
 const normalizeFlows = context.normalizeFlowsForTest;
 const normalizeCardFlows = context.normalizeCardFlowsForTest;
 const normalizeCardPrerequisites = context.normalizeCardPrerequisitesForTest;
+const hasDegenerateLinearOptionTopology = context.hasDegenerateLinearOptionTopologyForTest;
 const SEED_FLOWS = context.SEED_FLOWS_FOR_TEST;
 const Render = context.RenderForTest;
 
@@ -96,6 +98,24 @@ test('option flows are normalized and emptied options become undefined', () => {
   normalizeCardFlows(card);
   assert.equal(card.options[0].flows.length, 1);
   assert.equal(card.options[1].flows, undefined);
+});
+
+test('linear option topology is recognized as degenerate', () => {
+  const card = {
+    nodes: ['Client', 'API', 'Database'],
+    correct: 'A',
+    options: ['A', 'B', 'C', 'D'].map(id => ({
+      id,
+      flows: [
+        { from: 'Client', to: 'API', verb: `${id} requests`, kind: 'sync' },
+        { from: 'API', to: 'Database', verb: `${id} queries`, kind: 'sync' }
+      ]
+    }))
+  };
+
+  assert.equal(hasDegenerateLinearOptionTopology(card), true);
+  card.options[1].flows.push({ from: 'Database', to: 'API', verb: 'retries', kind: 'callback' });
+  assert.equal(hasDegenerateLinearOptionTopology(card), false);
 });
 
 test('compare diagrams use correct-option wiring when option wiring is unavailable', () => {
@@ -296,6 +316,12 @@ test('compare mode is wired to a toggle button in the app', () => {
   assert.match(appSource, /this\._compareMode = false;/);
 });
 
+test('client card pools discard degenerate option diagrams', () => {
+  assert.match(appSource, /const normalized = normalizeCardPrerequisites\(candidate\);/);
+  assert.match(appSource, /if \(hasDegenerateLinearOptionTopology\(normalized\)\) continue;/);
+  assert.match(appSource, /hasDegenerateLinearOptionTopology\(card\)/);
+});
+
 test('mermaid definition maps flows onto a flowchart with per-edge styling', () => {
   const card = {
     id: 'm', topic: 'queues', difficulty: 2, correct: 'B',
@@ -328,6 +354,29 @@ test('mermaid definition maps flows onto a flowchart with per-edge styling', () 
   assert.match(compare.definition, /linkStyle 0 stroke:#1976d2/); // option A color
   assert.match(compare.definition, /linkStyle 3 stroke:#2e7d32,stroke-width:3px/); // correct option thicker
   assert.match(compare.legendHtml, /B ✓/);
+});
+
+test('compare diagrams preserve distinct verbs on the same node endpoints', () => {
+  const compare = context.RenderForTest._mermaidDefinition({
+    id: 'same-endpoints', topic: 'api-design', difficulty: 2, correct: 'B',
+    nodes: ['Client', 'API', 'Database'],
+    options: [
+      { id: 'A', label: 'A', flows: [
+        { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+        { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+      ] },
+      { id: 'B', label: 'B', flows: [
+        { from: 'Client', to: 'API', verb: 'publishes', kind: 'async' },
+        { from: 'API', to: 'Database', verb: 'writes', kind: 'sync' }
+      ] }
+    ]
+  }, { reveal: true, compare: true });
+
+  assert.match(compare.definition, /requests · A/);
+  assert.match(compare.definition, /publishes · B/);
+  assert.match(compare.definition, /queries · A/);
+  assert.match(compare.definition, /writes · B/);
+  assert.doesNotMatch(compare.definition, /requests · A,B/);
 });
 
 test('mermaid edge labels strip characters the parser rejects', () => {

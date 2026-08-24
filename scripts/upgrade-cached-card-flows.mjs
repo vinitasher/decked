@@ -11,7 +11,8 @@
    flow, from/to must reference node names, kind whitelisted) with one retry;
    options without distinct wiring inherit the validated correct-option graph,
    and on failure the card falls back to a linear chain over its nodes without
-   inventing a correct answer graph.
+   inventing a correct answer graph. Cards whose option graphs collapse into
+   one identical linear topology are rejected.
 
    Usage:
      node scripts/upgrade-cached-card-flows.mjs          # dry run
@@ -21,6 +22,8 @@
 import { execSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
+
+import { hasDegenerateLinearOptionTopology } from '../functions/api/generate.js';
 
 const FLOW_KINDS = new Set(['sync', 'async', 'callback']);
 const CACHE_FILES = [
@@ -83,6 +86,7 @@ RULES:
 - The base flows MUST start from the end user: the first edge leaves the end-user node (the client, web app, mobile app, browser, or similar node when the nodes array includes one). If the nodes array has no end-user node, start from the node closest to the user (the entry point, e.g. the CDN or load balancer).
 - Every node MUST appear in at least one base flow. Keep the topology realistic (fan-out, callbacks, back-edges) — never a plain linear chain when the architecture is not one.
 - "optionFlows" maps every option id to the exact wiring that option implies: edges between the nodes that option connects, consistent with the option label. Every option must have wiring; use the correct option's graph only when an alternative has no distinct wiring. Never send empty arrays.
+- The option flows must not all collapse into one identical linear chain through every card node. At least one option must show the topology implied by its trade-off. Never send a card whose options all use the same linear topology.
 
 Card:
 ${JSON.stringify({
@@ -137,6 +141,16 @@ async function deriveFlows(card, attemptCount = 2, modelCall = callModel) {
         if (!option?.id) continue;
         const flows = parsedOptionFlows[option.id] || correctFlows;
         if (flows.length) optionFlows[option.id] = flows.map(flow => ({ ...flow }));
+      }
+      if (hasDegenerateLinearOptionTopology({
+        nodes,
+        correct: card.correct,
+        options: (card.options || []).map(option => ({
+          id: option.id,
+          flows: optionFlows[option.id] || []
+        }))
+      })) {
+        throw new Error('option flows collapse into the same linear topology');
       }
       return { flows: base, optionFlows };
     } catch (error) {

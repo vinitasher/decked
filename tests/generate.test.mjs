@@ -6,10 +6,12 @@ import test from 'node:test';
 import {
   buildPrompt,
   deduplicatePool,
+  hasDegenerateLinearOptionTopology,
   normalizeCacheValue,
   onRequest,
   scenarioFingerprint,
-  selectCorrectLetter
+  selectCorrectLetter,
+  validateGeneratedCard
 } from '../functions/api/generate.js';
 import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
 const require = createRequire(import.meta.url);
@@ -101,14 +103,80 @@ test('both generation prompts consistently apply every designated correct letter
       assert.match(prompt, new RegExp(`correct: "${expected}"`));
       assert.match(prompt, new RegExp(`why ${expected} wins`));
       assert.match(prompt, /Every option must include a non-empty flows array/);
+      assert.match(prompt, /must not collapse into one identical linear chain/);
     }
   }
-  assert.match(buildFlowUpgradePrompt({
+  const upgradePrompt = buildFlowUpgradePrompt({
     scenario: 'A queue serves 1000 requests per second.',
     nodes: ['Client', 'Queue'],
     options: [{ id: 'A', label: 'Use the queue' }],
     correct: 'A'
-  }), /Every option must have wiring/);
+  });
+  assert.match(upgradePrompt, /Every option must have wiring/);
+  assert.match(upgradePrompt, /must not all collapse into one identical linear chain/);
+});
+
+test('cache normalization removes cards whose options share one linear topology', () => {
+  const linearOptions = ['A', 'B', 'C', 'D'].map(id => ({
+    id,
+    label: `Option ${id}`,
+    prerequisiteTopics: ['api-design', 'latency'],
+    flows: [
+      { from: 'Client', to: 'API', verb: `${id} requests`, kind: 'sync' },
+      { from: 'API', to: 'Database', verb: `${id} queries`, kind: 'sync' }
+    ]
+  }));
+  const badCard = {
+    id: 'linear-options',
+    topic: 'caching',
+    scenario: 'An API serves 20,000 QPS and must keep p99 latency below 50ms.',
+    nodes: ['Client', 'API', 'Database'],
+    flows: [
+      { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+      { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+    ],
+    options: linearOptions,
+    correct: 'A'
+  };
+
+  assert.equal(hasDegenerateLinearOptionTopology(badCard), true);
+  assert.deepEqual(normalizeCacheValue({ cards: [badCard] }, 'caching', 2), { cards: [] });
+});
+
+test('standalone generator rejects cards whose options share one linear topology', () => {
+  const linearOptions = ['A', 'B', 'C', 'D'].map(id => ({
+    id,
+    label: `A sufficiently descriptive option ${id} for this design`,
+    prerequisiteTopics: ['api-design', 'latency'],
+    flows: [
+      { from: 'Client', to: 'API', verb: `${id} requests`, kind: 'sync' },
+      { from: 'API', to: 'Database', verb: `${id} queries`, kind: 'sync' }
+    ]
+  }));
+  const badCard = {
+    id: 'linear-options',
+    topic: 'caching',
+    difficulty: 2,
+    prerequisiteTopics: ['api-design'],
+    scenario: 'An API serves 20,000 QPS and must keep p99 latency below 50ms.',
+    nodes: ['Client', 'API', 'Database'],
+    flows: [
+      { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+      { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+    ],
+    options: linearOptions,
+    correct: 'A',
+    explanation: 'This explanation is intentionally long enough to pass the minimum length check for the standalone generator.'
+  };
+
+  assert.throws(
+    () => localGenerator.extractAndValidate(JSON.stringify(badCard), 'A'),
+    /option flows collapse into the same linear topology/
+  );
+  assert.throws(
+    () => validateGeneratedCard(badCard, 'A'),
+    /option flows collapse into the same linear topology/
+  );
 });
 
 test('cached flow migration refuses to invent a correct option diagram', async () => {
@@ -130,6 +198,26 @@ test('cached flow migration refuses to invent a correct option diagram', async (
   }));
 
   assert.match(result.error, /correct option wiring is unavailable/);
+  assert.deepEqual(result.optionFlows, {});
+});
+
+test('cached flow migration rejects an all-linear option topology', async () => {
+  const result = await deriveCachedFlows({
+    nodes: ['Client', 'API', 'Database'],
+    options: ['A', 'B', 'C', 'D'].map(id => ({ id, label: id })),
+    correct: 'A'
+  }, 1, () => JSON.stringify({
+    flows: [
+      { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+      { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+    ],
+    optionFlows: Object.fromEntries(['A', 'B', 'C', 'D'].map(id => [id, [
+      { from: 'Client', to: 'API', verb: `${id} requests`, kind: 'sync' },
+      { from: 'API', to: 'Database', verb: `${id} queries`, kind: 'sync' }
+    ]]))
+  }));
+
+  assert.match(result.error, /option flows collapse into the same linear topology/);
   assert.deepEqual(result.optionFlows, {});
 });
 

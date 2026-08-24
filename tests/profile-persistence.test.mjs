@@ -20,6 +20,9 @@ const context = {
     if (!Array.isArray(card.prerequisiteTopics)) card.prerequisiteTopics = [];
     return card;
   },
+  hasDegenerateLinearOptionTopology(card) {
+    return card?.id === 'bad-diagram';
+  },
   SEED_CARDS: [],
   fetch() { throw new Error('network should not be called'); }
 };
@@ -106,6 +109,32 @@ test('exiting a session stops timers and preserves resume state', () => {
     app._stopTimer = originalStopTimer;
     app.renderDeckStats = originalRenderDeckStats;
     app.showScreen = originalShowScreen;
+  }
+});
+
+test('resumeSession drops cached cards with degenerate diagram topology', () => {
+  const app = context.appForTest;
+  const originalStartTimer = app._startTimer;
+  const originalShowCard = app.showCard;
+  const originalShowScreen = app.showScreen;
+  const bad = { id: 'bad-diagram', scenario: 'Bad', topic: 'caching' };
+  const good = { id: 'good-diagram', scenario: 'Good', topic: 'caching' };
+  context.localStorage.setItem('sdf_resume', JSON.stringify({
+    cards: [bad, good], index: 1, start: 123
+  }));
+  app._startTimer = () => {};
+  app.showCard = () => {};
+  app.showScreen = () => {};
+
+  try {
+    assert.equal(app.resumeSession(), true);
+    assert.equal(app.sessionCards.map(card => card.id).join(','), 'good-diagram');
+    assert.equal(app.sessionIndex, 0);
+  } finally {
+    app._startTimer = originalStartTimer;
+    app.showCard = originalShowCard;
+    app.showScreen = originalShowScreen;
+    context.localStorage.removeItem('sdf_resume');
   }
 });
 
