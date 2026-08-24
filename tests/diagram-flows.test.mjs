@@ -16,6 +16,7 @@ vm.runInContext(`${cardsSource}
 globalThis.normalizeFlowsForTest = normalizeFlows;
 globalThis.normalizeCardFlowsForTest = normalizeCardFlows;
 globalThis.normalizeCardPrerequisitesForTest = normalizeCardPrerequisites;
+globalThis.hasUsableCorrectOptionWiringForTest = hasUsableCorrectOptionWiring;
 globalThis.hasDegenerateLinearOptionTopologyForTest = hasDegenerateLinearOptionTopology;
 globalThis.SEED_FLOWS_FOR_TEST = SEED_FLOWS;
 globalThis.SEED_CARDS_FOR_TEST = SEED_CARDS;
@@ -25,6 +26,7 @@ globalThis.RenderForTest = Render;`, context);
 const normalizeFlows = context.normalizeFlowsForTest;
 const normalizeCardFlows = context.normalizeCardFlowsForTest;
 const normalizeCardPrerequisites = context.normalizeCardPrerequisitesForTest;
+const hasUsableCorrectOptionWiring = context.hasUsableCorrectOptionWiringForTest;
 const hasDegenerateLinearOptionTopology = context.hasDegenerateLinearOptionTopologyForTest;
 const SEED_FLOWS = context.SEED_FLOWS_FOR_TEST;
 const Render = context.RenderForTest;
@@ -116,6 +118,23 @@ test('linear option topology is recognized as degenerate', () => {
   assert.equal(hasDegenerateLinearOptionTopology(card), true);
   card.options[1].flows.push({ from: 'Database', to: 'API', verb: 'retries', kind: 'callback' });
   assert.equal(hasDegenerateLinearOptionTopology(card), false);
+});
+
+test('correct option wiring must contain valid edges between known nodes', () => {
+  const card = {
+    nodes: ['Client', 'API', 'Database'],
+    correct: 'B',
+    options: [
+      { id: 'A', flows: [{ from: 'Client', to: 'API' }] },
+      { id: 'B' }
+    ]
+  };
+
+  assert.equal(hasUsableCorrectOptionWiring(card), false);
+  card.options[1].flows = [{ from: 'API', to: 'Unknown' }];
+  assert.equal(hasUsableCorrectOptionWiring(card), false);
+  card.options[1].flows = [{ from: 'API', to: 'Database' }];
+  assert.equal(hasUsableCorrectOptionWiring(card), true);
 });
 
 test('compare diagrams use correct-option wiring when option wiring is unavailable', () => {
@@ -316,9 +335,10 @@ test('compare mode is wired to a toggle button in the app', () => {
   assert.match(appSource, /this\._compareMode = false;/);
 });
 
-test('client card pools discard degenerate option diagrams', () => {
+test('client card pools discard invalid option diagrams', () => {
   assert.match(appSource, /const normalized = normalizeCardPrerequisites\(candidate\);/);
-  assert.match(appSource, /if \(hasDegenerateLinearOptionTopology\(normalized\)\) continue;/);
+  assert.match(appSource, /if \(!hasUsableCorrectOptionWiring\(normalized\)/);
+  assert.match(appSource, /!hasUsableCorrectOptionWiring\(card\)/);
   assert.match(appSource, /hasDegenerateLinearOptionTopology\(card\)/);
 });
 

@@ -118,6 +118,13 @@ function normalizeFlows(flows, nodes) {
     );
 }
 
+function hasUsableCorrectOptionWiring(card) {
+  const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+  const options = Array.isArray(card?.options) ? card.options : [];
+  const correct = options.find(option => option?.id === card?.correct);
+  return normalizeFlows(correct?.flows, nodes).length > 0;
+}
+
 function diagramOptionTopologyKey(flows) {
   return [...new Map(flows.map(flow => [flow.from + '\u0000' + flow.to, flow])).values()]
     .map(flow => flow.from + '\u0000' + flow.to)

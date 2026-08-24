@@ -24,6 +24,13 @@ function validOptionEdges(flows, nodes) {
     .map(flow => ({ from: flow.from, to: flow.to }));
 }
 
+function hasUsableCorrectOptionWiring(card) {
+  const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+  const options = Array.isArray(card?.options) ? card.options : [];
+  const correct = options.find(option => option?.id === card?.correct);
+  return validOptionEdges(correct?.flows, nodes).length > 0;
+}
+
 function uniqueOptionEdges(edges) {
   return [...new Map(edges.map(edge => [edge.from + '\u0000' + edge.to, edge])).values()];
 }
@@ -207,6 +214,9 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
       break;
     }
   }
+  if (!hasUsableCorrectOptionWiring(card)) {
+    errors.push('correct option wiring is unavailable');
+  }
   if (!card.options.map(o => o.id).includes(card.correct)) errors.push('correct not in options');
   if (card.correct !== designatedCorrect) errors.push(`correct must match designated option ${designatedCorrect}`);
   if (card.explanation.length < 80) errors.push('explanation too short');
@@ -275,6 +285,7 @@ async function run() {
 module.exports = {
   buildPrompt,
   extractAndValidate,
+  hasUsableCorrectOptionWiring,
   modelSequence: modelSequence.slice(),
   selectCorrectLetter
 };

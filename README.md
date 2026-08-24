@@ -76,11 +76,12 @@ decision-based practice with adaptive difficulty.
   explanation for every card answered wrong
 - Architecture diagrams: every card carries a directed flow graph (`flows`
   with `from`/`to`/`verb`/`kind`) and each option carries a non-empty set of the
-  exact wiring it implies. Legacy cards with incomplete option wiring inherit
-  the validated correct-option graph for comparison; if that graph is
-  unavailable, the compare view reports that it cannot render a correct graph.
-  Generated or cached cards whose options collapse into one identical linear
-  topology are rejected before they can reach compare mode.
+  exact wiring it implies. Cards with incomplete or invalid correct-option
+  wiring are rejected from server/browser caches, custom-card fallback, saved
+  profiles, and resumed sessions so they can be regenerated instead of
+  reaching compare mode. Options without distinct wiring may inherit the
+  validated correct-option graph; cards whose options collapse into one
+  identical linear topology are also rejected before compare mode.
   Diagrams use Mermaid
   flowcharts with parallel branches, callback back-edges, verb-labeled edges,
   theme-aware colors, and on reveal they

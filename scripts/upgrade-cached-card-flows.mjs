@@ -11,8 +11,9 @@
    flow, from/to must reference node names, kind whitelisted) with one retry;
    options without distinct wiring inherit the validated correct-option graph,
    and on failure the card falls back to a linear chain over its nodes without
-   inventing a correct answer graph. Cards whose option graphs collapse into
-   one identical linear topology are rejected.
+   inventing a correct answer graph. Cards without usable correct-option wiring
+   or whose option graphs collapse into one identical linear topology are
+   rejected and removed from the cache.
 
    Usage:
      node scripts/upgrade-cached-card-flows.mjs          # dry run
@@ -23,7 +24,10 @@ import { execSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-import { hasDegenerateLinearOptionTopology } from '../functions/api/generate.js';
+import {
+  hasDegenerateLinearOptionTopology,
+  hasUsableCorrectOptionWiring
+} from '../functions/api/generate.js';
 import { CLI_MODEL_SEQUENCE } from '../functions/shared/model-routing.js';
 
 const FLOW_KINDS = new Set(['sync', 'async', 'callback']);
@@ -193,6 +197,11 @@ async function upgradeCard(card, stats) {
     if (JSON.stringify(option.flows) !== JSON.stringify(nextFlows)) changed = true;
     option.flows = nextFlows;
   }
+  if (!hasUsableCorrectOptionWiring(card) || hasDegenerateLinearOptionTopology(card)) {
+    stats.errors++;
+    stats.dropped++;
+    return null;
+  }
   if (changed) stats.updated++;
   else stats.skipped++;
   return card;
@@ -202,17 +211,22 @@ async function main() {
   const write = process.argv.includes('--write');
 
   for (const fileUrl of CACHE_FILES) {
-    const stats = { updated: 0, skipped: 0, errors: 0, cards: 0 };
+    const stats = { updated: 0, skipped: 0, errors: 0, dropped: 0, cards: 0 };
     const cache = JSON.parse(await readFile(fileUrl, 'utf8'));
     for (const [key, value] of Object.entries(cache)) {
       if (value && Array.isArray(value.cards)) {
-        for (let i = 0; i < value.cards.length; i++) {
+        const cards = [];
+        for (const candidate of value.cards) {
           stats.cards++;
-          value.cards[i] = await upgradeCard(value.cards[i], stats);
+          const upgraded = await upgradeCard(candidate, stats);
+          if (upgraded) cards.push(upgraded);
         }
+        value.cards = cards;
       } else if (value && typeof value === 'object') {
         stats.cards++;
-        cache[key] = await upgradeCard(value, stats);
+        const upgraded = await upgradeCard(value, stats);
+        if (upgraded) cache[key] = upgraded;
+        else delete cache[key];
       }
     }
     if (write) {
@@ -225,6 +239,7 @@ async function main() {
 export {
   buildPrompt,
   deriveFlows,
+  upgradeCard,
   normalizeFlows,
   validateBaseFlows,
   chainFlows,

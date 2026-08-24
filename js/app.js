@@ -418,7 +418,8 @@ const APP = {
       const fingerprint = this._scenarioFingerprint(candidate.scenario);
       if (!fingerprint) continue;
       const normalized = normalizeCardPrerequisites(candidate);
-      if (hasDegenerateLinearOptionTopology(normalized)) continue;
+      if (!hasUsableCorrectOptionWiring(normalized)
+          || hasDegenerateLinearOptionTopology(normalized)) continue;
       byFingerprint.delete(fingerprint);
       byFingerprint.set(fingerprint, normalized);
     }
@@ -506,6 +507,7 @@ const APP = {
       const card = normalizeCardPrerequisites(data?.card);
       const fingerprint = this._scenarioFingerprint(card?.scenario);
       if (!card || !fingerprint || excludedFingerprints.has(fingerprint)
+          || !hasUsableCorrectOptionWiring(card)
           || hasDegenerateLinearOptionTopology(card)) {
         throw new Error('server returned an invalid or excluded card');
       }
@@ -521,6 +523,8 @@ const APP = {
     if (!options.force) {
       const topicCards = SEED_CARDS.filter(c =>
         c.topic === topic && !excludedFingerprints.has(this._scenarioFingerprint(c.scenario))
+          && hasUsableCorrectOptionWiring(c)
+          && !hasDegenerateLinearOptionTopology(c)
       );
       if (topicCards.length > 0) {
         return normalizeCardPrerequisites(topicCards[Math.floor(Math.random() * topicCards.length)]);
@@ -606,6 +610,7 @@ const APP = {
     try { cards = JSON.parse(localStorage.getItem('sdf_custom_cards') || '[]'); } catch (_) {}
     for (const card of cards.reverse()) {
       normalizeCardPrerequisites(card);
+      if (!hasUsableCorrectOptionWiring(card) || hasDegenerateLinearOptionTopology(card)) continue;
       if (!SEED_CARDS.some(existing => existing.id === card.id)) SEED_CARDS.unshift(card);
     }
   },
@@ -723,10 +728,17 @@ const APP = {
   _resolveCardContent(id) {
     const record = this.profile?.cardHistory?.[id];
     if (record && typeof record === 'object' && record.card && typeof record.card === 'object') {
-      return { ...record.card, id };
+      const card = normalizeCardPrerequisites({ ...record.card, id });
+      if (hasUsableCorrectOptionWiring(card) && !hasDegenerateLinearOptionTopology(card)) {
+        return card;
+      }
     }
     const seed = SEED_CARDS.find(card => card.id === id);
-    return seed || null;
+    if (!seed) return null;
+    const normalizedSeed = normalizeCardPrerequisites(seed);
+    return hasUsableCorrectOptionWiring(normalizedSeed)
+      && !hasDegenerateLinearOptionTopology(normalizedSeed)
+      ? normalizedSeed : null;
   },
 
   /* Cards whose scheduled review has arrived, ordered by predicted-recall
@@ -2137,7 +2149,8 @@ const APP = {
       const cards = [];
       savedCards.forEach((candidate, index) => {
         const card = normalizeCardPrerequisites(candidate);
-        if (hasDegenerateLinearOptionTopology(card)) return;
+        if (!hasUsableCorrectOptionWiring(card)
+            || hasDegenerateLinearOptionTopology(card)) return;
         if (index < savedIndex) resumeIndex++;
         cards.push(card);
       });

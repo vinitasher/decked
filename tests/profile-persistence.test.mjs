@@ -23,6 +23,9 @@ const context = {
   hasDegenerateLinearOptionTopology(card) {
     return card?.id === 'bad-diagram';
   },
+  hasUsableCorrectOptionWiring(card) {
+    return card?.id !== 'missing-correct-diagram';
+  },
   SEED_CARDS: [],
   fetch() { throw new Error('network should not be called'); }
 };
@@ -138,6 +141,32 @@ test('resumeSession drops cached cards with degenerate diagram topology', () => 
   }
 });
 
+test('resumeSession drops cached cards without correct-option wiring', () => {
+  const app = context.appForTest;
+  const originalStartTimer = app._startTimer;
+  const originalShowCard = app.showCard;
+  const originalShowScreen = app.showScreen;
+  const bad = { id: 'missing-correct-diagram', scenario: 'Missing wiring', topic: 'caching' };
+  const good = { id: 'good-diagram', scenario: 'Good', topic: 'caching' };
+  context.localStorage.setItem('sdf_resume', JSON.stringify({
+    cards: [bad, good], index: 1, start: 123
+  }));
+  app._startTimer = () => {};
+  app.showCard = () => {};
+  app.showScreen = () => {};
+
+  try {
+    assert.equal(app.resumeSession(), true);
+    assert.equal(app.sessionCards.map(card => card.id).join(','), 'good-diagram');
+    assert.equal(app.sessionIndex, 0);
+  } finally {
+    app._startTimer = originalStartTimer;
+    app.showCard = originalShowCard;
+    app.showScreen = originalShowScreen;
+    context.localStorage.removeItem('sdf_resume');
+  }
+});
+
 test('topic review remains valid after profile serialization and reload', () => {
   const app = context.appForTest;
   app.profile = context.normalizeProfileDataForTest({
@@ -200,6 +229,20 @@ test('card pools preserve valid legacy cards and deduplicate scenarios', () => {
   // Assert
   assert.equal(pool.cards.length, 1);
   assert.equal(pool.cards[0].id, 'replacement');
+});
+
+test('card pools discard entries without correct-option wiring', () => {
+  // Arrange
+  resetApp();
+  const invalid = generatedCard('missing-correct-diagram', 'Missing wiring');
+  context.localStorage.setItem('sdf_gen_caching:3', JSON.stringify({ cards: [invalid] }));
+
+  // Act
+  const pool = context.appForTest._readCardPool('caching:3');
+
+  // Assert
+  assert.deepEqual(JSON.parse(JSON.stringify(pool)), { cards: [] });
+  assert.deepEqual(JSON.parse(context.localStorage.getItem('sdf_gen_caching:3')), { cards: [] });
 });
 
 test('fetchCard selects an unseen local variant without network access', async () => {
@@ -282,6 +325,36 @@ test('malformed storage recovers through generation and offline failures use see
   } finally {
     context.SEED_CARDS.pop();
   }
+});
+
+test('API responses without correct-option wiring are rejected', async () => {
+  // Arrange
+  resetApp();
+  const invalid = generatedCard('missing-correct-diagram', 'Missing wiring');
+  context.fetch = async () => ({ ok: true, async json() { return { card: invalid }; } });
+
+  // Act / Assert
+  await assert.rejects(
+    () => context.appForTest.fetchCard('caching', 3, [], { force: true }),
+    /server returned an invalid or excluded card/
+  );
+});
+
+test('custom-card and reviewed-card fallbacks reject missing correct wiring', () => {
+  // Arrange
+  resetApp();
+  const invalid = generatedCard('missing-correct-diagram', 'Missing wiring');
+  context.localStorage.setItem('sdf_custom_cards', JSON.stringify([invalid]));
+  context.appForTest._loadCustomCards();
+  context.appForTest.profile.cardHistory[invalid.id] = {
+    card: invalid,
+    nextReviewAt: 0
+  };
+
+  // Act / Assert
+  assert.equal(context.SEED_CARDS.some(card => card.id === invalid.id), false);
+  assert.equal(context.appForTest._resolveCardContent(invalid.id), null);
+  context.localStorage.removeItem('sdf_custom_cards');
 });
 
 test('seen ledgers persist per profile and prefetch does not mark cards seen', async () => {

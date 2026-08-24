@@ -7,6 +7,7 @@ import {
   buildPrompt,
   deduplicatePool,
   hasDegenerateLinearOptionTopology,
+  hasUsableCorrectOptionWiring,
   normalizeCacheValue,
   onRequest,
   scenarioFingerprint,
@@ -24,7 +25,8 @@ const localGenerator = require('../server/generate-card.js');
 const {
   buildPrompt: buildFlowUpgradePrompt,
   deriveFlows: deriveCachedFlows,
-  modelSequence: flowModelSequence
+  modelSequence: flowModelSequence,
+  upgradeCard: upgradeCachedCard
 } = await import('../scripts/upgrade-cached-card-flows.mjs');
 
 const card = {
@@ -165,6 +167,18 @@ test('cache normalization removes cards whose options share one linear topology'
   assert.deepEqual(normalizeCacheValue({ cards: [badCard] }, 'caching', 2), { cards: [] });
 });
 
+test('cache normalization removes cards without usable correct-option wiring', () => {
+  const badCard = JSON.parse(JSON.stringify(card));
+  badCard.id = 'missing-correct-wiring';
+  badCard.correct = 'B';
+  badCard.options = badCard.options.map(option => option.id === 'B'
+    ? { ...option, flows: [{ from: 'API', to: 'Unknown', verb: 'queries', kind: 'sync' }] }
+    : option);
+
+  assert.equal(hasUsableCorrectOptionWiring(badCard), false);
+  assert.deepEqual(normalizeCacheValue({ cards: [badCard] }, 'queues', 2), { cards: [] });
+});
+
 test('standalone generator rejects cards whose options share one linear topology', () => {
   const linearOptions = ['A', 'B', 'C', 'D'].map(id => ({
     id,
@@ -241,6 +255,19 @@ test('cached flow migration rejects an all-linear option topology', async () => 
 
   assert.match(result.error, /option flows collapse into the same linear topology/);
   assert.deepEqual(result.optionFlows, {});
+});
+
+test('cached flow migration drops cards without usable correct-option wiring', async () => {
+  const badCard = JSON.parse(JSON.stringify(card));
+  badCard.id = 'cached-missing-correct-wiring';
+  badCard.options = badCard.options.map(option => option.id === badCard.correct
+    ? { ...option, flows: [] }
+    : option);
+  const stats = { updated: 0, skipped: 0, errors: 0, dropped: 0 };
+
+  assert.equal(await upgradeCachedCard(badCard, stats), null);
+  assert.equal(stats.dropped, 1);
+  assert.equal(stats.errors, 1);
 });
 
 test('generation falls back when the primary model is unavailable and caches the card', async () => {

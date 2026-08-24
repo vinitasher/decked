@@ -41,6 +41,13 @@ function validOptionEdges(flows, nodes) {
     .map(flow => ({ from: flow.from, to: flow.to }));
 }
 
+export function hasUsableCorrectOptionWiring(card) {
+  const nodes = Array.isArray(card?.nodes) ? card.nodes : [];
+  const options = Array.isArray(card?.options) ? card.options : [];
+  const correct = options.find(option => option?.id === card?.correct);
+  return validOptionEdges(correct?.flows, nodes).length > 0;
+}
+
 function uniqueOptionEdges(edges) {
   return [...new Map(edges.map(edge => [edge.from + '\u0000' + edge.to, edge])).values()];
 }
@@ -198,7 +205,8 @@ export function normalizeCacheValue(value, topic, difficulty) {
       cards
         .filter(card => card && typeof card === 'object' && !Array.isArray(card))
         .map(card => normalizeCard(card, topic, difficulty))
-        .filter(card => !hasDegenerateLinearOptionTopology(card))
+        .filter(card => hasUsableCorrectOptionWiring(card)
+          && !hasDegenerateLinearOptionTopology(card))
     )
   };
 }
@@ -293,6 +301,9 @@ export function validateGeneratedCard(generatedCard, designatedCorrect) {
     if (option.flows.some(flow => typeof flow.verb !== 'string' || !flow.verb.trim())) {
       throw new Error('Invalid field: option flows must have non-empty labels');
     }
+  }
+  if (!hasUsableCorrectOptionWiring(generatedCard)) {
+    throw new Error('Invalid field: correct option wiring is unavailable');
   }
   if (hasDegenerateLinearOptionTopology(generatedCard)) {
     throw new Error('Invalid field: option flows collapse into the same linear topology');

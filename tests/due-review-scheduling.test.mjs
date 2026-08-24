@@ -115,17 +115,26 @@ function seedRandom(value) {
 
 /* Snapshot-shaped content mirroring the persisted `review.card` field */
 function snapshotCard(id, scenario, topic, difficulty) {
+  const nodes = ['Client', 'API', 'Database'];
+  const flows = [
+    { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+    { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+  ];
+  const clientOnlyFlow = [flows[0]];
+  const databaseOnlyFlow = [flows[1]];
   return {
     id,
     topic,
     difficulty,
     prerequisiteTopics: ['api-design'],
     scenario,
+    nodes,
+    flows,
     options: [
-      { id: 'A', label: 'Option A', prerequisiteTopics: ['cache-invalidation'] },
-      { id: 'B', label: 'Option B', prerequisiteTopics: ['cache-coherence'] },
-      { id: 'C', label: 'Option C', prerequisiteTopics: ['read-replication'] },
-      { id: 'D', label: 'Option D', prerequisiteTopics: ['cdn-caching'] }
+      { id: 'A', label: 'Option A', prerequisiteTopics: ['cache-invalidation'], flows: clientOnlyFlow.map(flow => ({ ...flow })) },
+      { id: 'B', label: 'Option B', prerequisiteTopics: ['cache-coherence'], flows: flows.map(flow => ({ ...flow })) },
+      { id: 'C', label: 'Option C', prerequisiteTopics: ['read-replication'], flows: databaseOnlyFlow.map(flow => ({ ...flow })) },
+      { id: 'D', label: 'Option D', prerequisiteTopics: ['cdn-caching'], flows: clientOnlyFlow.map(flow => ({ ...flow })) }
     ],
     correct: 'B',
     explanation: `Explanation for ${scenario}`
@@ -170,7 +179,10 @@ test('past-due cards appear first with content matching the snapshot', async () 
   assert.equal(cards[0].scenario, due.scenario);
   assert.equal(cards[0].correct, 'B');
   assert.equal(cards[0].explanation, `Explanation for ${due.scenario}`);
-  assert.deepEqual(cards[0].options, due.options);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(cards[0].options)),
+    JSON.parse(JSON.stringify(due.options))
+  );
   assert.equal(cards[0].review, true);
 });
 

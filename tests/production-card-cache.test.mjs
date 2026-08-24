@@ -3,7 +3,10 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { buildSnapshot } from '../scripts/dump-production-card-cache.mjs';
-import { hasDegenerateLinearOptionTopology } from '../functions/api/generate.js';
+import {
+  hasDegenerateLinearOptionTopology,
+  hasUsableCorrectOptionWiring
+} from '../functions/api/generate.js';
 import { difficultyFromScenario } from '../functions/shared/requirement-count.js';
 
 const snapshot = JSON.parse(
@@ -105,6 +108,8 @@ test('every cached card carries validated diagram flows', () => {
         `${key}/${card.id} first flow must leave the end-user node`);
       assert.equal(hasDegenerateLinearOptionTopology(card), false,
         `${key}/${card.id} options must not collapse into one linear topology`);
+      assert.equal(hasUsableCorrectOptionWiring(card), true,
+        `${key}/${card.id} must have usable correct-option wiring`);
       const correctOption = card.options.find(option => option?.id === card.correct);
       assert.ok(Array.isArray(correctOption?.flows) && correctOption.flows.length > 0,
         `${key}/${card.id} correct option must carry wiring for compare diagrams`);

@@ -104,7 +104,23 @@ function seedRandom(value) {
 }
 
 function generatedCard(id, scenario, topic, difficulty) {
-  return { id, scenario, topic, difficulty, prerequisiteTopics: [] };
+  const nodes = ['Client', 'API', 'Database'];
+  const flows = [
+    { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+    { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+  ];
+  return {
+    id,
+    scenario,
+    topic,
+    difficulty,
+    prerequisiteTopics: [],
+    nodes,
+    flows,
+    options: [{ id: 'A', label: 'Option A', prerequisiteTopics: [], flows }],
+    correct: 'A',
+    explanation: 'Explanation'
+  };
 }
 
 test('ranked topics include every catalog topic at a mastery-derived difficulty', () => {
@@ -190,7 +206,7 @@ test('due reviews limit the fresh budget of a session', async () => {
   seedRandom(0);
   const app = freshApp();
   for (let i = 0; i < 5; i++) {
-    const due = { id: `due-${i}`, scenario: `Due scenario ${i}`, topic: 'caching', difficulty: 2, prerequisiteTopics: [], options: [], correct: 'A' };
+    const due = generatedCard(`due-${i}`, `Due scenario ${i}`, 'caching', 2);
     app.profile.cardHistory[`due-${i}`] = {
       stability: 1.5, difficulty: 0.5, interval: 3,
       nextReviewAt: Date.now() - 1000 - i * 1000,
@@ -216,7 +232,7 @@ test('a session saturated with due reviews serves no fresh cards', async () => {
   seedRandom(0);
   const app = freshApp();
   for (let i = 0; i < 8; i++) {
-    const due = { id: `due-${i}`, scenario: `Due scenario ${i}`, topic: 'caching', difficulty: 2, prerequisiteTopics: [], options: [], correct: 'A' };
+    const due = generatedCard(`due-${i}`, `Due scenario ${i}`, 'caching', 2);
     app.profile.cardHistory[`due-${i}`] = {
       stability: 1.5, difficulty: 0.5, interval: 3,
       nextReviewAt: Date.now() - 1000 - i * 1000,
@@ -326,7 +342,20 @@ test('due reviews keep the first position in a ramped session', async () => {
       topic: 'caching',
       difficulty: 5,
       prerequisiteTopics: ['api-design'],
-      options: [{ id: 'A', label: 'Option A', prerequisiteTopics: [] }],
+      nodes: ['Client', 'API', 'Database'],
+      flows: [
+        { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+        { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+      ],
+      options: [{
+        id: 'A',
+        label: 'Option A',
+        prerequisiteTopics: [],
+        flows: [
+          { from: 'Client', to: 'API', verb: 'requests', kind: 'sync' },
+          { from: 'API', to: 'Database', verb: 'queries', kind: 'sync' }
+        ]
+      }],
       correct: 'A',
       explanation: 'Explanation'
     }
