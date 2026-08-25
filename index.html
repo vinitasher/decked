@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/style.css">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#3949ab">
+<meta name="theme-color" content="#0b1324">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SysDesignCards">
@@ -25,17 +25,22 @@
   <!-- Welcome / Dashboard -->
   <div id="screen-welcome" class="screen">
     <div class="welcome-header">
-      <p id="server-status" style="font-size:0.75rem;margin-bottom:8px;">Checking server...</p>
-      <div id="account-bar" class="account-bar hidden"></div>
-      <div id="upgrade-banner" class="upgrade-banner hidden"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h1 style="margin:0">System Design Flashcards<span class="status-badge" title="Stage: beta">Beta</span></h1>
-        <button id="theme-toggle" class="btn btn-sm btn-outline" onclick="APP.toggleTheme()" style="font-size:0.8rem;padding:4px 10px;">🌙</button>
+      <div class="welcome-topline">
+        <p id="server-status" class="server-status">Checking server...</p>
+        <div id="account-bar" class="account-bar hidden"></div>
       </div>
-      <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
+      <div id="upgrade-banner" class="upgrade-banner hidden"></div>
+      <div class="welcome-title-row">
+        <div>
+          <span class="eyebrow">Adaptive system design practice</span>
+          <h1>System Design Flashcards<span class="status-badge" title="Stage: beta">Beta</span></h1>
+          <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
+        </div>
+        <button id="theme-toggle" class="btn btn-sm btn-outline theme-toggle" onclick="APP.toggleTheme()" aria-label="Toggle color theme">🌙</button>
+      </div>
       <div id="quota-bar" class="quota-bar hidden"></div>
     </div>
-    <section class="intro" aria-labelledby="intro-heading">
+    <section class="intro welcome-hero" aria-labelledby="intro-heading">
       <h2 id="intro-heading">Train the decisions, not just the facts</h2>
       <p>System design is about choosing between trade-offs. Each card drops you into a mini architecture problem between two nodes with a few plausible options — you pick the best wiring, then learn why it wins.</p>
       <ol class="how-list">
@@ -68,8 +73,8 @@
     <section class="progress-section" aria-label="Study progress">
       <div id="study-goal" class="study-goal">
       <div class="study-goal-header">
-        <span>🎯 Daily Goal</span>
-        <span><input type="number" id="goal-target" value="10" min="1" max="50" style="width:50px;padding:2px 4px;border:1px solid var(--card-border);border-radius:4px;background:var(--card-bg);color:var(--fg);font-size:0.85rem;" onchange="APP.setGoal(this.value)"> cards</span>
+        <span><span class="goal-icon" aria-hidden="true">✦</span> Daily Goal</span>
+        <span><input type="number" id="goal-target" class="goal-input" value="10" min="1" max="50" onchange="APP.setGoal(this.value)"> cards</span>
       </div>
       <div id="goal-progress"><div id="goal-fill"></div></div>
       </div>
@@ -97,23 +102,23 @@
   <!-- Create Card -->
   <div id="screen-create" class="screen hidden">
     <h1>Create a Card</h1>
-    <p style="color:#666;font-size:0.9rem">Write your own system design scenario to add to the deck.</p>
-    <div style="display:flex;flex-direction:column;gap:10px;margin:16px 0;">
-      <input id="create-topic" placeholder="Topic (e.g. caching, queues, databases)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
-      <input id="create-difficulty" type="number" min="1" max="5" placeholder="Difficulty (1-5)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
+    <p class="screen-intro">Write your own system design scenario to add to the deck.</p>
+    <div class="create-form">
+      <input id="create-topic" class="form-field" placeholder="Topic (e.g. caching, queues, databases)">
+      <input id="create-difficulty" class="form-field" type="number" min="1" max="5" placeholder="Difficulty (1-5)">
       <fieldset class="prerequisite-fieldset">
         <legend>Topics to know first</legend>
         <div id="create-prerequisites" class="prerequisite-options"></div>
       </fieldset>
-      <textarea id="create-scenario" placeholder="Describe the scenario..." rows="4" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;font-family:inherit;"></textarea>
-      <input id="create-nodes" placeholder="Nodes (comma-separated, e.g. Client, API Server, DB)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
-      <input id="create-optionA" placeholder="Option A" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
-      <input id="create-optionB" placeholder="Option B (correct)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
-      <input id="create-optionC" placeholder="Option C" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
-      <input id="create-optionD" placeholder="Option D (optional)" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;">
-      <textarea id="create-explanation" placeholder="Why is B correct? Explain the trade-offs..." rows="3" style="padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.9rem;font-family:inherit;"></textarea>
+      <textarea id="create-scenario" class="form-field" placeholder="Describe the scenario..." rows="4"></textarea>
+      <input id="create-nodes" class="form-field" placeholder="Nodes (comma-separated, e.g. Client, API Server, DB)">
+      <input id="create-optionA" class="form-field" placeholder="Option A">
+      <input id="create-optionB" class="form-field" placeholder="Option B (correct)">
+      <input id="create-optionC" class="form-field" placeholder="Option C">
+      <input id="create-optionD" class="form-field" placeholder="Option D (optional)">
+      <textarea id="create-explanation" class="form-field" placeholder="Why is B correct? Explain the trade-offs..." rows="3"></textarea>
     </div>
-    <div style="display:flex;gap:12px;">
+    <div class="secondary-actions">
       <button class="btn btn-primary" onclick="APP.saveCreatedCard()">Add to Deck</button>
       <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Cancel</button>
     </div>
@@ -123,10 +128,10 @@
   <!-- Session -->
   <div id="screen-session" class="screen hidden">
     <div class="card-header">
-      <div style="display:flex;align-items:center;gap:8px;">
+      <div class="card-progress">
         <button type="button" id="session-dashboard-btn" class="session-dashboard-btn" aria-label="Back to dashboard" title="Back to dashboard">←</button>
         <span id="card-counter">1 / 8</span>
-        <button id="bookmark-btn" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card">☆</button>
+        <button id="bookmark-btn" class="bookmark-btn" onclick="APP.toggleBookmark(APP.currentCard.id)" title="Bookmark this card" aria-label="Bookmark this card">☆</button>
       </div>
       <div class="card-meta">
         <span id="card-topic">Topic</span>
@@ -146,16 +151,16 @@
           <div id="confidence-buttons" class="hidden">
             <p>How difficult was this question?</p>
             <div class="confidence-options">
-              <button type="button" class="btn btn-sm btn-outline" data-confidence="1" style="border-color:#e53935;color:#e53935;">Hard</button>
-              <button type="button" class="btn btn-sm btn-outline" data-confidence="2" style="border-color:#f9a825;color:#f9a825;">Good</button>
-              <button type="button" class="btn btn-sm btn-outline" data-confidence="3" style="border-color:#43a047;color:#43a047;">Easy</button>
-              <button type="button" class="btn btn-sm btn-outline" data-confidence="4" style="border-color:#1b5e20;color:#1b5e20;">Perfect</button>
+              <button type="button" class="btn btn-sm btn-outline confidence-hard" data-confidence="1">Hard</button>
+              <button type="button" class="btn btn-sm btn-outline confidence-good" data-confidence="2">Good</button>
+              <button type="button" class="btn btn-sm btn-outline confidence-easy" data-confidence="3">Easy</button>
+              <button type="button" class="btn btn-sm btn-outline confidence-perfect" data-confidence="4">Perfect</button>
             </div>
           </div>
           <div id="quality-rating" class="hidden">
-            <button class="btn btn-sm btn-outline" onclick="APP.rateCard('bad')" style="border-color:#e53935;color:#e53935" aria-label="Poor card quality">👎</button>
+            <button class="btn btn-sm btn-outline quality-bad" onclick="APP.rateCard('bad')" aria-label="Poor card quality">👎</button>
             <span>Rate card quality</span>
-            <button class="btn btn-sm btn-outline" onclick="APP.rateCard('good')" style="border-color:#43a047;color:#43a047" aria-label="Good card quality">👍</button>
+            <button class="btn btn-sm btn-outline quality-good" onclick="APP.rateCard('good')" aria-label="Good card quality">👍</button>
           </div>
           <div class="next-card-actions">
             <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>

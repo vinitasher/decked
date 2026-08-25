@@ -1297,7 +1297,7 @@ const APP = {
     // retrieval practice: hide diagram until answered (user can toggle to peek)
     if (!this._diagramPeeking) this._diagramPeeking = {};
     const canPeek = this._diagramPeeking[card.id] || false;
-    document.getElementById('diagram-container').innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;font-size:0.85rem">📐 Diagram hidden for retrieval practice<br>Answer first, then the diagram reveals</p>';
+    document.getElementById('diagram-container').innerHTML = '<p class="diagram-placeholder">📐 Diagram hidden for retrieval practice<br>Answer first, then the diagram reveals</p>';
     if (canPeek) {
       this.peekDiagram();
     }
@@ -1313,7 +1313,7 @@ const APP = {
       const optionPrerequisites = opt.prerequisiteTopics
         .map(topic => this._wikiLink(topic))
         .join(', ');
-      btn.innerHTML = `<span class="option-letter">${opt.id}<span style="display:block;font-size:0.55rem;opacity:0.5;">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${opt.label}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
+      btn.innerHTML = `<span class="option-letter">${opt.id}<span class="option-key">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${opt.label}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-label', `Option ${opt.id}: ${opt.label}`);
       btn.onclick = () => this.answer(opt.id);
@@ -1954,7 +1954,7 @@ const APP = {
       const earned = new Set(this.profile.achievements || []);
       aEl.innerHTML = this._achievementDefs.map(d => {
         const has = earned.has(d.id);
-        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:${has ? '#e8f5e9' : '#f5f5f5'};border-radius:20px;font-size:0.75rem;border:1px solid ${has ? '#81c784' : '#e0e0e0'};color:${has ? '#2e7d32' : '#bbb'}">${has ? '✓' : '○'} ${d.label}</span>`;
+        return `<span class="achievement-pill${has ? ' is-earned' : ''}">${has ? '✓' : '○'} ${d.label}</span>`;
       }).join('');
     }
 
@@ -2017,7 +2017,7 @@ const APP = {
       el.innerHTML = sessions.map((s, i) => {
         const d = new Date(s.date);
         const pct = s.cards > 0 ? Math.round(100 * s.correct / s.cards) : 0;
-        return `<div style="background:var(--card-bg);border-radius:8px;padding:10px 14px;margin:6px 0;box-shadow:0 1px 3px var(--stat-shadow);display:flex;justify-content:space-between;"><span>${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><span>${s.cards} cards · ${pct}% · ${s.topics.length} topics</span></div>`;
+        return `<div class="history-item"><span>${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><span>${s.cards} cards · ${pct}% · ${s.topics.length} topics</span></div>`;
       }).join('');
     }
     this.showScreen('history');
@@ -2064,16 +2064,16 @@ const APP = {
     const correct = this.profile.totalCorrect;
     const total = this.profile.totalAnswered;
     const pct = total > 0 ? Math.round(100 * correct / total) : 0;
-    let html = `<p>Session complete — <strong>${this.sessionCards.length}</strong> cards, <strong>${pct}%</strong> correct</p><div style="margin:12px 0;">`;
+    let html = `<p>Session complete — <strong>${this.sessionCards.length}</strong> cards, <strong>${pct}%</strong> correct</p><div class="review-list">`;
     for (let i = 0; i < this.sessionCards.length; i++) {
       const card = this.sessionCards[i];
       const review = this.getCardReview(card.id);
       const wasCorrect = review.lastConfidence && review.lastConfidence > 0;
-      html += `<div style="display:flex;gap:8px;align-items:start;padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;border-left:3px solid ${wasCorrect ? 'var(--success)' : 'var(--danger)'}">
-        <span style="font-size:0.8rem;font-weight:600;min-width:24px;">${i+1}.</span>
-        <div style="flex:1;font-size:0.8rem;">
+      html += `<div class="review-item ${wasCorrect ? 'is-correct' : 'is-incorrect'}">
+        <span class="review-index">${i+1}.</span>
+        <div class="review-copy">
           <strong>${card.topic}</strong>: ${card.scenario.substring(0, 70)}…<br>
-          <span style="color:var(--muted)">→ ${card.correct} · ${SRS.confidenceLabel(review.lastConfidence)}</span>
+          <span class="review-meta">→ ${card.correct} · ${SRS.confidenceLabel(review.lastConfidence)}</span>
         </div>
       </div>`;
     }
@@ -2310,7 +2310,7 @@ const APP = {
     const bm = JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]');
     if (bm.length === 0) { el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">No bookmarked cards yet. Use the ★ button during a session to save one.</p>'; return; }
     const cards = SEED_CARDS.filter(c => bm.includes(c.id));
-    el.innerHTML = cards.map(c => `<div style="padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;font-size:0.85rem;"><strong>${c.topic}</strong>: ${c.scenario.substring(0, 60)}… <span style="color:var(--muted)">[${c.correct}]</span></div>`).join('');
+    el.innerHTML = cards.map(c => `<div class="bookmark-item"><strong>${c.topic}</strong>: ${c.scenario.substring(0, 60)}… <span class="item-meta">[${c.correct}]</span></div>`).join('');
   },
 
   /* ——— Search / Filter ——— */
@@ -2325,7 +2325,7 @@ const APP = {
     if (topicFilter) results = results.filter(c => c.topic === topicFilter);
     document.getElementById('search-results').innerHTML = results.length === 0
       ? '<p style="color:var(--muted);font-size:0.85rem;">No matching cards.</p>'
-      : results.slice(0, 20).map(c => `<div style="padding:8px;background:var(--card-bg);border-radius:6px;margin:4px 0;font-size:0.8rem;"><strong>${c.topic}</strong> ★${c.difficulty}: ${c.scenario.substring(0, 80)}… <span style="color:var(--muted)">[${c.correct}]</span></div>`).join('');
+      : results.slice(0, 20).map(c => `<div class="search-item"><strong>${c.topic}</strong> <span class="difficulty-mark">★${c.difficulty}</span>: ${c.scenario.substring(0, 80)}… <span class="item-meta">[${c.correct}]</span></div>`).join('');
   },
 
   /* ——— Session Resume ——— */

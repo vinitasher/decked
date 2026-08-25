@@ -328,3 +328,22 @@ the home screen and launches in full-screen mode. `navigator.standalone` is
 Chrome DevTools > Lighthouse > Progressive Web App — should score 100% on
 installability checks (valid manifest, registered service worker, HTTPS,
 icons at required sizes).
+
+## Visual verification
+
+The dashboard and study surfaces use the same responsive visual system across
+desktop, phone, dark mode, and high-contrast mode. Verify the static shell with
+the existing checks, then render `index.html` at 1440px and 390px widths and
+inspect the dashboard, card controls, and secondary-screen surfaces.
+
+```sh
+bash check.sh
+bash build.sh
+chromium --headless --no-sandbox --window-size=1440,1200 \
+  --screenshot=/tmp/system-design-flashcards-desktop.png index.html
+chromium --headless --no-sandbox --window-size=390,1200 \
+  --screenshot=/tmp/system-design-flashcards-mobile.png index.html
+```
+
+The visual refresh is presentation-only: card data, routes, local progress,
+profile sync, account behavior, and study algorithms remain unchanged.

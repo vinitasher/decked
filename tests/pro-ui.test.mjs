@@ -98,5 +98,18 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
 });
 
 test('service worker cache version is bumped for the account assets', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v17';/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v18';/);
+});
+
+test('modern visual system keeps dashboard and study surfaces hooked together', () => {
+  assert.match(html, /class="welcome-topline"/);
+  assert.match(html, /class="intro welcome-hero"/);
+  assert.match(html, /class="card-progress"/);
+  assert.match(html, /class="bookmark-btn"/);
+  assert.match(css, /--surface-strong: #101a30;/);
+  assert.match(css, /\.welcome-hero \{/);
+  assert.match(css, /\.diagram-placeholder \{/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.welcome-actions \{ flex-direction: column; \}/);
+  assert.match(app, /class="achievement-pill/);
+  assert.match(app, /class="review-item \$\{/);
 });
