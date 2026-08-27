@@ -1,6 +1,6 @@
 /* Service worker — offline cache for PWA */
-const CACHE = 'sdf-v18';
-const STATIC = ['/', '/index.html', '/css/style.css', '/js/app.js', '/js/srs.js', '/js/render.js', '/js/cards.js', '/js/wiki.js', '/manifest.json', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/favicon.ico', 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'];
+const CACHE = 'sdf-v20';
+const STATIC = ['/', '/index.html', '/css/style.css', '/js/app.js', '/js/srs.js', '/js/render.js', '/js/cards.js', '/js/wiki.js', '/js/sandbox.js', '/manifest.json', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/favicon.ico', 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC)));

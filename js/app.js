@@ -5,7 +5,35 @@ const SERVER_BASE = window.location.hostname === 'localhost' || window.location.
 
 /* Screens that are URL-addressable via hash routes (#/welcome, #/search, ...).
    Wiki topics are addressable per-entry: #/wiki/<topic>. */
-const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'wiki', 'stats'];
+const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'wiki', 'sandbox', 'stats'];
+
+/* A visible challenge ladder gives the adaptive planner a learner-facing
+   progression. Thresholds are deliberately modest: level changes require
+   both practice and evidence of accuracy across more than one topic. */
+const LEARNING_LEVELS = Object.freeze([
+  { level: 1, label: 'Foundations', description: 'Name the right building block.', minAnswered: 0, minAccuracy: 0, minTopics: 0 },
+  { level: 2, label: 'Trade-offs', description: 'Choose under one concrete constraint.', minAnswered: 3, minAccuracy: 0.6, minTopics: 1 },
+  { level: 3, label: 'Pressure test', description: 'Balance scale, latency, and cost.', minAnswered: 8, minAccuracy: 0.65, minTopics: 2 },
+  { level: 4, label: 'Failure modes', description: 'Design around a broken dependency.', minAnswered: 16, minAccuracy: 0.72, minTopics: 4 },
+  { level: 5, label: 'Architecture judgment', description: 'Defend a design across competing constraints.', minAnswered: 30, minAccuracy: 0.78, minTopics: 6 }
+]);
+
+function learningLevelForProfile(profile = {}) {
+  const answered = Math.max(0, Number(profile.totalAnswered) || 0);
+  const correct = Math.max(0, Number(profile.totalCorrect) || 0);
+  const accuracy = answered > 0 ? correct / answered : 0;
+  const topics = Object.values(profile.topicScores || {})
+    .filter(score => score && Number(score.cardsReviewed) > 0).length;
+  let level = LEARNING_LEVELS[0].level;
+  for (const milestone of LEARNING_LEVELS) {
+    if (answered >= milestone.minAnswered
+        && accuracy >= milestone.minAccuracy
+        && topics >= milestone.minTopics) {
+      level = milestone.level;
+    }
+  }
+  return level;
+}
 
 function normalizeProfileData(profile) {
   const normalized = profile && typeof profile === 'object' ? profile : {};
@@ -39,6 +67,19 @@ function normalizeProfileData(profile) {
       ? entries.filter(entry => entry && typeof entry === 'object' && typeof entry.correct === 'boolean').slice(-10)
       : [];
   }
+
+  normalized.sandbox = normalized.sandbox && typeof normalized.sandbox === 'object'
+    ? normalized.sandbox : {};
+  normalized.sandbox.runs = Number.isFinite(normalized.sandbox.runs)
+    ? Math.max(0, normalized.sandbox.runs) : 0;
+  normalized.sandbox.correctPredictions = Number.isFinite(normalized.sandbox.correctPredictions)
+    ? Math.max(0, normalized.sandbox.correctPredictions) : 0;
+  normalized.sandbox.currentStreak = Number.isFinite(normalized.sandbox.currentStreak)
+    ? Math.max(0, normalized.sandbox.currentStreak) : 0;
+  normalized.sandbox.bestStreak = Number.isFinite(normalized.sandbox.bestStreak)
+    ? Math.max(0, normalized.sandbox.bestStreak) : 0;
+  normalized.sandbox.completedLabs = Number.isFinite(normalized.sandbox.completedLabs)
+    ? Math.max(0, normalized.sandbox.completedLabs) : 0;
 
   for (const score of Object.values(normalized.topicScores)) {
     score.daysSpanned = Array.isArray(score.daysSpanned) ? [...new Set(score.daysSpanned)] : [];
@@ -321,6 +362,7 @@ const APP = {
   _profileLastSyncedClientUpdatedAt: 0,
   _profileChangeVersion: 0,
   _profilePendingMigration: null,
+  _sandboxState: null,
 
   init() {
     this.loadProfile();
@@ -672,6 +714,7 @@ const APP = {
       || Object.keys(profile.topicAccuracy || {}).length > 0
       || Object.keys(profile._topicCardSeen || {}).length > 0
       || (profile.seenScenarioFingerprints || []).length > 0
+      || Number(profile.sandbox?.runs) > 0
       || Number(profile.totalSessions) > 0
       || Number(profile.totalAnswered) > 0
       || Number(profile.totalCorrect) > 0;
@@ -847,6 +890,10 @@ const APP = {
 
   getTopicScore(topic) {
     return this.profile.topicScores[topic]?.raw ?? 0.5;
+  },
+
+  getLearningLevel() {
+    return learningLevelForProfile(this.profile || {});
   },
 
   isTopicMastered(topic) {
@@ -1073,6 +1120,7 @@ const APP = {
      toward the 60-80% accuracy band. */
   _rankedSessionTopics() {
     const topics = Object.keys(TOPIC_CATALOG || {});
+    const earnedLevel = this.getLearningLevel();
     return topics.map(topic => {
       const mastery = this.profile.topicScores[topic]?.raw ?? 0;
       let difficulty = Math.min(5, 1 + Math.round(mastery * 4));
@@ -1083,6 +1131,10 @@ const APP = {
         if (recent > 0.8) difficulty = Math.min(5, difficulty + 1);
         else if (recent < 0.6) difficulty = Math.max(1, difficulty - 1);
       }
+      // Fresh learners earn harder levels through practice. Direct topic
+      // scores from legacy profiles remain usable, while real answered
+      // sessions get a clear, global ceiling that makes the ladder meaningful.
+      if (Number(this.profile.totalAnswered) > 0) difficulty = Math.min(difficulty, earnedLevel);
       return {
         topic,
         difficulty,
@@ -1279,6 +1331,12 @@ const APP = {
     const difficulty = difficultyFromScenario(card.scenario);
     const diffStars = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
     document.getElementById('card-difficulty').textContent = diffStars;
+    const challengeEl = document.getElementById('challenge-stage');
+    if (challengeEl) {
+      const stage = LEARNING_LEVELS[difficulty - 1] || LEARNING_LEVELS[0];
+      challengeEl.textContent = `Level ${stage.level} · ${stage.label}`;
+      challengeEl.title = stage.description;
+    }
     const requirementInfo = countScenarioRequirements(card.scenario);
     const requirementsEl = document.getElementById('card-requirements');
     if (requirementsEl) {
@@ -1912,6 +1970,8 @@ const APP = {
       this.renderBookmarks();
     } else if (route === 'learning-path') {
       this.showLearningPath();
+    } else if (route === 'sandbox') {
+      this.showSandbox();
     } else if (route === 'stats') {
       this.showStats();
     } else if (route === 'history') {
@@ -1944,6 +2004,7 @@ const APP = {
     const statStreak = document.getElementById('stat-streak');
     if (statStreak) statStreak.textContent = this.profile.streaks.current;
     this.renderGoal();
+    this.renderChallengeLadder();
     // show resume button if session state exists
     const resumeBtn = document.getElementById('resume-btn');
     if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem('sdf_resume'));
@@ -1974,6 +2035,43 @@ const APP = {
         const mastered = this.isTopicMastered(t) ? '★' : '';
       return `<div class="topic-row"><span>${topicLabels[t] || t} ${mastered}</span><div class="topic-bar"><div class="topic-fill" style="width:${pct}%"></div></div><span class="topic-pct">${pct}%${mastered ? ' ✓' : ''}</span></div>`;
       }).join('');
+    }
+  },
+
+  renderChallengeLadder() {
+    const shell = document.getElementById('challenge-ladder');
+    if (!shell) return;
+    const level = this.getLearningLevel();
+    const current = LEARNING_LEVELS[level - 1] || LEARNING_LEVELS[0];
+    const next = LEARNING_LEVELS[level];
+    const title = document.getElementById('learning-level-title');
+    if (title) title.textContent = `Level ${level} · ${current.label}`;
+    const copy = document.getElementById('learning-level-copy');
+    if (copy) copy.textContent = current.description;
+    const nextEl = document.getElementById('learning-level-next');
+    if (nextEl) {
+      nextEl.textContent = next
+        ? `Next: Level ${next.level} after ${next.minAnswered} answers, ${Math.round(next.minAccuracy * 100)}% accuracy, and ${next.minTopics} topic${next.minTopics === 1 ? '' : 's'}.`
+        : 'Top level reached — keep pressure-testing your judgment.';
+    }
+    const steps = document.getElementById('learning-level-steps');
+    if (steps) {
+      steps.innerHTML = LEARNING_LEVELS.map(item => `
+        <li class="challenge-step${item.level < level ? ' is-complete' : ''}${item.level === level ? ' is-current' : ''}">
+          <span class="challenge-step-number">${item.level < level ? '✓' : item.level}</span>
+          <span><strong>${item.label}</strong><small>${item.description}</small></span>
+        </li>`).join('');
+    }
+    const fill = document.getElementById('learning-level-fill');
+    if (fill) fill.style.width = `${level / LEARNING_LEVELS.length * 100}%`;
+    const sandboxSummary = document.getElementById('sandbox-progress-summary');
+    if (sandboxSummary) {
+      const sandbox = this.profile.sandbox || {};
+      const runs = Number(sandbox.runs) || 0;
+      const correct = Number(sandbox.correctPredictions) || 0;
+      sandboxSummary.textContent = runs
+        ? `Concept lab: ${correct}/${runs} predictions matched · best streak ${sandbox.bestStreak || 0}`
+        : 'Concept lab: make a prediction, then see the system respond.';
     }
   },
 
@@ -2126,6 +2224,334 @@ const APP = {
     this.showScreen('learning-path');
   },
 
+  /* ——— Concept Sandbox ——— */
+
+  _newSandboxState(nodeId = 'redis-cache') {
+    const node = getSandboxNode(nodeId);
+    const situation = node.situations[0];
+    return {
+      nodeId: node.id,
+      situationIndex: 0,
+      situationId: situation.id,
+      input: node.normalize(situation.values),
+      prediction: null,
+      result: null,
+      completedSituationIds: [],
+      labComplete: false,
+      dirty: false
+    };
+  },
+
+  _ensureSandboxState() {
+    if (!this._sandboxState) this._sandboxState = this._newSandboxState();
+    return this._sandboxState;
+  },
+
+  showSandbox(nodeId) {
+    if (!this._sandboxState || (nodeId && this._sandboxState.nodeId !== getSandboxNode(nodeId).id)) {
+      this._sandboxState = this._newSandboxState(nodeId || 'redis-cache');
+    }
+    this.renderSandbox();
+    this.showScreen('sandbox');
+  },
+
+  _sandboxFormatValue(value, control) {
+    const numeric = Number(value);
+    const formatted = Number.isFinite(numeric)
+      ? numeric.toLocaleString('en-US', { maximumFractionDigits: 2 })
+      : String(value ?? '');
+    return `${formatted} ${control.unit}`;
+  },
+
+  _sandboxFormatMetric(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return this._escapeHtml(value);
+    return this._escapeHtml(numeric.toLocaleString('en-US', { maximumFractionDigits: 1 }));
+  },
+
+  _sandboxControlHtml(node, control, state) {
+    const limit = node.limits[control.key];
+    if (!limit) return '';
+    const value = state.input[control.key];
+    const key = this._escapeHtml(control.key);
+    return `<label class="sandbox-control" for="sandbox-input-${key}">
+      <span class="sandbox-control-heading"><strong>${this._escapeHtml(control.label)}</strong><output id="sandbox-value-${key}">${this._escapeHtml(this._sandboxFormatValue(value, control))}</output></span>
+      <input id="sandbox-input-${key}" type="range" min="${limit.min}" max="${limit.max}" step="${limit.step}" value="${value}" oninput="APP.updateSandboxInput('${key}', this.value)">
+    </label>`;
+  },
+
+  _sandboxEmptyHtml(node) {
+    const preview = node.flowPreview || ['Input', 'Node', 'Output'];
+    const previewLabel = preview.join(' to ');
+    return `<div class="sandbox-empty-state">
+      <span class="sandbox-empty-kicker">Simulation preview</span>
+      <strong>Make a prediction before you run the model.</strong>
+      <p>Change one assumption, choose the outcome you expect, then run the experiment to see the causal chain.</p>
+      <div class="sandbox-preview-flow" role="img" aria-label="${this._escapeHtml(previewLabel)}">
+        ${preview.map((label, index) => `<span class="sandbox-preview-step"><small>${index + 1}</small>${this._escapeHtml(label)}</span>`).join('')}
+      </div>
+    </div>`;
+  },
+
+  _sandboxSimulationHtml(result) {
+    const simulation = result?.simulation;
+    if (!simulation) return '';
+    const allowedTones = ['neutral', 'healthy', 'watch', 'stress'];
+    const tone = allowedTones.includes(result.status) ? result.status : 'neutral';
+    const stageList = simulation.stages || [];
+    const stages = stageList.map((stage, index) => `
+      <div class="sandbox-flow-stage sandbox-flow-tone-${allowedTones.includes(stage.tone) ? stage.tone : 'neutral'}">
+        <span class="sandbox-flow-stage-label">${this._escapeHtml(stage.label)}</span>
+        <strong class="sandbox-flow-stage-value">${this._escapeHtml(stage.value)} <small>${this._escapeHtml(stage.unit || '')}</small></strong>
+        <span class="sandbox-flow-stage-detail">${this._escapeHtml(stage.detail)}</span>
+      </div>${index < stageList.length - 1 ? '<span class="sandbox-flow-arrow" aria-hidden="true">→</span>' : ''}`).join('');
+    const outcomes = (simulation.outcomes || []).map(outcome => `
+      <div class="sandbox-flow-outcome sandbox-flow-tone-${allowedTones.includes(outcome.tone) ? outcome.tone : 'neutral'}">
+        <span class="sandbox-flow-outcome-label">${this._escapeHtml(outcome.label)}</span>
+        <strong class="sandbox-flow-outcome-value">${this._escapeHtml(outcome.value)} <small>${this._escapeHtml(outcome.unit || '')}</small></strong>
+        <span class="sandbox-flow-outcome-detail">${this._escapeHtml(outcome.detail)}</span>
+      </div>`).join('');
+    return `<section class="sandbox-simulation sandbox-simulation-${tone}" aria-labelledby="sandbox-simulation-title">
+      <div class="sandbox-simulation-header">
+        <div><span class="sandbox-simulation-kicker">Simulation trace</span><h3 id="sandbox-simulation-title">${this._escapeHtml(simulation.title)}</h3></div>
+        <span class="sandbox-simulation-window">${this._escapeHtml(simulation.windowLabel)}</span>
+      </div>
+      <p class="sandbox-simulation-caption">${this._escapeHtml(simulation.caption)}</p>
+      <div class="sandbox-flow-stages" role="img" aria-label="${this._escapeHtml(simulation.ariaLabel)}">${stages}</div>
+      <div class="sandbox-flow-outcomes-heading">Branches observed</div>
+      <div class="sandbox-flow-outcomes">${outcomes}</div>
+      <p class="sandbox-flow-callout"><strong>Why:</strong> ${this._escapeHtml(simulation.callout)}</p>
+      <p class="sr-only">${this._escapeHtml(simulation.ariaLabel)}</p>
+    </section>`;
+  },
+
+  renderSandbox() {
+    const state = this._ensureSandboxState();
+    const node = getSandboxNode(state.nodeId);
+    const situation = node.situations[state.situationIndex] || node.situations[0];
+    state.situationIndex = node.situations.indexOf(situation);
+    state.situationId = situation.id;
+    state.input = node.normalize(state.input || situation.values);
+
+    const nodeSelect = document.getElementById('sandbox-node');
+    if (nodeSelect) {
+      nodeSelect.innerHTML = SANDBOX_NODE_MODELS.map(model =>
+        `<option value="${this._escapeHtml(model.id)}">${this._escapeHtml(model.label)}</option>`
+      ).join('');
+      nodeSelect.value = node.id;
+    }
+    const nodeDescription = document.getElementById('sandbox-node-description');
+    if (nodeDescription) nodeDescription.textContent = node.description;
+
+    const situationSelect = document.getElementById('sandbox-situation');
+    if (situationSelect) {
+      situationSelect.innerHTML = node.situations.map(item =>
+        `<option value="${this._escapeHtml(item.id)}">Level ${item.level}: ${this._escapeHtml(item.label)}</option>`
+      ).join('');
+      situationSelect.value = situation.id;
+    }
+    const situationDescription = document.getElementById('sandbox-situation-description');
+    if (situationDescription) situationDescription.textContent = situation.description;
+    const situationObjective = document.getElementById('sandbox-situation-objective');
+    if (situationObjective) situationObjective.textContent = situation.objective;
+
+    const controls = document.getElementById('sandbox-controls');
+    if (controls) {
+      const primaryControls = node.controls.filter(control => !control.advanced);
+      const advancedControls = node.controls.filter(control => control.advanced);
+      const renderControls = controlsToRender => controlsToRender
+        .map(control => this._sandboxControlHtml(node, control, state)).join('');
+      controls.innerHTML = `<div class="sandbox-controls-header"><h3>Change the experiment</h3><span>Start with one knob</span></div>
+        <div class="sandbox-controls-grid">${renderControls(primaryControls)}</div>
+        ${advancedControls.length ? `<details class="sandbox-advanced-controls"><summary>Show advanced assumptions (${advancedControls.length})</summary><div class="sandbox-controls-grid">${renderControls(advancedControls)}</div></details>` : ''}`;
+    }
+
+    const question = document.getElementById('sandbox-prediction-question');
+    if (question) question.textContent = node.predictionQuestion;
+    const predictions = document.getElementById('sandbox-predictions');
+    if (predictions) {
+      predictions.innerHTML = node.predictionOptions.map(option => `
+        <label class="sandbox-prediction-option">
+          <input type="radio" name="sandbox-prediction" value="${this._escapeHtml(option.id)}"${state.prediction === option.id ? ' checked' : ''} onchange="APP.selectSandboxPrediction(this.value)">
+          <span>${this._escapeHtml(option.label)}</span>
+        </label>`).join('');
+    }
+    const error = document.getElementById('sandbox-prediction-error');
+    if (error) error.textContent = '';
+
+    const completed = state.completedSituationIds.length;
+    const progress = document.getElementById('sandbox-progress-text');
+    if (progress) progress.textContent = `${completed} / ${node.situations.length} situations complete`;
+    const progressFill = document.getElementById('sandbox-progress-fill');
+    if (progressFill) progressFill.style.width = `${completed / node.situations.length * 100}%`;
+    const level = document.getElementById('sandbox-current-level');
+    if (level) level.textContent = `Level ${situation.level}`;
+
+    const runButton = document.getElementById('sandbox-run-btn');
+    if (runButton) runButton.textContent = state.result ? 'Run again' : 'Run experiment';
+    const nextButton = document.getElementById('sandbox-next-btn');
+    if (nextButton) {
+      nextButton.disabled = !state.result;
+      nextButton.textContent = state.labComplete ? 'Restart this node lab' : 'Try next situation →';
+    }
+
+    const results = document.getElementById('sandbox-results');
+    if (results) {
+      results.innerHTML = state.result
+        ? this._sandboxResultHtml(node, state)
+        : this._sandboxEmptyHtml(node);
+    }
+  },
+
+  _sandboxResultHtml(node, state) {
+    const result = state.result;
+    const expectedId = getSandboxPredictionBucket(node.id, result.input);
+    const expected = node.predictionOptions.find(option => option.id === expectedId);
+    const selected = node.predictionOptions.find(option => option.id === result.prediction);
+    const matched = result.predictionCorrect;
+    const metrics = node.metrics.map(metric => {
+      const rawValue = metric.source === 'input' ? result.input[metric.key] : result[metric.key];
+      const source = metric.source === 'input' ? 'assumption' : 'derived';
+      return `<div class="sandbox-metric"><span>${this._escapeHtml(metric.label)}</span><strong>${this._sandboxFormatMetric(rawValue)} <small>${this._escapeHtml(metric.unit)}</small></strong><em>${source}</em></div>`;
+    }).join('');
+    const observations = (result.observations || [])
+      .map(observation => `<li>${this._escapeHtml(observation)}</li>`).join('');
+    const assumptions = (result.assumptions || [])
+      .map(assumption => `<li>${this._escapeHtml(assumption)}</li>`).join('');
+    return `<article class="sandbox-result-card">
+      <div class="sandbox-outcome sandbox-outcome-${this._escapeHtml(result.status)}">
+        <div><span class="sandbox-kicker">Model outcome</span><strong>${this._escapeHtml(result.statusLabel)}</strong></div>
+        <span class="sandbox-model-tag">Model v${result.modelVersion}</span>
+      </div>
+      <div class="sandbox-prediction-result ${matched ? 'is-correct' : 'is-incorrect'}">
+        <strong>${matched ? '✓ Your prediction matched' : '△ The model took a different path'}</strong>
+        <p>You chose: ${this._escapeHtml(selected?.label || 'Unknown')}<br>Model expected: ${this._escapeHtml(expected?.label || 'Unknown')}</p>
+      </div>
+      ${state.dirty ? '<p class="sandbox-dirty-note">The controls changed after this run. Run again to evaluate the new assumptions.</p>' : ''}
+      ${this._sandboxSimulationHtml(result)}
+      <div class="sandbox-metrics">${metrics}</div>
+      <h3>What happened</h3>
+      <ul class="sandbox-observations">${observations}</ul>
+      <p class="sandbox-conclusion"><strong>Teaching takeaway:</strong> ${this._escapeHtml(result.teachingConclusion)}</p>
+      <details class="sandbox-assumptions"><summary>Show model assumptions</summary><ul>${assumptions}</ul></details>
+    </article>`;
+  },
+
+  updateSandboxInput(key, value) {
+    const state = this._ensureSandboxState();
+    const node = getSandboxNode(state.nodeId);
+    if (!node.limits[key]) return;
+    state.input = node.normalize({ ...state.input, [key]: value });
+    state.dirty = Boolean(state.result);
+    const control = node.controls.find(item => item.key === key);
+    const output = document.getElementById('sandbox-value-' + key);
+    if (output && control) output.textContent = this._sandboxFormatValue(state.input[key], control);
+  },
+
+  selectSandboxNode(nodeId) {
+    const node = getSandboxNode(nodeId);
+    this._sandboxState = this._newSandboxState(node.id);
+    this.renderSandbox();
+  },
+
+  selectSandboxSituation(situationId) {
+    const state = this._ensureSandboxState();
+    const node = getSandboxNode(state.nodeId);
+    const index = node.situations.findIndex(situation => situation.id === situationId);
+    if (index < 0) return;
+    const situation = node.situations[index];
+    state.situationIndex = index;
+    state.situationId = situation.id;
+    state.input = node.normalize(situation.values);
+    state.prediction = null;
+    state.result = null;
+    state.dirty = false;
+    this.renderSandbox();
+  },
+
+  selectSandboxPrediction(prediction) {
+    const state = this._ensureSandboxState();
+    const node = getSandboxNode(state.nodeId);
+    if (!node.predictionOptions.some(option => option.id === prediction)) return;
+    state.prediction = prediction;
+    const error = document.getElementById('sandbox-prediction-error');
+    if (error) error.textContent = '';
+  },
+
+  _recordSandboxRun(nodeId, situationId, correct, completedLab) {
+    if (!this.profile) this.loadProfile();
+    const stats = this.profile.sandbox || (this.profile.sandbox = {});
+    stats.runs = (Number(stats.runs) || 0) + 1;
+    if (correct) stats.correctPredictions = (Number(stats.correctPredictions) || 0) + 1;
+    stats.currentStreak = correct ? (Number(stats.currentStreak) || 0) + 1 : 0;
+    stats.bestStreak = Math.max(Number(stats.bestStreak) || 0, stats.currentStreak);
+    stats.lastNodeId = nodeId;
+    stats.lastSituationId = situationId;
+    if (completedLab) stats.completedLabs = (Number(stats.completedLabs) || 0) + 1;
+    this.saveProfile();
+  },
+
+  runSandbox() {
+    const state = this._ensureSandboxState();
+    const node = getSandboxNode(state.nodeId);
+    if (!state.prediction) {
+      const error = document.getElementById('sandbox-prediction-error');
+      if (error) error.textContent = 'Choose the outcome you expect before running the model.';
+      return false;
+    }
+    const result = simulateSandboxNode(node.id, state.input);
+    const expected = getSandboxPredictionBucket(node.id, state.input);
+    const predictionCorrect = expected === state.prediction;
+    const situationWasNew = !state.completedSituationIds.includes(state.situationId);
+    if (situationWasNew) state.completedSituationIds.push(state.situationId);
+    const completedLab = !state.labComplete
+      && state.completedSituationIds.length === node.situations.length;
+    if (completedLab) state.labComplete = true;
+    state.result = { ...result, prediction: state.prediction, predictionCorrect };
+    state.dirty = false;
+    this._recordSandboxRun(node.id, state.situationId, predictionCorrect, completedLab);
+    this.renderSandbox();
+    this.renderChallengeLadder();
+    return true;
+  },
+
+  advanceSandboxChallenge() {
+    const state = this._ensureSandboxState();
+    const node = getSandboxNode(state.nodeId);
+    if (state.labComplete) {
+      this._sandboxState = this._newSandboxState(node.id);
+      this.renderSandbox();
+      return true;
+    }
+    if (!state.result) return false;
+    let index = state.situationIndex + 1;
+    while (index < node.situations.length
+        && state.completedSituationIds.includes(node.situations[index].id)) index++;
+    if (index >= node.situations.length) {
+      index = node.situations.findIndex(situation => !state.completedSituationIds.includes(situation.id));
+    }
+    if (index < 0) {
+      state.labComplete = true;
+      this.renderSandbox();
+      return true;
+    }
+    const situation = node.situations[index];
+    state.situationIndex = index;
+    state.situationId = situation.id;
+    state.input = node.normalize(situation.values);
+    state.prediction = null;
+    state.result = null;
+    state.dirty = false;
+    this.renderSandbox();
+    return true;
+  },
+
+  resetSandbox() {
+    const state = this._ensureSandboxState();
+    this._sandboxState = this._newSandboxState(state.nodeId);
+    this.renderSandbox();
+  },
+
   /* ——— Concept Wiki ——— */
 
   _escapeHtml(value) {
@@ -2228,6 +2654,7 @@ const APP = {
     const related = (entry.related_topics || [])
       .map(t => this._wikiLink(t))
       .join('');
+    const sandboxCallout = `<aside class="wiki-lab-callout"><strong>Learn by changing the constraint</strong><p>Run a small, offline experiment with a cache, queue, or database node.</p><button class="btn btn-sm btn-primary" type="button" onclick="APP.showSandbox()">Open Concept Sandbox →</button></aside>`;
     return `
       <h2>${this._escapeHtml(entry.title)}</h2>
       <p class="wiki-summary">${this._escapeHtml(entry.summary)}</p>
@@ -2237,7 +2664,8 @@ const APP = {
       <ul>${(entry.key_points || []).map(point => `<li>${this._escapeHtml(point)}</li>`).join('')}</ul>
       <h3>Common pitfalls</h3>
       <ul>${(entry.common_pitfalls || []).map(pitfall => `<li>${this._escapeHtml(pitfall)}</li>`).join('')}</ul>
-      ${related ? `<h3>Related concepts</h3><div class="wiki-related">${related}</div>` : ''}`;
+      ${related ? `<h3>Related concepts</h3><div class="wiki-related">${related}</div>` : ''}
+      ${sandboxCallout}`;
   },
 
   /* ——— Radar Chart (Canvas) ——— */

@@ -70,6 +70,22 @@
       <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
       <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
     </div>
+    <section id="challenge-ladder" class="challenge-ladder" aria-labelledby="learning-level-title">
+      <div class="challenge-ladder-heading">
+        <div>
+          <span class="eyebrow">Progressive challenge</span>
+          <h2 id="learning-level-title">Level 1 · Foundations</h2>
+          <p id="learning-level-copy">Name the right building block.</p>
+        </div>
+        <p id="learning-level-next" class="challenge-next">Next: build evidence with your first session.</p>
+      </div>
+      <div class="learning-level-progress" aria-hidden="true"><span id="learning-level-fill"></span></div>
+      <ol id="learning-level-steps" class="challenge-steps"></ol>
+      <div class="challenge-ladder-footer">
+        <p id="sandbox-progress-summary" class="sandbox-progress-summary">Concept lab: make a prediction, then see the system respond.</p>
+        <button class="btn btn-sm btn-outline challenge-sandbox-btn" onclick="APP.showSandbox()">Open Concept Sandbox →</button>
+      </div>
+    </section>
     <section class="progress-section" aria-label="Study progress">
       <div id="study-goal" class="study-goal">
       <div class="study-goal-header">
@@ -92,6 +108,7 @@
         <button class="btn btn-outline" onclick="APP.showHistory()">📜 Session History</button>
         <button class="btn btn-outline" onclick="APP.showLearningPath()">🧭 Topic Map</button>
         <button class="btn btn-outline" onclick="APP.showWiki()">📚 Concept Wiki</button>
+        <button class="btn btn-outline" onclick="APP.showSandbox()">🧪 Concept Sandbox</button>
         <button class="btn btn-outline" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
         <button class="btn btn-outline" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
         <button class="btn btn-outline" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
@@ -136,6 +153,7 @@
       <div class="card-meta">
         <span id="card-topic">Topic</span>
         <span id="card-difficulty">★★★</span>
+        <span id="challenge-stage">Level 1 · Foundations</span>
         <span id="card-requirements" class="card-requirements"></span>
         <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
         <span id="session-timer" style="color:var(--muted)"></span>
@@ -238,6 +256,58 @@
     <button class="btn btn-outline" style="margin-top:16px" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Dashboard</button>
   </div>
 
+  <!-- Concept Sandbox -->
+  <div id="screen-sandbox" class="screen hidden">
+    <div class="sandbox-topline">
+      <div>
+        <span class="eyebrow">Predict · run · explain</span>
+        <h1>Concept Sandbox</h1>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">← Dashboard</button>
+    </div>
+    <p class="screen-intro">Change one constraint at a time and watch a reviewed node model respond. The lab is deterministic and educational — it never connects to infrastructure.</p>
+    <div class="sandbox-lab-header">
+      <label class="sandbox-select-label" for="sandbox-node"><strong>Node model</strong>
+        <select id="sandbox-node" onchange="APP.selectSandboxNode(this.value)"></select>
+      </label>
+      <p id="sandbox-node-description" class="sandbox-node-description"></p>
+      <div class="sandbox-progress-wrap" aria-label="Sandbox progress">
+        <span id="sandbox-progress-text">0 / 5 situations complete</span>
+        <div class="sandbox-progress-bar"><span id="sandbox-progress-fill"></span></div>
+      </div>
+    </div>
+    <div class="sandbox-layout">
+      <section class="sandbox-controls-panel" aria-labelledby="sandbox-situation-heading">
+        <div class="sandbox-situation-heading">
+          <div>
+            <span id="sandbox-current-level" class="sandbox-level">Level 1</span>
+            <h2 id="sandbox-situation-heading">Choose a situation</h2>
+          </div>
+          <label class="sandbox-select-label" for="sandbox-situation"><span class="sr-only">Situation</span>
+            <select id="sandbox-situation" onchange="APP.selectSandboxSituation(this.value)"></select>
+          </label>
+        </div>
+        <p id="sandbox-situation-description" class="sandbox-situation-description"></p>
+        <p class="sandbox-objective"><strong>Focus:</strong> <span id="sandbox-situation-objective"></span></p>
+        <div id="sandbox-controls" class="sandbox-controls"></div>
+        <fieldset class="sandbox-prediction-fieldset">
+          <legend>Make your prediction</legend>
+          <p id="sandbox-prediction-question" class="sandbox-prediction-question"></p>
+          <div id="sandbox-predictions" class="sandbox-predictions"></div>
+          <p id="sandbox-prediction-error" class="sandbox-inline-error" role="status"></p>
+        </fieldset>
+        <div class="sandbox-actions">
+          <button id="sandbox-run-btn" class="btn btn-primary" onclick="APP.runSandbox()">Run experiment</button>
+          <button id="sandbox-next-btn" class="btn btn-outline" onclick="APP.advanceSandboxChallenge()" disabled>Try next situation →</button>
+        </div>
+      </section>
+      <section id="sandbox-results" class="sandbox-results" aria-live="polite" aria-label="Experiment results" tabindex="-1">
+        <div class="sandbox-empty-state"><strong>Make a prediction before you run the model.</strong><p>Change an assumption, choose the outcome you expect, then run the experiment to see the causal chain.</p></div>
+      </section>
+    </div>
+    <p class="sandbox-disclaimer"><strong>Model boundary:</strong> these outputs are teaching signals based on the assumptions shown below each result, not production capacity recommendations or vendor benchmarks.</p>
+  </div>
+
   <!-- Statistics Dashboard -->
   <div id="screen-stats" class="screen hidden">
     <h1>Statistics</h1>
@@ -301,6 +371,7 @@
 <script src="js/wiki.js"></script>
 <script src="js/srs.js"></script>
 <script src="js/render.js"></script>
+<script src="js/sandbox.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script src="js/app.js"></script>

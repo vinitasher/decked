@@ -43,7 +43,7 @@ decision-based practice with adaptive difficulty.
 - A navigable topic map shows prerequisites, dependent topics, mastery, and
   focused practice actions without locking advanced content
 - Every screen is URL-addressable via hash routes (`#/search`, `#/wiki`,
-  `#/stats`, `#/wiki/<concept>`, ...), so any page can be bookmarked, shared,
+  `#/sandbox`, `#/stats`, `#/wiki/<concept>`, ...), so any page can be bookmarked, shared,
   or deep-linked and survives refresh and back/forward navigation
 
 **User profile:**
@@ -62,6 +62,10 @@ decision-based practice with adaptive difficulty.
   within each session fresh cards play easy → hard (due reviews keep their
   first position), so users start with lower-difficulty problems and move up
   as mastery grows
+- Five visible challenge levels — Foundations, Trade-offs, Pressure test,
+  Failure modes, and Architecture judgment — make the next milestone clear.
+  Fresh-card difficulty is capped at the earned level after real practice;
+  scheduled reviews and retries remain available.
 - Prerequisite-first ordering: within a difficulty tier, foundational topics
   are served before the topics that build on them
 - Anki-style mix ratio: fresh cards are capped at half the session so
@@ -126,6 +130,21 @@ decision-based practice with adaptive difficulty.
   `common_pitfalls`, `related_topics`) and shown inline on cards via the Know
   First links and a modal
 
+**Concept Sandbox:**
+- A deterministic, offline `#/sandbox` laboratory lets learners predict, run,
+  and explain a node under changing constraints.
+- The first reviewed node models are a Redis-like cache, a queue + worker, and
+  a relational database. Each model declares its own controls, situations,
+  outputs, and teaching assumptions in `js/sandbox.js`.
+- Results show model-specific derived metrics such as cache misses and backend
+  traffic, queue backlog and drops, or database connection pressure and
+  replica lag. The lab is explicitly not a production benchmark or capacity
+  recommendation.
+- The result panel draws a model-specific, responsive simulation trace with a
+  three-stage path and observed branches, so learners can see where work went
+  instead of reading metrics in isolation. The pre-run state shows the same
+  path as a compact preview.
+
 **Generated content and quotas:**
 - Cards are generated on demand with AI, cached for reuse, and supported by an
   offline seed-card fallback.
@@ -159,7 +178,13 @@ points, common pitfalls, and related topics) for that concept.
   `tests/wiki.test.mjs` and `tests/api-wiki.test.mjs`.
 
 The wiki UI — the sidebar index and the link affordance on Know First topics
-in card question headers — lives in `js/app.js`.
+in card question headers — lives in `js/app.js`. Cache and related wiki entries
+also link directly to the Concept Sandbox.
+
+The product contract and implementation verification path for the learning
+ladder and sandbox live in
+[`PRDs/flashcard-learning-lab-progression.md`](../PRDs/flashcard-learning-lab-progression.md)
+and its [implementation plan](../PRDs/flashcard-learning-lab-progression-plan.md).
 
 ## Suggested tech stack
 
@@ -345,5 +370,6 @@ chromium --headless --no-sandbox --window-size=390,1200 \
   --screenshot=/tmp/system-design-flashcards-mobile.png index.html
 ```
 
-The visual refresh is presentation-only: card data, routes, local progress,
-profile sync, account behavior, and study algorithms remain unchanged.
+The learning ladder and Concept Sandbox are behavior changes in addition to the
+shared visual system: the ladder updates from study evidence, and sandbox
+prediction aggregates are included in the existing local profile sync path.
