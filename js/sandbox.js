@@ -2631,11 +2631,28 @@ function simulateNotificationFanout(input = {}) {
   };
 }
 
+const SANDBOX_WIKI_TOPIC_MAP = Object.freeze({
+  'redis-cache': Object.freeze(['caching', 'cache-aside', 'cache-eviction', 'cache-invalidation']),
+  'queue-worker': Object.freeze(['queues', 'backpressure', 'asynchronous-processing', 'durable-queues']),
+  'relational-database': Object.freeze(['databases', 'database-indexing', 'read-replication', 'replication-lag']),
+  'social-feed': Object.freeze(['read-models', 'caching', 'eventual-consistency', 'workload-skew']),
+  'realtime-messaging': Object.freeze(['real-time', 'messaging', 'message-ordering', 'connection-lifecycle']),
+  'video-pipeline': Object.freeze(['storage', 'asynchronous-processing', 'durable-queues', 'cdn-caching']),
+  'geospatial-dispatch': Object.freeze(['data-partitioning', 'workload-skew', 'caching', 'loadbalancing']),
+  'url-shortener': Object.freeze(['http-cacheability', 'cache-aside', 'data-partitioning', 'idempotency']),
+  'rate-limiter': Object.freeze(['rate-limiting', 'backpressure', 'workload-skew', 'latency-budgets']),
+  'object-storage': Object.freeze(['storage', 'data-partitioning', 'conditional-writes', 'optimistic-concurrency', 'eventual-consistency']),
+  'notification-fanout': Object.freeze(['asynchronous-processing', 'durable-queues', 'backpressure', 'idempotency', 'rate-limiting']),
+  'search-autocomplete': Object.freeze(['database-indexing', 'caching', 'read-models', 'data-partitioning', 'content-freshness']),
+  'distributed-kv': Object.freeze(['data-partitioning', 'distributed-databases', 'quorum-commit', 'eventual-consistency', 'workload-skew'])
+});
+
 const POPULAR_SANDBOX_MODELS = Object.freeze([
   createInterviewSandboxModel({
     id: 'social-feed',
     label: 'Social feed',
     description: 'Explore fan-out on write/read, timeline caches, and celebrity skew.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['social-feed'],
     interviewExamples: ['Twitter/X', 'Instagram', 'Facebook News Feed'],
     popularityRank: 1,
     predictionQuestion: 'Which feed path becomes the first constraint?',
@@ -2660,6 +2677,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'realtime-messaging',
     label: 'Realtime messaging',
     description: 'Explore persistent connections, delivery fan-out, offline queues, and history.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['realtime-messaging'],
     interviewExamples: ['WhatsApp', 'Chat', 'Live comments'],
     popularityRank: 2,
     predictionQuestion: 'Where does message delivery pressure accumulate?',
@@ -2684,6 +2702,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'video-pipeline',
     label: 'Video pipeline',
     description: 'Explore uploads, asynchronous transcoding, CDN hits, and origin egress.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['video-pipeline'],
     interviewExamples: ['YouTube', 'Video streaming'],
     popularityRank: 3,
     predictionQuestion: 'Does upload processing or playback egress become the constraint?',
@@ -2708,6 +2727,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'geospatial-dispatch',
     label: 'Geospatial dispatch',
     description: 'Explore spatial indexing, hot areas, location freshness, and matching.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['geospatial-dispatch'],
     interviewExamples: ['Uber', 'Google Maps', 'Local delivery'],
     popularityRank: 4,
     predictionQuestion: 'Will locations stay fresh and ride requests find matches?',
@@ -2732,6 +2752,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'url-shortener',
     label: 'URL shortener',
     description: 'Explore unique IDs, read-heavy redirects, mapping writes, and cacheability.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['url-shortener'],
     interviewExamples: ['Bitly'],
     popularityRank: 5,
     predictionQuestion: 'Do redirects stay cached or hit a mapping bottleneck?',
@@ -2756,6 +2777,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'rate-limiter',
     label: 'Rate limiter',
     description: 'Explore token buckets, bursts, per-client skew, and shared decisions.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['rate-limiter'],
     interviewExamples: ['API rate limiter'],
     popularityRank: 6,
     predictionQuestion: 'Are requests allowed, throttled, or blocked by limiter capacity?',
@@ -2780,6 +2802,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'object-storage',
     label: 'Object storage + sync',
     description: 'Explore chunks, deduplication, metadata coordination, egress, and conflicts.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['object-storage'],
     interviewExamples: ['Google Drive', 'Dropbox', 'Pastebin'],
     popularityRank: 7,
     predictionQuestion: 'Do changed bytes, downloads, or conflicts dominate sync?',
@@ -2804,6 +2827,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'notification-fanout',
     label: 'Notification fanout',
     description: 'Explore preferences, channel queues, provider limits, retries, and drops.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['notification-fanout'],
     interviewExamples: ['Notification system'],
     popularityRank: 8,
     predictionQuestion: 'Do providers deliver the fan-out or do retries and queues grow?',
@@ -2828,6 +2852,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'search-autocomplete',
     label: 'Search autocomplete',
     description: 'Explore prefix caches, trie lookups, index rebuild lag, and memory.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['search-autocomplete'],
     interviewExamples: ['Typeahead', 'Search suggestions'],
     popularityRank: 9,
     predictionQuestion: 'Does the prefix cache absorb queries or does the index become the bottleneck?',
@@ -2852,6 +2877,7 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     id: 'distributed-kv',
     label: 'Distributed key-value store',
     description: 'Explore partitioning, replication, quorums, hot shards, and repair.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['distributed-kv'],
     interviewExamples: ['Key-value store', 'DynamoDB-style storage'],
     popularityRank: 10,
     predictionQuestion: 'Will sharding, quorum cost, or hot-key repair become the constraint?',
@@ -2900,6 +2926,7 @@ const SANDBOX_NODE_MODELS = Object.freeze([
     id: 'redis-cache',
     label: 'Redis-like cache',
     description: 'Explore hits, misses, memory, hot keys, and backing-store load.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['redis-cache'],
     predictionQuestion: 'What will happen to backing-store read traffic?',
     metrics: [
       { label: 'Cache hit rate', key: 'hitRate', source: 'input', unit: '%' },
@@ -2924,6 +2951,7 @@ const SANDBOX_NODE_MODELS = Object.freeze([
     id: 'queue-worker',
     label: 'Queue + worker',
     description: 'Explore worker capacity, backlog, retries, and bounded queues.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['queue-worker'],
     predictionQuestion: 'What will happen to the queue backlog?',
     metrics: [
       { label: 'Offered load', key: 'offeredRps', unit: 'jobs/s' },
@@ -2948,6 +2976,7 @@ const SANDBOX_NODE_MODELS = Object.freeze([
     id: 'relational-database',
     label: 'Relational database',
     description: 'Explore query cost, connections, replicas, lag, and skew.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['relational-database'],
     predictionQuestion: 'What becomes the first constraint?',
     metrics: [
       { label: 'Weighted query time', key: 'weightedQueryMs', unit: 'ms' },
@@ -2970,6 +2999,18 @@ const SANDBOX_NODE_MODELS = Object.freeze([
   },
   ...POPULAR_SANDBOX_MODELS
 ]);
+
+function getSandboxWikiTopics(nodeId = 'redis-cache') {
+  const node = SANDBOX_NODE_MODELS.find(model => model.id === nodeId);
+  return node && Array.isArray(node.wikiTopics) ? [...node.wikiTopics] : [];
+}
+
+function getSandboxModelsForWikiTopic(topic) {
+  const normalizedTopic = String(topic || '').trim().toLowerCase();
+  return SANDBOX_NODE_MODELS.filter(model =>
+    Array.isArray(model.wikiTopics) && model.wikiTopics.includes(normalizedTopic)
+  );
+}
 
 function getSandboxNode(id = 'redis-cache') {
   return SANDBOX_NODE_MODELS.find(model => model.id === id) || SANDBOX_NODE_MODELS[0];

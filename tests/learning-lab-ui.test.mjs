@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const cardsSource = await readFile(new URL('../js/cards.js', import.meta.url), 'utf8');
 const srsSource = await readFile(new URL('../js/srs.js', import.meta.url), 'utf8');
+const wikiSource = await readFile(new URL('../js/wiki.js', import.meta.url), 'utf8');
 const sandboxSource = await readFile(new URL('../js/sandbox.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
 const htmlSource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
@@ -56,7 +57,7 @@ function createContext() {
     'learning-level-title', 'learning-level-copy', 'learning-level-next',
     'learning-level-fill', 'learning-level-steps', 'sandbox-progress-summary', 'sandbox-node',
     'sandbox-node-description', 'sandbox-situation', 'sandbox-situation-description',
-    'sandbox-situation-objective', 'sandbox-controls', 'sandbox-prediction-question',
+    'sandbox-situation-objective', 'sandbox-wiki-links', 'sandbox-controls', 'sandbox-prediction-question',
     'sandbox-predictions', 'sandbox-prediction-error', 'sandbox-progress-text',
     'sandbox-progress-fill', 'sandbox-current-level', 'sandbox-run-btn',
     'sandbox-next-btn', 'sandbox-results'
@@ -96,10 +97,14 @@ globalThis.SEED_CARDS = SEED_CARDS;
 globalThis.normalizeCardPrerequisites = normalizeCardPrerequisites;
 ${srsSource}
 globalThis.SRS = SRS;
+${wikiSource}
+globalThis.WIKI = WIKI;
 ${sandboxSource}
 globalThis.SANDBOX_NODE_MODELS = SANDBOX_NODE_MODELS;
 globalThis.getSandboxNode = getSandboxNode;
 globalThis.getSandboxPredictionBucket = getSandboxPredictionBucket;
+globalThis.getSandboxWikiTopics = getSandboxWikiTopics;
+globalThis.getSandboxModelsForWikiTopic = getSandboxModelsForWikiTopic;
 ${appSource}
 globalThis.learningLevelForProfileForTest = learningLevelForProfile;
 globalThis.normalizeProfileDataForTest = normalizeProfileData;
@@ -205,6 +210,54 @@ test('sandbox selector exposes the full reviewed node catalog', () => {
   assert.equal(options.length, 13);
   assert.match(context.document.getElementById('sandbox-node').innerHTML, /Social feed/);
   assert.match(context.document.getElementById('sandbox-node').innerHTML, /Distributed key-value store/);
+});
+
+test('every reviewed sandbox model has explicit Wiki concepts with reverse lookup', () => {
+  for (const model of context.SANDBOX_NODE_MODELS) {
+    assert.ok(model.wikiTopics.length >= 3, `${model.id}: needs at least three Wiki concepts`);
+    for (const topic of model.wikiTopics) {
+      assert.ok(context.WIKI[topic], `${model.id}: missing Wiki entry for ${topic}`);
+      assert.ok(
+        context.getSandboxModelsForWikiTopic(topic).some(candidate => candidate.id === model.id),
+        `${topic}: missing reverse lookup for ${model.id}`
+      );
+    }
+  }
+});
+
+test('sandbox links each node trade-off to its Wiki entries', () => {
+  const app = freshApp();
+  app.showSandbox('url-shortener');
+  const bridge = context.document.getElementById('sandbox-wiki-links').innerHTML;
+
+  assert.match(bridge, /Learn the concept/);
+  assert.match(bridge, /HTTP Cacheability/i);
+  assert.match(bridge, /APP\.showWiki\('http-cacheability'\)/);
+  assert.ok(context.getSandboxWikiTopics('url-shortener').length >= 3);
+});
+
+test('Wiki entries link back to related sandbox nodes and retain a general fallback', () => {
+  const app = freshApp();
+  const mapped = app._wikiEntryHtml(context.WIKI['http-cacheability']);
+  const unmapped = app._wikiEntryHtml(context.WIKI.dns);
+
+  assert.match(mapped, /Put this concept under pressure/);
+  assert.match(mapped, /Try URL shortener/);
+  assert.match(mapped, /APP\.showSandbox\('url-shortener'\)/);
+  assert.match(unmapped, /Browse Concept Sandbox/);
+});
+
+test('returning from Wiki preserves the active same-node experiment state', () => {
+  const app = freshApp();
+  app.showSandbox('url-shortener');
+  app.selectSandboxSituation('cold-redirect-cache');
+  const before = JSON.stringify(app._sandboxState);
+
+  app.showWiki('http-cacheability');
+  app.showSandbox('url-shortener');
+
+  assert.equal(app._sandboxState.situationId, 'cold-redirect-cache');
+  assert.equal(JSON.stringify(app._sandboxState), before);
 });
 
 test('sandbox controls keep native radio and range inputs from expanding the layout', () => {

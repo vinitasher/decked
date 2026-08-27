@@ -2280,6 +2280,26 @@ const APP = {
     </label>`;
   },
 
+  _sandboxWikiBridgeHtml(node) {
+    const topics = typeof getSandboxWikiTopics === 'function'
+      ? getSandboxWikiTopics(node.id)
+      : [];
+    if (!topics.length) return '';
+    const links = topics.map(topic => {
+      const entry = typeof WIKI !== 'undefined' && WIKI ? WIKI[topic] : null;
+      const label = entry?.title || formatPrerequisiteLabel(topic);
+      return `<button class="sandbox-wiki-topic" type="button" onclick="APP.showWiki('${this._escapeHtml(topic)}')">${this._escapeHtml(label)}</button>`;
+    }).join('');
+    return `<aside class="sandbox-wiki-bridge" aria-label="Learn the concepts behind this experiment">
+      <div class="sandbox-wiki-bridge-copy">
+        <span class="sandbox-wiki-kicker">Learn the concept</span>
+        <strong>Read the trade-offs, then test them here.</strong>
+        <p>Open a short Wiki explanation without losing this node's experiment.</p>
+      </div>
+      <div class="sandbox-wiki-topics">${links}</div>
+    </aside>`;
+  },
+
   _sandboxEmptyHtml(node) {
     const preview = node.flowPreview || ['Input', 'Node', 'Output'];
     const previewLabel = preview.join(' to ');
@@ -2342,6 +2362,8 @@ const APP = {
     }
     const nodeDescription = document.getElementById('sandbox-node-description');
     if (nodeDescription) nodeDescription.textContent = node.description;
+    const wikiLinks = document.getElementById('sandbox-wiki-links');
+    if (wikiLinks) wikiLinks.innerHTML = this._sandboxWikiBridgeHtml(node);
 
     const situationSelect = document.getElementById('sandbox-situation');
     if (situationSelect) {
@@ -2654,7 +2676,16 @@ const APP = {
     const related = (entry.related_topics || [])
       .map(t => this._wikiLink(t))
       .join('');
-    const sandboxCallout = `<aside class="wiki-lab-callout"><strong>Learn by changing the constraint</strong><p>Run a small, offline experiment with a cache, queue, or database node.</p><button class="btn btn-sm btn-primary" type="button" onclick="APP.showSandbox()">Open Concept Sandbox →</button></aside>`;
+    const sandboxModels = typeof getSandboxModelsForWikiTopic === 'function'
+      ? getSandboxModelsForWikiTopic(entry.topic)
+      : [];
+    const sandboxActions = sandboxModels.length
+      ? sandboxModels.map(model => `<button class="btn btn-sm btn-primary" type="button" onclick="APP.showSandbox('${this._escapeHtml(model.id)}')">Try ${this._escapeHtml(model.label)} →</button>`).join('')
+      : '<button class="btn btn-sm btn-primary" type="button" onclick="APP.showSandbox()">Browse Concept Sandbox →</button>';
+    const sandboxDescription = sandboxModels.length
+      ? `Apply ${this._escapeHtml(entry.title)} to a bounded node experiment, then return here for the explanation.`
+      : 'This concept has no dedicated reviewed node yet, but you can explore the full offline Sandbox catalog.';
+    const sandboxCallout = `<aside class="wiki-lab-callout"><span class="wiki-lab-kicker">Learn ↔ experiment</span><strong>Put this concept under pressure</strong><p>${sandboxDescription}</p><div class="wiki-lab-actions">${sandboxActions}</div></aside>`;
     return `
       <h2>${this._escapeHtml(entry.title)}</h2>
       <p class="wiki-summary">${this._escapeHtml(entry.summary)}</p>

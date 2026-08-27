@@ -731,6 +731,15 @@ footer { padding-top: 34px; color: var(--muted); }
 .sandbox-assumptions { border-top: 1px solid var(--card-border); padding-top: 10px; color: var(--muted-text); font-size: 0.74rem; }
 .sandbox-assumptions summary { cursor: pointer; font-weight: 700; }
 .sandbox-disclaimer { margin: 14px 0 0; color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+.sandbox-wiki-bridge { margin: 12px 0 18px; padding: 12px; border: 1px solid rgba(74, 88, 214, 0.25); border-radius: 12px; background: var(--primary-bg); }
+.sandbox-wiki-kicker, .wiki-lab-kicker { display: block; color: var(--primary); font-size: 0.63rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.sandbox-wiki-bridge-copy strong { display: block; margin-top: 3px; color: var(--heading); font-size: 0.84rem; }
+.sandbox-wiki-bridge-copy p { margin: 5px 0 9px; color: var(--muted-text); font-size: 0.74rem; line-height: 1.4; }
+.sandbox-wiki-topics, .wiki-lab-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.sandbox-wiki-topic { padding: 6px 8px; border: 1px solid var(--card-border); border-radius: 999px; background: var(--card-bg); color: var(--primary); font: inherit; font-size: 0.68rem; font-weight: 700; cursor: pointer; }
+.sandbox-wiki-topic:hover, .sandbox-wiki-topic:focus-visible { border-color: var(--primary); outline: 2px solid var(--primary); outline-offset: 1px; }
+.wiki-lab-kicker { margin-bottom: 5px; }
+.wiki-lab-actions .btn { margin: 0; }
 .wiki-lab-callout { margin-top: 22px; padding: 15px; border: 1px solid rgba(74, 88, 214, 0.25); border-radius: 12px; background: var(--primary-bg); }
 .wiki-lab-callout strong { display: block; color: var(--heading); font-size: 0.86rem; }
 .wiki-lab-callout p { margin: 5px 0 10px; color: var(--muted-text); font-size: 0.78rem; line-height: 1.4; }

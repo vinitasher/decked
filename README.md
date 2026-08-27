@@ -187,8 +187,11 @@ points, common pitfalls, and related topics) for that concept.
   `tests/wiki.test.mjs` and `tests/api-wiki.test.mjs`.
 
 The wiki UI — the sidebar index and the link affordance on Know First topics
-in card question headers — lives in `js/app.js`. Cache and related wiki entries
-also link directly to the Concept Sandbox.
+in card question headers — lives in `js/app.js`. The Wiki and Sandbox form a
+local learning loop: every reviewed node exposes its bundled concept links,
+and mapped Wiki entries offer a direct `Try` action for the relevant node.
+Returning to the same node keeps its in-memory experiment state; concepts
+without a reviewed node fall back to the full Sandbox catalog.
 
 The product contract and implementation verification path for the learning
 ladder and sandbox live in
@@ -383,5 +386,6 @@ chromium --headless --no-sandbox --window-size=390,1200 \
 ```
 
 The learning ladder and Concept Sandbox are behavior changes in addition to the
-shared visual system: the ladder updates from study evidence, and sandbox
-prediction aggregates are included in the existing local profile sync path.
+shared visual system: the ladder updates from study evidence, sandbox
+prediction aggregates are included in the existing local profile sync path,
+and the Wiki provides the concept context for each reviewed experiment.
