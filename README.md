@@ -133,9 +133,18 @@ decision-based practice with adaptive difficulty.
 **Concept Sandbox:**
 - A deterministic, offline `#/sandbox` laboratory lets learners predict, run,
   and explain a node under changing constraints.
-- The first reviewed node models are a Redis-like cache, a queue + worker, and
-  a relational database. Each model declares its own controls, situations,
-  outputs, and teaching assumptions in `js/sandbox.js`.
+- The reviewed node-model catalog includes the original Redis-like cache,
+  queue + worker, and relational database, plus ten common-interview patterns:
+  social feed, realtime messaging, video pipeline, geospatial dispatch, URL
+  shortener, rate limiter, object storage/sync, notification fanout, search
+  autocomplete, and distributed key-value storage. Each model declares its
+  own controls, situations, outputs, and teaching assumptions in `js/sandbox.js`.
+- The ten additions were prioritized by recurrence across [Hello Interview's
+  guided-practice catalog](https://www.hellointerview.com/practice/system-design),
+  [SWE Helper's common-question list](https://swehelper.com/blog/common-questions/),
+  and [LLDCanvas's most-asked list](https://www.lldcanvas.in/blog/most-asked-system-design-questions).
+  Product aliases are collapsed into reusable families; this is a
+  prioritization proxy, not a claim about interview odds.
 - Results show model-specific derived metrics such as cache misses and backend
   traffic, queue backlog and drops, or database connection pressure and
   replica lag. The lab is explicitly not a production benchmark or capacity

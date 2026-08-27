@@ -198,6 +198,15 @@ test('sandbox route and offline shell include the model module', () => {
   assert.match(serviceWorkerSource, /'\/js\/sandbox\.js'/);
 });
 
+test('sandbox selector exposes the full reviewed node catalog', () => {
+  const app = freshApp();
+  app.showSandbox('redis-cache');
+  const options = context.document.getElementById('sandbox-node').innerHTML.match(/<option/g) || [];
+  assert.equal(options.length, 13);
+  assert.match(context.document.getElementById('sandbox-node').innerHTML, /Social feed/);
+  assert.match(context.document.getElementById('sandbox-node').innerHTML, /Distributed key-value store/);
+});
+
 test('sandbox controls keep native radio and range inputs from expanding the layout', () => {
   assert.match(cssSource, /\.screen input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="range"\]\)/);
   assert.match(cssSource, /\.sandbox-controls-grid \{[\s\S]*grid-template-columns/);
@@ -264,7 +273,17 @@ test('sandbox result renders an engaging model-specific simulation trace', () =>
   const cases = [
     ['redis-cache', 'Cache hits', 'Backing store'],
     ['queue-worker', 'Completed', 'Worker pool'],
-    ['relational-database', 'Primary path', 'Replica reads']
+    ['relational-database', 'Primary path', 'Replica reads'],
+    ['social-feed', 'Precomputed hits', 'Celebrity merge'],
+    ['realtime-messaging', 'Live deliveries', 'Offline queue'],
+    ['video-pipeline', 'Encoded variants', 'Processing backlog'],
+    ['geospatial-dispatch', 'Indexed updates', 'Nearby candidates'],
+    ['url-shortener', 'Cached redirects', 'Mapping lookups'],
+    ['rate-limiter', 'Allowed', 'Throttled'],
+    ['object-storage', 'Changed chunks', 'Deduplicated bytes'],
+    ['notification-fanout', 'Delivered', 'Retry loop'],
+    ['search-autocomplete', 'Cache hits', 'Trie lookups'],
+    ['distributed-kv', 'Quorum reads', 'Replicated writes']
   ];
 
   for (const [nodeId, firstLabel, expectedText] of cases) {
