@@ -234,8 +234,11 @@ guided architecture judgment.
 The production site runs on Cloudflare Pages with OpenCode Go
 `gpt-5.6-luna` generation and a KV-backed generated-card cache. The
 `OPENCODE_API_KEY` credential is stored as a Cloudflare Pages secret. Node.js
-22 or newer and an authenticated Wrangler session are required. Deploy from
-this directory:
+22 or newer and an authenticated Wrangler session are required. The required
+runtime is pinned in `.nvmrc`; `deploy.sh` automatically activates an
+installed NVM Node 22+ runtime when the shell's default Node is older. If no
+compatible runtime is installed, run `nvm install 22` once. Deploy from this
+directory:
 
 Generation tries `gpt-5.6-luna` first and uses `deepseek-v4-flash` as its
 OpenCode Go fallback when the primary attempt fails validation or the provider
