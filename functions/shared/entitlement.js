@@ -9,6 +9,7 @@
 
 export const DEFAULT_FREE_DAILY_CARD_LIMIT = 10;
 export const DEFAULT_FREE_DAILY_WIKI_LIMIT = 10;
+export const DEFAULT_FREE_DAILY_SANDBOX_LIMIT = 3;
 
 const enc = new TextEncoder();
 
@@ -98,10 +99,20 @@ export function quotaKey(kind, identity, now = Date.now()) {
 }
 
 export function freeLimit(env, kind) {
-  const raw = kind === 'cards' ? env.FREE_DAILY_CARD_LIMIT : env.FREE_DAILY_WIKI_LIMIT;
+  const envKey = {
+    cards: 'FREE_DAILY_CARD_LIMIT',
+    wiki: 'FREE_DAILY_WIKI_LIMIT',
+    sandbox: 'FREE_DAILY_SANDBOX_LIMIT'
+  }[kind];
+  const defaultLimit = {
+    cards: DEFAULT_FREE_DAILY_CARD_LIMIT,
+    wiki: DEFAULT_FREE_DAILY_WIKI_LIMIT,
+    sandbox: DEFAULT_FREE_DAILY_SANDBOX_LIMIT
+  }[kind] ?? 0;
+  const raw = envKey ? env[envKey] : undefined;
   const parsed = Number.parseInt(raw ?? '', 10);
-  if (raw === undefined || raw === null || raw === '') return kind === 'cards' ? DEFAULT_FREE_DAILY_CARD_LIMIT : DEFAULT_FREE_DAILY_WIKI_LIMIT;
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : (kind === 'cards' ? DEFAULT_FREE_DAILY_CARD_LIMIT : DEFAULT_FREE_DAILY_WIKI_LIMIT);
+  if (raw === undefined || raw === null || raw === '') return defaultLimit;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultLimit;
 }
 
 /* An explicit limit of 0 disables the free quota entirely (used by tests and

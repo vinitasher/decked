@@ -27,6 +27,7 @@ export async function onRequestGet(context) {
 
   const cards = await resolveEntitlement(env, request, 'cards');
   const wiki = await resolveEntitlement(env, request, 'wiki');
+  const sandbox = await resolveEntitlement(env, request, 'sandbox');
   const billing = await getBillingRecord(env, cards.identity);
 
   return jsonResponse(
@@ -45,6 +46,12 @@ export async function onRequestGet(context) {
         limit: freeLimit(env, 'wiki'),
         used: wiki.used,
         remaining: wiki.remaining
+      },
+      sandbox: {
+        enabled: quotaEnabled(env, 'sandbox'),
+        limit: freeLimit(env, 'sandbox'),
+        used: sandbox.used,
+        remaining: sandbox.remaining
       }
     },
     200,

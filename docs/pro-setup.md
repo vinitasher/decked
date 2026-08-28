@@ -1,10 +1,11 @@
 # Pro monetization setup (Supabase + Stripe)
 
-The app's monetization: everyone gets a free tier (10 freshly generated cards
-and 10 wiki entries per day, UTC), and Pro removes the limits. Quotas are
-enforced server-side in the Cloudflare Pages Functions; Stripe Checkout sells
-the Pro subscription; the Stripe webhook grants Pro by writing the user's
-entitlement into KV. No database is required — KV is the source of truth.
+The app's monetization: everyone gets a free tier (10 freshly generated cards,
+10 wiki entries, and 3 generated Sandbox definitions per day, UTC), and Pro
+removes the limits. Quotas are enforced server-side in the Cloudflare Pages
+Functions; Stripe Checkout sells the Pro subscription; the Stripe webhook
+grants Pro by writing the user's entitlement into KV. No database is required
+— KV is the source of truth.
 
 ## 1. Supabase (accounts)
 
@@ -52,21 +53,22 @@ stable identity; entitlements live in Cloudflare KV.
 | `STRIPE_PRICE_ID` | `price_...` | no |
 | `FREE_DAILY_CARD_LIMIT` | optional, default `10` | no |
 | `FREE_DAILY_WIKI_LIMIT` | optional, default `10` | no |
+| `FREE_DAILY_SANDBOX_LIMIT` | optional, default `3` | no |
 
 Saving environment variables triggers a redeploy.
 
 ## 4. Verify
 
-- `GET /api/config` returns `supabaseUrl`, `supabaseAnonKey`, and
-  `stripePriceId`.
+- `GET /api/config` returns `supabaseUrl`, `supabaseAnonKey`, `stripePriceId`,
+  and the public free-tier limits, including `freeDailySandboxLimit`.
 - `GET /api/quota` (with `X-Device-Id` header) returns today's usage.
 - Signing in with GitHub updates the account bar; "Upgrade" opens Stripe
   Checkout; after paying, the webhook flips the plan to Pro and `GET
   /api/quota` reports `plan: "pro"` with unlimited generation.
-- Quota counters live in KV under `quota:cards:<identity>:<date>` and
-  `quota:wiki:<identity>:<date>` (expire after ~3 days); billing records
-  under `billing:<identity>`. Cache hits never consume quota — only fresh
-  AI generation does.
+- Quota counters live in KV under `quota:cards:<identity>:<date>`,
+  `quota:wiki:<identity>:<date>`, and `quota:sandbox:<identity>:<date>` (expire
+  after ~3 days); billing records under `billing:<identity>`. Cache hits never
+  consume quota — only fresh AI generation does.
 
 Stripe customer and subscription identity mappings (`stripe:customer:*` and
 `stripe:sub:*`) are durable KV records so delayed webhooks can still resolve a

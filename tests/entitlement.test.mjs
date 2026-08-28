@@ -18,7 +18,8 @@ import {
   isPro,
   resolveEntitlement,
   DEFAULT_FREE_DAILY_CARD_LIMIT,
-  DEFAULT_FREE_DAILY_WIKI_LIMIT
+  DEFAULT_FREE_DAILY_WIKI_LIMIT,
+  DEFAULT_FREE_DAILY_SANDBOX_LIMIT
 } from '../functions/shared/entitlement.js';
 
 const enc = new TextEncoder();
@@ -100,15 +101,18 @@ test('dailyBucket and quotaKey rotate with the UTC date', () => {
   assert.equal(quotaKey('wiki', 'user:u', now + 1000), 'quota:wiki:user:u:2026-08-06');
 });
 
-test('freeLimit defaults to ten and honors env overrides and zero', () => {
+test('freeLimit defaults and honors env overrides and zero for each generated surface', () => {
   assert.equal(freeLimit({}, 'cards'), DEFAULT_FREE_DAILY_CARD_LIMIT);
   assert.equal(freeLimit({}, 'wiki'), DEFAULT_FREE_DAILY_WIKI_LIMIT);
+  assert.equal(freeLimit({}, 'sandbox'), DEFAULT_FREE_DAILY_SANDBOX_LIMIT);
   assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: '25' }, 'cards'), 25);
   assert.equal(freeLimit({ FREE_DAILY_WIKI_LIMIT: '3' }, 'wiki'), 3);
+  assert.equal(freeLimit({ FREE_DAILY_SANDBOX_LIMIT: '7' }, 'sandbox'), 7);
   assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: '0' }, 'cards'), 0);
   assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: 'nope' }, 'cards'), 10);
   assert.equal(quotaEnabled({}, 'cards'), true);
   assert.equal(quotaEnabled({ FREE_DAILY_CARD_LIMIT: '0' }, 'cards'), false);
+  assert.equal(quotaEnabled({ FREE_DAILY_SANDBOX_LIMIT: '0' }, 'sandbox'), false);
 });
 
 test('consumeQuota increments per identity and per kind and sets a TTL', async () => {

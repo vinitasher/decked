@@ -207,7 +207,14 @@ function resetTurnstile(remove) {
 
 /* ——— Accounts, free-tier quotas, and Pro billing ——— */
 
-let appConfig = { supabaseUrl: '', supabaseAnonKey: '', stripePriceId: '', freeDailyCardLimit: 10, freeDailyWikiLimit: 10 };
+let appConfig = {
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  stripePriceId: '',
+  freeDailyCardLimit: 10,
+  freeDailyWikiLimit: 10,
+  freeDailySandboxLimit: 3
+};
 let supabaseClient = null;
 let currentSession = null;
 let currentPlan = 'free';
@@ -305,7 +312,7 @@ function renderAccountBar() {
   bar.classList.remove('hidden');
   bar.innerHTML = signedIn
     ? `<span class="account-chip">👤 <span class="account-email">${escHtml(email)}</span>${currentPlan === 'pro' ? ' <span class="plan-badge plan-pro">PRO</span>' : ' <span class="plan-badge">Free</span>'}</span> <button class="btn btn-sm btn-outline" onclick="APP.signOut()">Sign out</button>`
-    : `<span class="account-chip">Free tier: ${appConfig.freeDailyCardLimit} cards &amp; ${appConfig.freeDailyWikiLimit} wiki entries per day</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGithub()">🐙 Sign in with GitHub</button>`;
+    : `<span class="account-chip">Free tier: ${appConfig.freeDailyCardLimit} cards, ${appConfig.freeDailyWikiLimit} wiki entries &amp; ${appConfig.freeDailySandboxLimit} generated experiments per day</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGithub()">🐙 Sign in with GitHub</button>`;
 }
 
 async function renderQuotaBar() {
@@ -317,10 +324,14 @@ async function renderQuotaBar() {
     const data = await response.json();
     currentPlan = data.plan || 'free';
     bar.classList.remove('hidden');
+    const sandboxQuota = data.sandbox || {
+      used: 0,
+      limit: appConfig.freeDailySandboxLimit
+    };
     if (data.plan === 'pro') {
-      bar.innerHTML = '<span class="quota-text">♾️ Unlimited cards &amp; wiki — Pro</span>';
+      bar.innerHTML = '<span class="quota-text">♾️ Unlimited cards, wiki &amp; generated experiments — Pro</span>';
     } else {
-      bar.innerHTML = `<span class="quota-text">Today: <strong>${data.cards.used}/${data.cards.limit}</strong> cards · <strong>${data.wiki.used}/${data.wiki.limit}</strong> wiki</span> <button class="btn btn-sm btn-outline" onclick="APP.upgradeToPro()">Upgrade</button>`;
+      bar.innerHTML = `<span class="quota-text">Today: <strong>${data.cards.used}/${data.cards.limit}</strong> cards · <strong>${data.wiki.used}/${data.wiki.limit}</strong> wiki · <strong>${sandboxQuota.used}/${sandboxQuota.limit}</strong> generated experiments</span> <button class="btn btn-sm btn-outline" onclick="APP.upgradeToPro()">Upgrade</button>`;
     }
   } catch (_) { /* offline — keep the bar hidden */ }
 }
@@ -364,6 +375,8 @@ const APP = {
   _profileChangeVersion: 0,
   _profilePendingMigration: null,
   _sandboxState: null,
+  _generatedSandboxRequests: null,
+  _sandboxGenerationTopic: '',
 
   init() {
     this.loadProfile();
@@ -2274,10 +2287,78 @@ const APP = {
     return topics[0] || Object.keys(WIKI || {})[0] || '';
   },
 
+  _generatedSandboxStorageKey(topic) {
+    return `sdf_generated_sandbox_v1:${topic}`;
+  },
+
+  _setSandboxGenerationStatus(message, state = '') {
+    const status = document.getElementById('sandbox-generation-status');
+    if (!status) return;
+    status.textContent = message;
+    if (status.dataset) status.dataset.state = state;
+  },
+
+  _loadCachedGeneratedSandbox(topic) {
+    try {
+      const raw = localStorage.getItem(this._generatedSandboxStorageKey(topic));
+      if (!raw || typeof registerGeneratedSandboxModel !== 'function') return null;
+      return registerGeneratedSandboxModel(JSON.parse(raw));
+    } catch (_) {
+      try { localStorage.removeItem(this._generatedSandboxStorageKey(topic)); } catch (_) {}
+      return null;
+    }
+  },
+
+  async _ensureGeneratedSandboxForTopic(topic) {
+    const normalizedTopic = normalizeConceptName(topic);
+    if (!normalizedTopic || typeof registerGeneratedSandboxModel !== 'function') return null;
+    const existing = typeof getSandboxModelsForWikiTopic === 'function'
+      ? getSandboxModelsForWikiTopic(normalizedTopic).find(model => model.generated)
+      : null;
+    if (existing) return existing;
+
+    const cached = this._loadCachedGeneratedSandbox(normalizedTopic);
+    if (cached) return cached;
+
+    if (!this._generatedSandboxRequests) this._generatedSandboxRequests = new Map();
+    if (this._generatedSandboxRequests.has(normalizedTopic)) {
+      return this._generatedSandboxRequests.get(normalizedTopic);
+    }
+    const request = (async () => {
+      const response = await fetch(`${SERVER_BASE}/api/sandbox?topic=${encodeURIComponent(normalizedTopic)}`, {
+        headers: apiHeaders()
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 429) {
+        if (body.code === 'quota_exceeded') this.showQuotaNotice('sandbox');
+        throw new Error(`sandbox generation failed with ${response.status}`);
+      }
+      if (!response.ok) throw new Error(body.error || `sandbox generation failed with ${response.status}`);
+      const model = registerGeneratedSandboxModel(body);
+      try {
+        localStorage.setItem(this._generatedSandboxStorageKey(normalizedTopic), JSON.stringify(body));
+      } catch (_) { /* private browsing or full storage — session registration still works */ }
+      return model;
+    })();
+    this._generatedSandboxRequests.set(normalizedTopic, request);
+    try {
+      return await request;
+    } finally {
+      this._generatedSandboxRequests.delete(normalizedTopic);
+    }
+  },
+
   showSandbox(nodeId) {
     const node = this._ensureConceptLabNode('', nodeId || '');
     if (!node) return;
     const topic = this._conceptForSandboxNode(node);
+    if (node.generated) {
+      this._sandboxGenerationTopic = node.sourceConcept || topic;
+      this._setSandboxGenerationStatus('Generated experiment. It uses the app’s bounded educational model.', 'ready');
+    } else {
+      this._sandboxGenerationTopic = '';
+      this._setSandboxGenerationStatus('', '');
+    }
     this.showScreen('sandbox');
     this.renderWikiSidebar();
     this.renderSandbox();
@@ -2502,6 +2583,13 @@ const APP = {
   selectSandboxNode(nodeId) {
     const node = getSandboxNode(nodeId);
     this._sandboxState = this._newSandboxState(node.id);
+    if (node.generated) {
+      this._sandboxGenerationTopic = node.sourceConcept || '';
+      this._setSandboxGenerationStatus('Generated experiment. It uses the app’s bounded educational model.', 'ready');
+    } else {
+      this._sandboxGenerationTopic = '';
+      this._setSandboxGenerationStatus('', '');
+    }
     this.renderSandbox();
     const topic = this._conceptForSandboxNode(node);
     if (topic) this.openWiki(topic, { navigate: false });
@@ -2618,11 +2706,53 @@ const APP = {
 
   showWiki(topic) {
     const selectedTopic = topic || this._activeWikiTopic || Object.keys(WIKI || {})[0] || '';
-    if (typeof getSandboxNode === 'function') this._ensureConceptLabNode(selectedTopic);
+    if (!selectedTopic) return;
+    if (typeof getSandboxModelsForWikiTopic === 'function'
+        && !getSandboxModelsForWikiTopic(selectedTopic).length) {
+      this._loadCachedGeneratedSandbox(selectedTopic);
+    }
+    const relatedModels = typeof getSandboxModelsForWikiTopic === 'function'
+      ? getSandboxModelsForWikiTopic(selectedTopic)
+      : [];
+    if (typeof getSandboxNode === 'function') {
+      this._ensureConceptLabNode(relatedModels.length ? selectedTopic : '');
+    }
     this.showScreen('wiki');
     this.renderWikiSidebar();
     if (typeof getSandboxNode === 'function') this.renderSandbox();
     this.openWiki(selectedTopic);
+
+    if (!relatedModels.length) {
+      this._sandboxGenerationTopic = selectedTopic;
+      this._setSandboxGenerationStatus('Generating a bounded experiment for this concept…', 'loading');
+      return this._ensureGeneratedSandboxForTopic(selectedTopic)
+        .then(model => {
+          if (!model || this._activeWikiTopic !== selectedTopic) return;
+          const activeState = this._sandboxState;
+          const preserveExperiment = Boolean(activeState?.result || activeState?.dirty);
+          if (!preserveExperiment) this._sandboxState = this._newSandboxState(model.id);
+          this._setSandboxGenerationStatus(
+            preserveExperiment
+              ? 'Generated experiment ready — choose it from Node model to try it without losing this run.'
+              : 'Generated experiment ready. It uses the app’s bounded educational model.',
+            'ready'
+          );
+          this.renderSandbox();
+          this.openWiki(selectedTopic, { navigate: false });
+        })
+        .catch(error => {
+          if (this._activeWikiTopic !== selectedTopic) return;
+          console.error('Sandbox generation failed for', selectedTopic, error);
+          this._setSandboxGenerationStatus(
+            'A concept-specific experiment is unavailable right now. The reviewed Sandbox catalog is still available.',
+            'error'
+          );
+          this.renderSandbox();
+        });
+    } else {
+      this._sandboxGenerationTopic = '';
+      this._setSandboxGenerationStatus('', '');
+    }
   },
 
   renderWikiSidebar() {
@@ -2631,7 +2761,7 @@ const APP = {
     const active = this._activeWikiTopic || '';
     const entries = Object.values(WIKI || {}).sort((a, b) => a.title.localeCompare(b.title));
     sidebar.innerHTML = entries.map(entry =>
-      `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openWiki('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
+      `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.showWiki('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
     ).join('');
   },
 
@@ -2718,7 +2848,7 @@ const APP = {
       : '<button class="btn btn-sm btn-primary" type="button" onclick="APP.showSandbox()">Browse Concept Sandbox →</button>';
     const sandboxDescription = sandboxModels.length
       ? `Apply ${this._escapeHtml(entry.title)} to a bounded node experiment, then return here for the explanation.`
-      : 'This concept has no dedicated reviewed node yet, but you can explore the full offline Sandbox catalog.';
+      : 'A concept-specific bounded experiment will be generated when you open this topic. The reviewed Sandbox catalog remains available while it loads.';
     const sandboxCallout = `<aside class="wiki-lab-callout"><span class="wiki-lab-kicker">Learn ↔ experiment</span><strong>Put this concept under pressure</strong><p>${sandboxDescription}</p><div class="wiki-lab-actions">${sandboxActions}</div></aside>`;
     return `
       <h2>${this._escapeHtml(entry.title)}</h2>
@@ -3017,9 +3147,13 @@ const APP = {
     const banner = document.getElementById('upgrade-banner');
     if (!banner) return;
     banner.classList.remove('hidden');
-    banner.innerHTML = kind === 'cards'
-      ? '📊 Daily card limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited cards.'
-      : '📖 Daily wiki limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited entries.';
+    if (kind === 'cards') {
+      banner.innerHTML = '📊 Daily card limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited cards.';
+    } else if (kind === 'wiki') {
+      banner.innerHTML = '📖 Daily wiki limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited entries.';
+    } else {
+      banner.innerHTML = '🧪 Daily generated-experiment limit reached — <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button> for unlimited generated experiments.';
+    }
   }
 };
 

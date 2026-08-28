@@ -161,8 +161,16 @@ decision-based practice with adaptive difficulty.
 **Generated content and quotas:**
 - Cards are generated on demand with AI, cached for reuse, and supported by an
   offline seed-card fallback.
-- The default free tier is 10 freshly generated cards and 10 wiki entries per UTC
-  day. Pro removes those limits, and cache hits do not consume quota.
+- The default free tier is 10 freshly generated cards and 10 wiki entries per
+  UTC day, plus 3 fresh generated Sandbox definitions. Pro removes those limits,
+  and cache hits do not consume quota.
+- When a learner opens a full Concept Lab for a Wiki topic without a reviewed
+  node mapping, the app can generate a labeled `bounded-pressure` experiment.
+  The provider supplies only escaped copy and bounded situation values; the
+  browser owns the simulator, formulas, limits, and trace. Generated
+  definitions are cached in `WIKI_CACHE` under `sandbox:v1:<topic>` and in
+  local storage for offline replay. A failed generation leaves the Wiki and
+  reviewed Sandbox catalog usable.
 
 ## Concept wiki
 
@@ -187,8 +195,9 @@ points, common pitfalls, and related topics) for that concept.
   with one retry per topic** and every entry is validated against the wiki
   schema before it is written.
 - `bash check.sh` already syntax-checks `js/wiki.js`,
-  `functions/api/wiki.js`, and `scripts/generate-wiki.mjs`, and runs
-  `tests/wiki.test.mjs` and `tests/api-wiki.test.mjs`.
+  `functions/api/wiki.js`, `functions/api/sandbox.js`, and
+  `scripts/generate-wiki.mjs`, and runs the Wiki and generated-Sandbox
+  contract/API tests.
 
 The wiki UI — the sidebar index and the link affordance on Know First topics
 in card question headers — lives in `js/app.js`. The Concept Wiki and Sandbox
@@ -336,6 +345,18 @@ for ~30 days (2592000 s), mirroring the `generate-wiki.mjs` schema and
 provider settings (`gpt-5.6-luna` first, `deepseek-v4-flash` fallback,
 thinking disabled). Cached entries are served without a generation call, so
 each concept is generated at most once per cache window.
+
+Full Concept Lab views also request `functions/api/sandbox.js`
+(`GET /api/sandbox?topic=<kebab-case-concept>`) when no reviewed Sandbox node
+is mapped to the selected Wiki concept. The endpoint validates a data-only
+recipe, retries the configured provider sequence, and stores valid recipes
+under the separate `sandbox:v1:` prefix. The browser registers the recipe in
+the fixed bounded-pressure simulator, with exactly five situations and three
+stable outcomes; it never executes provider-authored code or formulas. The
+first three fresh definitions per UTC day are free, Pro is unlimited, and
+server or local cache hits are free. The contract and rollout details live in
+[`PRDs/generated-concept-sandbox.md`](../PRDs/generated-concept-sandbox.md) and
+its [implementation plan](../PRDs/generated-concept-sandbox-plan.md).
 
 ```sh
 bash check.sh

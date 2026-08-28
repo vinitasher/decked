@@ -2647,6 +2647,299 @@ const SANDBOX_WIKI_TOPIC_MAP = Object.freeze({
   'distributed-kv': Object.freeze(['data-partitioning', 'distributed-databases', 'quorum-commit', 'eventual-consistency', 'workload-skew'])
 });
 
+/* Generated sandboxes use a deliberately small, application-owned parameter
+   vocabulary. AI can choose labels and situation values, but it cannot add a
+   control, formula, or executable behavior. */
+const GENERATED_SANDBOX_SCHEMA_VERSION = 1;
+const GENERATED_SANDBOX_MODEL_KIND = 'bounded-pressure';
+const GENERATED_SANDBOX_TOPIC_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const GENERATED_SANDBOX_CONTROL_SPECS = Object.freeze({
+  arrivalRate: Object.freeze({ min: 1, max: 100000, step: 1, unit: 'req/s', default: 1000 }),
+  capacity: Object.freeze({ min: 10, max: 200000, step: 10, unit: 'work/s', default: 10000 }),
+  workMultiplier: Object.freeze({ min: 1, max: 10, step: 0.1, unit: 'x', default: 1 }),
+  absorptionRate: Object.freeze({ min: 0, max: 100, step: 1, unit: '%', default: 50 }),
+  retryRate: Object.freeze({ min: 0, max: 100, step: 1, unit: '%', default: 0 }),
+  skew: Object.freeze({ min: 0, max: 100, step: 1, unit: '%', default: 0 })
+});
+const GENERATED_SANDBOX_PREDICTION_IDS = Object.freeze(['healthy', 'watch', 'stress']);
+
+function generatedSandboxText(value, field, min, max) {
+  if (typeof value !== 'string') throw new Error(`Invalid field: ${field}`);
+  const text = value.trim();
+  if (text.length < min || text.length > max || /[\u0000-\u001f\u007f]/.test(text)) {
+    throw new Error(`Invalid field: ${field}`);
+  }
+  return text;
+}
+
+function generatedSandboxDecimalPlaces(step) {
+  const text = String(step);
+  return text.includes('.') ? text.split('.')[1].length : 0;
+}
+
+function generatedSandboxValue(value, key, field, strict = true) {
+  const spec = GENERATED_SANDBOX_CONTROL_SPECS[key];
+  const number = (typeof value === 'number' || (typeof value === 'string' && value.trim()))
+    ? Number(value)
+    : Number.NaN;
+  if (!Number.isFinite(number)) {
+    if (strict) throw new Error(`Invalid field: ${field}`);
+    return spec.default;
+  }
+  if (strict && (number < spec.min || number > spec.max)) throw new Error(`Invalid field: ${field}`);
+  const bounded = Math.min(spec.max, Math.max(spec.min, number));
+  const decimals = generatedSandboxDecimalPlaces(spec.step);
+  const rounded = Number(bounded.toFixed(decimals));
+  const steps = Math.round((rounded - spec.min) / spec.step);
+  const stepped = Number((spec.min + steps * spec.step).toFixed(decimals));
+  if (strict && Math.abs(rounded - stepped) > 1e-8) throw new Error(`Invalid field: ${field}`);
+  return stepped;
+}
+
+function validateGeneratedSandboxDefinition(raw, expectedTopic = '') {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Generated sandbox must be an object');
+  const topic = raw.topic;
+  if (typeof topic !== 'string' || !GENERATED_SANDBOX_TOPIC_RE.test(topic) || topic.length > 80
+      || (expectedTopic && topic !== expectedTopic)) throw new Error('Invalid generated sandbox topic');
+  if (raw.schemaVersion !== GENERATED_SANDBOX_SCHEMA_VERSION
+      || raw.modelKind !== GENERATED_SANDBOX_MODEL_KIND || raw.generated !== true
+      || raw.id !== `generated-${topic}`) throw new Error('Invalid generated sandbox metadata');
+
+  if (!Array.isArray(raw.controls) || raw.controls.length < 3 || raw.controls.length > 5) {
+    throw new Error('Invalid generated sandbox controls');
+  }
+  const keys = new Set();
+  const controls = raw.controls.map((control, index) => {
+    if (!control || typeof control !== 'object'
+        || !Object.prototype.hasOwnProperty.call(GENERATED_SANDBOX_CONTROL_SPECS, control.key)
+        || keys.has(control.key)) throw new Error(`Invalid generated sandbox control ${index}`);
+    keys.add(control.key);
+    const spec = GENERATED_SANDBOX_CONTROL_SPECS[control.key];
+    return {
+      key: control.key,
+      label: generatedSandboxText(control.label, `controls[${index}].label`, 2, 60),
+      unit: spec.unit,
+      advanced: Boolean(control.advanced)
+    };
+  });
+  if (!keys.has('arrivalRate') || !keys.has('capacity')) throw new Error('Generated sandbox needs arrivalRate and capacity');
+
+  if (!Array.isArray(raw.situations) || raw.situations.length !== 5) throw new Error('Invalid generated sandbox situations');
+  const situationIds = new Set();
+  const controlKeys = controls.map(control => control.key);
+  const situations = raw.situations.map((situation, index) => {
+    if (!situation || typeof situation !== 'object' || situation.level !== index + 1
+        || typeof situation.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(situation.id)
+        || situationIds.has(situation.id)) throw new Error(`Invalid generated sandbox situation ${index}`);
+    situationIds.add(situation.id);
+    if (!situation.values || typeof situation.values !== 'object' || Array.isArray(situation.values)) {
+      throw new Error(`Invalid generated sandbox situation values ${index}`);
+    }
+    const valueKeys = Object.keys(situation.values);
+    if (valueKeys.length !== controlKeys.length || valueKeys.some(key => !controlKeys.includes(key))) {
+      throw new Error(`Invalid generated sandbox situation values ${index}`);
+    }
+    const values = Object.fromEntries(controlKeys.map(key => [
+      key,
+      generatedSandboxValue(situation.values[key], key, `situations[${index}].values.${key}`)
+    ]));
+    return {
+      id: situation.id,
+      label: generatedSandboxText(situation.label, `situations[${index}].label`, 2, 60),
+      level: index + 1,
+      description: generatedSandboxText(situation.description, `situations[${index}].description`, 20, 220),
+      objective: generatedSandboxText(situation.objective, `situations[${index}].objective`, 20, 220),
+      values
+    };
+  });
+
+  if (!Array.isArray(raw.predictionOptions) || raw.predictionOptions.length !== GENERATED_SANDBOX_PREDICTION_IDS.length) {
+    throw new Error('Invalid generated sandbox predictions');
+  }
+  const predictionOptions = GENERATED_SANDBOX_PREDICTION_IDS.map(id => {
+    const option = raw.predictionOptions.find(item => item?.id === id);
+    if (!option) throw new Error(`Missing generated sandbox prediction ${id}`);
+    return { id, label: generatedSandboxText(option.label, `predictionOptions.${id}.label`, 8, 120) };
+  });
+  if (!Array.isArray(raw.assumptions) || raw.assumptions.length < 3 || raw.assumptions.length > 6) {
+    throw new Error('Invalid generated sandbox assumptions');
+  }
+
+  return {
+    schemaVersion: GENERATED_SANDBOX_SCHEMA_VERSION,
+    modelKind: GENERATED_SANDBOX_MODEL_KIND,
+    generated: true,
+    id: `generated-${topic}`,
+    topic,
+    label: generatedSandboxText(raw.label, 'label', 2, 60),
+    description: generatedSandboxText(raw.description, 'description', 30, 260),
+    predictionQuestion: generatedSandboxText(raw.predictionQuestion, 'predictionQuestion', 20, 180),
+    controls,
+    situations,
+    predictionOptions,
+    assumptions: raw.assumptions.map((assumption, index) =>
+      generatedSandboxText(assumption, `assumptions[${index}]`, 20, 240)
+    )
+  };
+}
+
+function generatedSandboxInputValue(values, key) {
+  return Number(values[key] ?? GENERATED_SANDBOX_CONTROL_SPECS[key].default);
+}
+
+function normalizeGeneratedSandboxInput(definition, input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  return Object.fromEntries(definition.controls.map(control => [
+    control.key,
+    generatedSandboxValue(source[control.key], control.key, control.key, false)
+  ]));
+}
+
+function generatedSandboxPressure(definition, input = {}) {
+  const values = normalizeGeneratedSandboxInput(definition, input);
+  const arrivalRate = generatedSandboxInputValue(values, 'arrivalRate');
+  const capacity = generatedSandboxInputValue(values, 'capacity');
+  const workMultiplier = generatedSandboxInputValue(values, 'workMultiplier');
+  const absorptionRate = generatedSandboxInputValue(values, 'absorptionRate');
+  const retryRate = generatedSandboxInputValue(values, 'retryRate');
+  const skew = generatedSandboxInputValue(values, 'skew');
+  const baseWorkRps = arrivalRate * workMultiplier;
+  const retryWorkRps = baseWorkRps * retryRate / 100;
+  const offeredWorkRps = baseWorkRps + retryWorkRps;
+  const absorbedWorkRps = offeredWorkRps * absorptionRate / 100;
+  const effectiveWorkRps = offeredWorkRps - absorbedWorkRps;
+  const effectiveCapacityRps = capacity / (1 + skew / 100);
+  const utilization = effectiveWorkRps / effectiveCapacityRps;
+  const backlogWork = Math.max(0, effectiveWorkRps - effectiveCapacityRps) * 10;
+  const processedWorkRps = Math.min(effectiveWorkRps, effectiveCapacityRps);
+  const estimatedP95LatencyMs = 20
+    + Math.max(0, utilization - 0.6) * 120
+    + backlogWork / Math.max(1, effectiveCapacityRps) * 10;
+  let status = 'healthy';
+  if (utilization >= 1 || backlogWork > capacity * 0.5) status = 'stress';
+  else if (utilization >= 0.75 || retryRate >= 20 || skew >= 50) status = 'watch';
+  let primaryRisk = 'none';
+  if (utilization >= 1) primaryRisk = 'capacity';
+  else if (retryRate >= 20) primaryRisk = 'retries';
+  else if (skew >= 50) primaryRisk = 'skew';
+  else if (absorptionRate >= 75) primaryRisk = 'absorption';
+  const teachingConclusion = {
+    none: 'The modeled node has headroom: effective work stays below its available capacity.',
+    capacity: 'The first constraint is capacity. Once effective work outruns the node, waiting work and latency rise together.',
+    retries: 'Retries are additional work. Without a bound or backoff, a dependency failure can amplify pressure on the same node.',
+    skew: 'Aggregate capacity can hide concentration. Skew makes the hottest partition or key the practical constraint first.',
+    absorption: 'Local handling absorbs most offered work in this model, reducing the pressure that reaches the node.'
+  }[primaryRisk];
+  return {
+    modelVersion: `generated-v${GENERATED_SANDBOX_SCHEMA_VERSION}`,
+    input: values,
+    baseWorkRps: sandboxRounded(baseWorkRps),
+    retryWorkRps: sandboxRounded(retryWorkRps),
+    offeredWorkRps: sandboxRounded(offeredWorkRps),
+    absorbedWorkRps: sandboxRounded(absorbedWorkRps),
+    effectiveWorkRps: sandboxRounded(effectiveWorkRps),
+    effectiveCapacityRps: sandboxRounded(effectiveCapacityRps),
+    processedWorkRps: sandboxRounded(processedWorkRps),
+    utilizationPct: sandboxRounded(utilization * 100),
+    backlogWork: sandboxRounded(backlogWork),
+    estimatedP95LatencyMs: sandboxRounded(estimatedP95LatencyMs),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(baseWorkRps)} work/s is offered before absorption and retries are accounted for.`,
+      `${sandboxFormatNumber(effectiveWorkRps)} effective work/s reaches a node with ${sandboxFormatNumber(effectiveCapacityRps)} work/s of modeled capacity.`,
+      `${sandboxFormatNumber(processedWorkRps)} work/s is processed while ${sandboxFormatNumber(backlogWork)} work units are held across a 10-second teaching window.`
+    ],
+    teachingConclusion,
+    assumptions: [
+      ...definition.assumptions,
+      'The application-owned pressure model treats capacity, absorption, retries, and skew as bounded teaching signals.'
+    ]
+  };
+}
+
+function generatedSandboxPredictionBucket(definition, input = {}) {
+  return generatedSandboxPressure(definition, input).status;
+}
+
+function buildGeneratedSimulationDiagram(result, definition) {
+  const input = result.input;
+  const pressureTone = result.status === 'stress' ? 'stress' : result.status === 'watch' ? 'watch' : 'healthy';
+  return {
+    title: `${definition.label} pressure path`,
+    windowLabel: 'Per-second teaching flow',
+    caption: `${sandboxFormatNumber(result.effectiveWorkRps)} effective work/s reaches the generated pressure model after absorption and retries.`,
+    stages: [
+      sandboxFlowStage('arrival', 'Incoming work', sandboxFormatNumber(input.arrivalRate), 'req/s', `${sandboxFormatNumber(input.workMultiplier ?? 1)}x work multiplier`, 'neutral'),
+      sandboxFlowStage('pressure', 'Effective demand', sandboxFormatNumber(result.effectiveWorkRps), 'work/s', `${sandboxFormatNumber(result.absorbedWorkRps)} work/s absorbed locally`, pressureTone),
+      sandboxFlowStage('node', 'Modeled node', sandboxFormatNumber(result.effectiveCapacityRps), 'capacity/s', `${sandboxFormatNumber(result.utilizationPct, 0)}% utilized`, pressureTone)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('absorbed', 'Absorbed locally', sandboxFormatNumber(result.absorbedWorkRps), 'work/s', 'The absorption assumption keeps this work off the modeled node.', result.absorbedWorkRps > 0 ? 'healthy' : 'neutral'),
+      sandboxFlowOutcome('processed', 'Processed', sandboxFormatNumber(result.processedWorkRps), 'work/s', 'The node handles work within its modeled capacity.', pressureTone),
+      sandboxFlowOutcome('backlog', 'Backlog', sandboxFormatNumber(result.backlogWork), 'work units', 'Excess effective work waits in the teaching window.', result.backlogWork > 0 ? pressureTone : 'healthy')
+    ],
+    callout: result.teachingConclusion,
+    ariaLabel: `${definition.label} transforms ${sandboxFormatNumber(result.effectiveWorkRps)} effective work per second into ${sandboxFormatNumber(result.processedWorkRps)} processed work per second and ${sandboxFormatNumber(result.backlogWork)} backlog work units.`
+  };
+
+}
+
+function createGeneratedSandboxModel(rawDefinition) {
+  const definition = validateGeneratedSandboxDefinition(rawDefinition, rawDefinition?.topic || '');
+  const inputMetrics = ['arrivalRate', 'capacity'].map(key => definition.controls.find(control => control.key === key)).map(control => ({
+    label: control.label,
+    key: control.key,
+    source: 'input',
+    unit: control.unit
+  }));
+  const model = {
+    id: definition.id,
+    label: `Generated · ${definition.label}`,
+    description: definition.description,
+    wikiTopics: [definition.topic],
+    generated: true,
+    sourceConcept: definition.topic,
+    modelKind: definition.modelKind,
+    predictionQuestion: definition.predictionQuestion,
+    metrics: [
+      ...inputMetrics,
+      { label: 'Effective work', key: 'effectiveWorkRps', unit: 'work/s' },
+      { label: 'Node utilization', key: 'utilizationPct', unit: '%' },
+      { label: 'Backlog', key: 'backlogWork', unit: 'work' },
+      { label: 'Estimated p95', key: 'estimatedP95LatencyMs', unit: 'ms' }
+    ],
+    limits: Object.fromEntries(definition.controls.map(control => [
+      control.key,
+      GENERATED_SANDBOX_CONTROL_SPECS[control.key]
+    ])),
+    controls: definition.controls,
+    situations: definition.situations,
+    flowPreview: ['Incoming work', 'Pressure model', 'Modeled outcome'],
+    predictionOptions: definition.predictionOptions,
+    defaults: definition.situations[0].values,
+    assumptions: definition.assumptions,
+    normalize: input => normalizeGeneratedSandboxInput(definition, input),
+    simulate: input => generatedSandboxPressure(definition, input),
+    predictionBucket: input => generatedSandboxPredictionBucket(definition, input),
+    diagram: result => buildGeneratedSimulationDiagram(result, definition)
+  };
+  return Object.freeze(model);
+}
+
+function registerGeneratedSandboxModel(rawDefinition) {
+  const definition = validateGeneratedSandboxDefinition(rawDefinition, rawDefinition?.topic || '');
+  const model = createGeneratedSandboxModel(definition);
+  const existingIndex = SANDBOX_NODE_MODELS.findIndex(candidate => candidate.id === model.id);
+  if (existingIndex >= 0 && !SANDBOX_NODE_MODELS[existingIndex].generated) {
+    throw new Error('Generated sandbox id collides with a reviewed model');
+  }
+  if (existingIndex >= 0) SANDBOX_NODE_MODELS.splice(existingIndex, 1, model);
+  else SANDBOX_NODE_MODELS.push(model);
+  return model;
+}
+
 const POPULAR_SANDBOX_MODELS = Object.freeze([
   createInterviewSandboxModel({
     id: 'social-feed',
@@ -2921,7 +3214,7 @@ function buildGenericSimulationDiagram(result) {
 
 /* ——— Generic model catalog ——— */
 
-const SANDBOX_NODE_MODELS = Object.freeze([
+const SANDBOX_NODE_MODELS = [
   {
     id: 'redis-cache',
     label: 'Redis-like cache',
@@ -2998,7 +3291,7 @@ const SANDBOX_NODE_MODELS = Object.freeze([
     diagram: buildDatabaseSimulationDiagram
   },
   ...POPULAR_SANDBOX_MODELS
-]);
+];
 
 function getSandboxWikiTopics(nodeId = 'redis-cache') {
   const node = SANDBOX_NODE_MODELS.find(model => model.id === nodeId);

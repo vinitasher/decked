@@ -19,6 +19,9 @@ test('README documents the deployed AI generation and daily quota model', () => 
     /cached for reuse/i,
     /offline seed-card fallback/i,
     /10 freshly generated cards and 10 wiki entries\s+per\s+UTC\s+day/i,
+    /3\s+fresh generated Sandbox definitions/i,
+    /bounded-pressure/i,
+    /never executes provider-authored code or formulas/i,
     /Pro removes those limits/i,
     /cache hits do not consume quota/i
   ]) {

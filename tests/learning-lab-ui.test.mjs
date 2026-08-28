@@ -38,6 +38,7 @@ function createContext() {
       value: '',
       checked: false,
       className: '',
+      dataset: {},
       classList: makeClassList(isScreen ? ['screen', 'hidden'] : []),
       style: {},
       children: [],
@@ -60,7 +61,7 @@ function createContext() {
     'sandbox-situation-objective', 'sandbox-wiki-links', 'sandbox-controls', 'sandbox-prediction-question',
     'sandbox-predictions', 'sandbox-prediction-error', 'sandbox-progress-text',
     'sandbox-progress-fill', 'sandbox-current-level', 'sandbox-run-btn',
-    'sandbox-next-btn', 'sandbox-results'
+    'sandbox-next-btn', 'sandbox-results', 'sandbox-generation-status'
   ]) makeElement(id, id.startsWith('screen-'));
 
   const context = {
@@ -105,6 +106,8 @@ globalThis.getSandboxNode = getSandboxNode;
 globalThis.getSandboxPredictionBucket = getSandboxPredictionBucket;
 globalThis.getSandboxWikiTopics = getSandboxWikiTopics;
 globalThis.getSandboxModelsForWikiTopic = getSandboxModelsForWikiTopic;
+globalThis.validateGeneratedSandboxDefinition = validateGeneratedSandboxDefinition;
+globalThis.registerGeneratedSandboxModel = registerGeneratedSandboxModel;
 ${appSource}
 globalThis.learningLevelForProfileForTest = learningLevelForProfile;
 globalThis.normalizeProfileDataForTest = normalizeProfileData;
@@ -146,8 +149,55 @@ function freshApp() {
   const app = Object.create(context.appForTest);
   app.profile = context.normalizeProfileDataForTest(baseProfile());
   app._sandboxState = null;
+  app._activeWikiTopic = '';
+  app._generatedSandboxRequests = null;
+  app._sandboxGenerationTopic = '';
+  context.localStorage.values.clear();
   app.saveProfile = () => {};
   return app;
+}
+
+function generatedDefinition(topic) {
+  return {
+    schemaVersion: 1,
+    modelKind: 'bounded-pressure',
+    generated: true,
+    id: `generated-${topic}`,
+    topic,
+    label: 'Generated pressure',
+    description: 'A bounded experiment connects incoming work, capacity, and concentrated pressure for this concept.',
+    predictionQuestion: 'Will effective work stay below the modeled capacity?',
+    controls: [
+      { key: 'arrivalRate', label: 'Incoming work', advanced: false },
+      { key: 'capacity', label: 'Modeled capacity', advanced: false },
+      { key: 'skew', label: 'Pressure skew', advanced: true }
+    ],
+    situations: [1, 2, 3, 4, 5].map(level => ({
+      id: `pressure-level-${level}`,
+      label: `Pressure level ${level}`,
+      level,
+      description: 'This situation changes a bounded pressure input so the learner can compare modeled outcomes.',
+      objective: 'Predict whether the node stays healthy, needs watching, or enters stress.',
+      values: { arrivalRate: level === 5 ? 20000 : level * 1000, capacity: 10000, skew: (level - 1) * 15 }
+    })),
+    predictionOptions: [
+      { id: 'healthy', label: 'The modeled path keeps comfortable headroom' },
+      { id: 'watch', label: 'The modeled path is nearing a pressure boundary' },
+      { id: 'stress', label: 'The modeled path develops backlog and stress' }
+    ],
+    assumptions: [
+      'The input values are bounded teaching examples, not production recommendations.',
+      'Capacity is represented by one effective work budget for the modeled path.',
+      'Skew represents concentration on one representative partition or key.'
+    ]
+  };
+}
+
+function clearGeneratedModels() {
+  for (let index = context.SANDBOX_NODE_MODELS.length - 1; index >= 0; index--) {
+    if (context.SANDBOX_NODE_MODELS[index].generated) context.SANDBOX_NODE_MODELS.splice(index, 1);
+  }
+  context.localStorage.values.clear();
 }
 
 test('learning ladder advances only when practice, accuracy, and topic evidence agree', () => {
@@ -201,6 +251,7 @@ test('sandbox route and offline shell include the model module', () => {
   assert.match(htmlSource, /class="concept-lab-pane concept-lab-sandbox-pane"/);
   assert.doesNotMatch(htmlSource, /id="screen-sandbox"/);
   assert.match(htmlSource, /id="sandbox-node"/);
+  assert.match(htmlSource, /id="sandbox-generation-status"/);
   assert.match(htmlSource, /Open Concept Lab/);
   assert.match(htmlSource, /Concept Lab · Wiki \+ Sandbox/);
   assert.match(htmlSource, /js\/sandbox\.js/);
@@ -391,4 +442,113 @@ test('switching node models resets the current lab to that model baseline', () =
   assert.equal(app._sandboxState.situationId, 'steady-workers');
   assert.equal(app._sandboxState.result, null);
   assert.match(context.document.getElementById('sandbox-node-description').textContent, /worker capacity/i);
+});
+
+test('opening an unmapped Wiki concept generates and selects a bounded sandbox', async () => {
+  clearGeneratedModels();
+  const app = freshApp();
+  const originalFetch = context.fetch;
+  let calls = 0;
+  context.fetch = async url => {
+    calls++;
+    assert.match(url, /\/api\/sandbox\?topic=dns/);
+    return {
+      ok: true,
+      status: 200,
+      async json() { return generatedDefinition('dns'); }
+    };
+  };
+  try {
+    const pending = app.showWiki('dns');
+    assert.equal(context.document.getElementById('sandbox-generation-status').dataset.state, 'loading');
+    await pending;
+    assert.equal(calls, 1);
+    assert.equal(app._sandboxState.nodeId, 'generated-dns');
+    assert.match(context.document.getElementById('sandbox-node').innerHTML, /Generated · Generated pressure/);
+    assert.equal(context.document.getElementById('sandbox-generation-status').dataset.state, 'ready');
+    assert.match(context.document.getElementById('sandbox-generation-status').textContent, /bounded educational model/i);
+    assert.ok(context.localStorage.getItem('sdf_generated_sandbox_v1:dns'));
+  } finally {
+    context.fetch = originalFetch;
+  }
+});
+
+test('generated sandbox requests coalesce and local cache avoids a second network call', async () => {
+  clearGeneratedModels();
+  const app = freshApp();
+  const originalFetch = context.fetch;
+  let resolveFetch;
+  let calls = 0;
+  context.fetch = async () => {
+    calls++;
+    return new Promise(resolve => { resolveFetch = resolve; });
+  };
+  try {
+    const first = app._ensureGeneratedSandboxForTopic('dns');
+    const second = app._ensureGeneratedSandboxForTopic('dns');
+    resolveFetch({ ok: true, status: 200, async json() { return generatedDefinition('dns'); } });
+    const [firstModel, secondModel] = await Promise.all([first, second]);
+    assert.equal(firstModel.id, secondModel.id);
+    assert.equal(calls, 1);
+
+    const cachedValue = context.localStorage.getItem('sdf_generated_sandbox_v1:dns');
+    clearGeneratedModels();
+    const cachedApp = freshApp();
+    context.localStorage.setItem('sdf_generated_sandbox_v1:dns', cachedValue);
+    context.fetch = async () => { throw new Error('local cache should be used'); };
+    const cached = await cachedApp._ensureGeneratedSandboxForTopic('dns');
+    assert.equal(cached.id, 'generated-dns');
+    assert.equal(calls, 1);
+  } finally {
+    context.fetch = originalFetch;
+  }
+});
+
+test('generation failure keeps an active reviewed experiment and reports the fallback', async () => {
+  clearGeneratedModels();
+  const app = freshApp();
+  app.showSandbox('redis-cache');
+  const expected = context.getSandboxPredictionBucket('redis-cache', app._sandboxState.input);
+  app.selectSandboxPrediction(expected);
+  assert.equal(app.runSandbox(), true);
+  const before = JSON.stringify(app._sandboxState);
+  const originalFetch = context.fetch;
+  context.fetch = async () => ({
+    ok: false,
+    status: 503,
+    async json() { return { error: 'temporarily unavailable' }; }
+  });
+  try {
+    await app.showWiki('dns');
+    assert.equal(JSON.stringify(app._sandboxState), before);
+    assert.equal(context.document.getElementById('sandbox-generation-status').dataset.state, 'error');
+    assert.match(context.document.getElementById('sandbox-generation-status').textContent, /reviewed Sandbox catalog/i);
+  } finally {
+    context.fetch = originalFetch;
+  }
+});
+
+test('successful generation keeps an active experiment instead of silently switching nodes', async () => {
+  clearGeneratedModels();
+  const app = freshApp();
+  app.showSandbox('redis-cache');
+  const expected = context.getSandboxPredictionBucket('redis-cache', app._sandboxState.input);
+  app.selectSandboxPrediction(expected);
+  assert.equal(app.runSandbox(), true);
+  const before = JSON.stringify(app._sandboxState);
+  const originalFetch = context.fetch;
+  context.fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() { return generatedDefinition('dns'); }
+  });
+  try {
+    await app.showWiki('dns');
+    assert.equal(JSON.stringify(app._sandboxState), before);
+    assert.match(context.document.getElementById('sandbox-generation-status').textContent, /without losing this run/i);
+    assert.match(context.document.getElementById('sandbox-node').innerHTML, /Redis-like cache/);
+    assert.match(context.document.getElementById('wiki-content').innerHTML, /Generated pressure/);
+  } finally {
+    context.fetch = originalFetch;
+  }
 });

@@ -8,6 +8,7 @@ import {
 } from '../functions/api/billing/webhook.js';
 import { onRequest as checkoutOnRequest } from '../functions/api/billing/checkout.js';
 import { onRequest as quotaOnRequest } from '../functions/api/quota.js';
+import { onRequestGet as configOnRequestGet } from '../functions/api/config.js';
 
 const enc = new TextEncoder();
 
@@ -237,6 +238,8 @@ test('quota endpoint reports usage, limits, and plan', async () => {
   assert.equal(body.cards.limit, 10);
   assert.equal(body.cards.remaining, 10);
   assert.equal(body.wiki.limit, 10);
+  assert.equal(body.sandbox.limit, 3);
+  assert.equal(body.sandbox.remaining, 3);
 });
 
 test('quota endpoint tracks anonymous device usage and rejects non-GET', async () => {
@@ -249,10 +252,28 @@ test('quota endpoint tracks anonymous device usage and rejects non-GET', async (
   const body = await response.json();
   assert.equal(body.signedIn, false);
   assert.equal(body.plan, 'free');
+  assert.equal(body.sandbox.limit, 3);
+  assert.equal(body.sandbox.used, 0);
 
   const post = await quotaOnRequest({
     request: new Request('https://example.com/api/quota', { method: 'POST' }),
     env: { CARD_CACHE: store }
   });
   assert.equal(post.status, 405);
+});
+
+test('public config exposes the generated Sandbox daily limit', async () => {
+  const response = configOnRequestGet({
+    env: {
+      FREE_DAILY_SANDBOX_LIMIT: '6',
+      SUPABASE_URL: 'https://supabase.example',
+      SUPABASE_ANON_KEY: 'anon',
+      STRIPE_PRICE_ID: 'price_test'
+    }
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.freeDailySandboxLimit, 6);
+  assert.equal(body.freeDailyCardLimit, 10);
+  assert.equal(body.freeDailyWikiLimit, 10);
 });

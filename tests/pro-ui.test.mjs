@@ -54,6 +54,7 @@ test('app.js sends device id and bearer token headers on API calls', () => {
   assert.match(app, /if \(currentSession\?\.access_token\) headers\.Authorization = `Bearer \$\{currentSession\.access_token\}`/);
   assert.match(app, /api\/generate\?/, 'generate fetch');
   assert.match(app, /api\/wiki\?topic=/, 'wiki fetch');
+  assert.match(app, /api\/sandbox\?topic=/, 'sandbox fetch');
   assert.match(app, /api\/quota/, 'quota fetch');
 });
 
@@ -73,8 +74,10 @@ test('app.js handles quota-exceeded responses with an upgrade notice', () => {
   assert.match(app, /if \(res\.status === 429\) \{\s*const quotaBody = await res\.json\(\)\.catch\(\(\) => \(\{\}\)\);/);
   assert.match(app, /quotaBody\.code === 'quota_exceeded'\) this\.showQuotaNotice\('cards'\)/);
   assert.match(app, /quotaBody\.code === 'quota_exceeded'\) this\.showQuotaNotice\('wiki'\)/);
+  assert.match(app, /body\.code === 'quota_exceeded'\) this\.showQuotaNotice\('sandbox'\)/);
   assert.match(app, /Daily card limit reached — <button[^>]*>Upgrade to Pro<\/button> for unlimited cards\./);
   assert.match(app, /Daily wiki limit reached — <button[^>]*>Upgrade to Pro<\/button> for unlimited entries\./);
+  assert.match(app, /Daily generated-experiment limit reached — <button[^>]*>Upgrade to Pro<\/button> for unlimited generated experiments\./);
 });
 
 test('app.js wires sign-in, sign-out, and the checkout flow', () => {
@@ -95,10 +98,11 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
   assert.match(css, /\.plan-badge\.plan-pro \{ background: var\(--success\); color: #fff; \}/);
   assert.match(css, /\.quota-bar \{ display: flex;/);
   assert.match(css, /\.upgrade-banner \{ margin: 8px 0 12px;/);
+  assert.match(css, /\.sandbox-generation-status \{/);
 });
 
 test('service worker cache version is bumped for the account assets', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v23';/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v24';/);
 });
 
 test('modern visual system keeps dashboard and study surfaces hooked together', () => {

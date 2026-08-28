@@ -15,6 +15,7 @@ export function onRequestGet(context) {
       stripePriceId: env.STRIPE_PRICE_ID?.trim() || '',
       freeDailyCardLimit: freeLimit(env, 'cards'),
       freeDailyWikiLimit: freeLimit(env, 'wiki'),
+      freeDailySandboxLimit: freeLimit(env, 'sandbox'),
       turnstileSiteKey: env.TURNSTILE_SITE_KEY?.trim() || ''
     }),
     {

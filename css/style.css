@@ -639,6 +639,10 @@ footer { padding-top: 34px; color: var(--muted); }
 .sandbox-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .sandbox-topline h1 { margin-bottom: 0; }
 .sandbox-lab-header { display: grid; grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) minmax(180px, 240px); gap: 16px; align-items: center; margin: 20px 0 16px; padding: 16px; border: 1px solid var(--card-border); border-radius: 16px; background: var(--card-bg); box-shadow: 0 8px 20px var(--stat-shadow); }
+.sandbox-generation-status { min-height: 18px; margin: -7px 2px 14px; color: var(--muted-text); font-size: 0.76rem; line-height: 1.45; }
+.sandbox-generation-status[data-state="loading"] { color: var(--primary); }
+.sandbox-generation-status[data-state="ready"] { color: var(--success); }
+.sandbox-generation-status[data-state="error"] { color: var(--danger); }
 .sandbox-select-label { display: flex; flex-direction: column; gap: 6px; color: var(--muted-text); font-size: 0.73rem; font-weight: 700; letter-spacing: 0.02em; }
 .sandbox-select-label select { width: 100%; padding: 10px 11px; border: 1px solid var(--card-border); border-radius: 9px; background: var(--surface-soft); color: var(--fg); font: inherit; font-size: 0.85rem; }
 .sandbox-node-description, .sandbox-situation-description { margin: 0; color: var(--muted-text); font-size: 0.84rem; line-height: 1.5; }
