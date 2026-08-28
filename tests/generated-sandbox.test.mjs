@@ -15,6 +15,12 @@ function validDefinition() {
     label: 'Index pressure',
     description: 'Indexes trade write work and storage for faster lookups under a bounded request workload.',
     predictionQuestion: 'When does lookup demand outrun the modeled index-serving capacity?',
+    learnerProblems: [
+      { id: 'keep-up', question: 'Can the modeled path keep up as demand grows?', explanation: 'Compare effective demand with effective capacity to see when work begins waiting.', evidenceKeys: ['effectiveWorkRps', 'effectiveCapacityRps', 'backlogWork'] },
+      { id: 'protect-latency', question: 'Where does user-visible delay appear first?', explanation: 'Use utilization, backlog, and estimated latency to find the pressure boundary.', evidenceKeys: ['estimatedP95LatencyMs', 'utilizationPct', 'backlogWork'] },
+      { id: 'avoid-amplification', question: 'Do retries or extra work amplify pressure?', explanation: 'Trace retry work into offered and effective work to see whether failure adds load.', evidenceKeys: ['retryWorkRps', 'offeredWorkRps', 'effectiveWorkRps'] },
+      { id: 'find-concentration', question: 'Can skew make one partition the real limit?', explanation: 'Compare skew-adjusted capacity with demand instead of trusting aggregate capacity.', evidenceKeys: ['skew', 'effectiveCapacityRps', 'utilizationPct'] }
+    ],
     controls: [
       { key: 'skew', label: 'Key-range skew', advanced: true },
       { key: 'arrivalRate', label: 'Lookup arrival rate', advanced: false },
@@ -22,11 +28,11 @@ function validDefinition() {
       { key: 'retryRate', label: 'Retry rate', advanced: true }
     ],
     situations: [
-      { id: 'steady-lookups', label: 'Steady lookups', level: 1, description: 'A stable lookup stream stays below the modeled index capacity.', objective: 'Find the headroom before pressure appears.', values: { skew: 0, arrivalRate: 1000, capacity: 10000, retryRate: 0 } },
-      { id: 'busy-lookups', label: 'Busy lookups', level: 2, description: 'More clients arrive while the index capacity stays fixed.', objective: 'Connect arrival rate to utilization.', values: { skew: 0, arrivalRate: 5000, capacity: 10000, retryRate: 0 } },
-      { id: 'retrying-lookups', label: 'Retrying lookups', level: 3, description: 'A transient failure causes a portion of lookup work to retry.', objective: 'Notice that retries add work to the same path.', values: { skew: 0, arrivalRate: 5000, capacity: 10000, retryRate: 20 } },
-      { id: 'skewed-range', label: 'Skewed range', level: 4, description: 'A concentrated key range sends more work to one representative partition.', objective: 'Compare aggregate capacity with concentrated pressure.', values: { skew: 60, arrivalRate: 5000, capacity: 10000, retryRate: 0 } },
-      { id: 'saturated-index', label: 'Saturated index', level: 5, description: 'A high lookup rate and retries push effective demand beyond capacity.', objective: 'Predict the backlog before running the model.', values: { skew: 60, arrivalRate: 20000, capacity: 10000, retryRate: 20 } }
+      { id: 'steady-lookups', label: 'Steady lookups', level: 1, description: 'A stable lookup stream stays below the modeled index capacity.', objective: 'Find the headroom before pressure appears.', focusProblemId: 'keep-up', values: { skew: 0, arrivalRate: 1000, capacity: 10000, retryRate: 0 } },
+      { id: 'busy-lookups', label: 'Busy lookups', level: 2, description: 'More clients arrive while the index capacity stays fixed.', objective: 'Connect arrival rate to utilization.', focusProblemId: 'protect-latency', values: { skew: 0, arrivalRate: 5000, capacity: 10000, retryRate: 0 } },
+      { id: 'retrying-lookups', label: 'Retrying lookups', level: 3, description: 'A transient failure causes a portion of lookup work to retry.', objective: 'Notice that retries add work to the same path.', focusProblemId: 'avoid-amplification', values: { skew: 0, arrivalRate: 5000, capacity: 10000, retryRate: 20 } },
+      { id: 'skewed-range', label: 'Skewed range', level: 4, description: 'A concentrated key range sends more work to one representative partition.', objective: 'Compare aggregate capacity with concentrated pressure.', focusProblemId: 'find-concentration', values: { skew: 60, arrivalRate: 5000, capacity: 10000, retryRate: 0 } },
+      { id: 'saturated-index', label: 'Saturated index', level: 5, description: 'A high lookup rate and retries push effective demand beyond capacity.', objective: 'Predict the backlog before running the model.', focusProblemId: 'keep-up', values: { skew: 60, arrivalRate: 20000, capacity: 10000, retryRate: 20 } }
     ],
     predictionOptions: [
       { id: 'healthy', label: 'The modeled path keeps comfortable headroom' },
@@ -77,6 +83,10 @@ test('generated sandbox validation rejects executable fields, unknown controls, 
   const context = createContext();
   const cases = [
     definition => { definition.controls[0].key = 'formula'; },
+    definition => { definition.learnerProblems[0].id = 'invented-problem'; },
+    definition => { definition.learnerProblems[0].evidenceKeys = ['unknownSignal', 'backlogWork']; },
+    definition => { definition.learnerProblems[0].question = '<script>return input</script>'; },
+    definition => { definition.situations[0].focusProblemId = 'missing-problem'; },
     definition => { definition.situations[0].values.extra = 1; },
     definition => { definition.situations[0].values.capacity = 10.5; },
     definition => { definition.situations[0].values.capacity = true; },
@@ -117,6 +127,8 @@ test('generated model uses the app-owned deterministic pressure simulator', () =
   assert.equal(model.diagram(pressure).stages.length, 3);
   assert.equal(model.diagram(pressure).outcomes.length, 3);
   assert.equal(model.predictionBucket(model.situations[4].values), 'stress');
+  assert.equal(model.learnerProblems.length, 4);
+  assert.equal(model.situations[0].focusProblemId, 'keep-up');
   assert.equal(model.normalize({ arrivalRate: -1, capacity: 999999, skew: 140, retryRate: 'bad' }).arrivalRate, 1);
   assert.equal(model.normalize({ arrivalRate: -1, capacity: 999999, skew: 140, retryRate: 'bad' }).capacity, 200000);
 });

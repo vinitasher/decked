@@ -19,15 +19,39 @@ export const GENERATED_SANDBOX_CONTROL_SPECS = Object.freeze({
   skew: Object.freeze({ min: 0, max: 100, step: 1, unit: '%', default: 0 })
 });
 
+/* The learner questions are application vocabulary. The provider may choose
+   which questions fit a concept and write the copy, but it cannot invent a
+   new signal or turn a generated definition into a free-form simulator. */
+export const GENERATED_SANDBOX_PROBLEM_SPECS = Object.freeze({
+  'keep-up': Object.freeze({
+    label: 'Keep up with demand',
+    evidenceKeys: Object.freeze(['offeredWorkRps', 'effectiveWorkRps', 'effectiveCapacityRps', 'backlogWork'])
+  }),
+  'protect-latency': Object.freeze({
+    label: 'Protect user-visible latency',
+    evidenceKeys: Object.freeze(['estimatedP95LatencyMs', 'utilizationPct', 'backlogWork', 'effectiveWorkRps'])
+  }),
+  'avoid-amplification': Object.freeze({
+    label: 'Avoid pressure amplification',
+    evidenceKeys: Object.freeze(['retryWorkRps', 'offeredWorkRps', 'effectiveWorkRps', 'backlogWork'])
+  }),
+  'find-concentration': Object.freeze({
+    label: 'Find concentrated pressure',
+    evidenceKeys: Object.freeze(['skew', 'effectiveCapacityRps', 'utilizationPct', 'backlogWork'])
+  })
+});
+export const GENERATED_SANDBOX_PROBLEM_IDS = Object.freeze(Object.keys(GENERATED_SANDBOX_PROBLEM_SPECS));
+
 const PREDICTION_IDS = Object.freeze(['healthy', 'watch', 'stress']);
 const CONTROL_KEYS = Object.freeze(Object.keys(GENERATED_SANDBOX_CONTROL_SPECS));
 const TEXT_RE = /[\u0000-\u001f\u007f]/;
+const UNSAFE_TEXT_RE = /<[^>]*>|(?:javascript:|https?:\/\/)|\b(?:function|return|eval)\b|=>/i;
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function cleanText(value, field, min, max) {
   if (typeof value !== 'string') throw new Error(`Invalid field: ${field}`);
   const text = value.trim();
-  if (text.length < min || text.length > max || TEXT_RE.test(text)) {
+  if (text.length < min || text.length > max || TEXT_RE.test(text) || UNSAFE_TEXT_RE.test(text)) {
     throw new Error(`Invalid field: ${field}`);
   }
   return text;
@@ -112,8 +136,50 @@ function normalizeSituations(rawSituations, controls) {
       level: index + 1,
       description: cleanText(raw.description, `situations[${index}].description`, 20, 220),
       objective: cleanText(raw.objective, `situations[${index}].objective`, 20, 220),
+      focusProblemId: raw.focusProblemId,
       values
     };
+  });
+}
+
+function normalizeLearnerProblems(rawProblems, controls) {
+  if (!Array.isArray(rawProblems) || rawProblems.length < 3 || rawProblems.length > GENERATED_SANDBOX_PROBLEM_IDS.length) {
+    throw new Error('Invalid field: learnerProblems');
+  }
+  const ids = new Set();
+  return rawProblems.map((raw, index) => {
+    if (!raw || typeof raw !== 'object' || !GENERATED_SANDBOX_PROBLEM_IDS.includes(raw.id) || ids.has(raw.id)) {
+      throw new Error(`Invalid field: learnerProblems[${index}]`);
+    }
+    ids.add(raw.id);
+    const allowedEvidence = GENERATED_SANDBOX_PROBLEM_SPECS[raw.id].evidenceKeys;
+    if (!Array.isArray(raw.evidenceKeys) || raw.evidenceKeys.length < 2 || raw.evidenceKeys.length > 3) {
+      throw new Error(`Invalid field: learnerProblems[${index}].evidenceKeys`);
+    }
+    const evidenceKeys = [...new Set(raw.evidenceKeys)];
+    if (evidenceKeys.length !== raw.evidenceKeys.length
+        || evidenceKeys.some(key => !allowedEvidence.includes(key))) {
+      throw new Error(`Invalid field: learnerProblems[${index}].evidenceKeys`);
+    }
+    if (evidenceKeys.includes('skew') && !controls.some(control => control.key === 'skew')) {
+      throw new Error(`Invalid field: learnerProblems[${index}].evidenceKeys`);
+    }
+    return {
+      id: raw.id,
+      question: cleanText(raw.question, `learnerProblems[${index}].question`, 25, 180),
+      explanation: cleanText(raw.explanation, `learnerProblems[${index}].explanation`, 30, 220),
+      evidenceKeys
+    };
+  });
+}
+
+function normalizeSituationFocus(rawSituations, learnerProblems) {
+  const problemIds = new Set(learnerProblems.map(problem => problem.id));
+  return rawSituations.map((situation, index) => {
+    if (!problemIds.has(situation.focusProblemId)) {
+      throw new Error(`Invalid field: situations[${index}].focusProblemId`);
+    }
+    return { ...situation, focusProblemId: situation.focusProblemId };
   });
 }
 
@@ -150,6 +216,8 @@ export function normalizeGeneratedSandboxDefinition(raw, topic) {
   if (raw.topic !== topic) throw new Error(`Invalid field: topic must be ${topic}`);
 
   const controls = normalizeControls(raw.controls);
+  const learnerProblems = normalizeLearnerProblems(raw.learnerProblems, controls);
+  const situations = normalizeSituationFocus(normalizeSituations(raw.situations, controls), learnerProblems);
   return {
     schemaVersion: GENERATED_SANDBOX_SCHEMA_VERSION,
     modelKind: GENERATED_SANDBOX_MODEL_KIND,
@@ -160,7 +228,8 @@ export function normalizeGeneratedSandboxDefinition(raw, topic) {
     description: cleanText(raw.description, 'description', 30, 260),
     predictionQuestion: cleanText(raw.predictionQuestion, 'predictionQuestion', 20, 180),
     controls,
-    situations: normalizeSituations(raw.situations, controls),
+    learnerProblems,
+    situations,
     predictionOptions: normalizePredictionOptions(raw.predictionOptions),
     assumptions: normalizeAssumptions(raw.assumptions)
   };
@@ -175,15 +244,18 @@ Return exactly this shape:
   "label": "short display label",
   "description": "30-260 character explanation of the pressure relationship",
   "predictionQuestion": "the question the learner should answer before running",
+  "learnerProblems": [{"id":"keep-up|protect-latency|avoid-amplification|find-concentration","question":"the learner-facing question","explanation":"why this question matters","evidenceKeys":["allowed signal key"]}],
   "controls": [{"key":"arrivalRate|capacity|workMultiplier|absorptionRate|retryRate|skew","label":"concept-specific label","advanced":false}],
-  "situations": [{"id":"level-one","label":"short name","level":1,"description":"what changed","objective":"what the learner should notice","values":{"arrivalRate":1000,"capacity":10000}}],
+  "situations": [{"id":"level-one","label":"short name","level":1,"description":"what changed","objective":"what the learner should notice","focusProblemId":"keep-up","values":{"arrivalRate":1000,"capacity":10000}}],
   "predictionOptions": [{"id":"healthy","label":"..."},{"id":"watch","label":"..."},{"id":"stress","label":"..."}],
   "assumptions": ["plain-text assumption"]
 }
 
 Rules:
 - Include exactly 3-5 controls, including arrivalRate and capacity. You may add workMultiplier, absorptionRate, retryRate, and/or skew. Use each key at most once.
+- Include exactly 3 or 4 learnerProblems. Choose only these IDs: keep-up, protect-latency, avoid-amplification, find-concentration. Every problem needs a 2-3 sentence question/explanation and 2-3 evidenceKeys chosen only from its fixed allowlist: keep-up=[offeredWorkRps,effectiveWorkRps,effectiveCapacityRps,backlogWork]; protect-latency=[estimatedP95LatencyMs,utilizationPct,backlogWork,effectiveWorkRps]; avoid-amplification=[retryWorkRps,offeredWorkRps,effectiveWorkRps,backlogWork]; find-concentration=[skew,effectiveCapacityRps,utilizationPct,backlogWork].
 - Use exactly five situations with levels 1, 2, 3, 4, and 5. Every situation must provide values for every selected control. Keep values within these fixed ranges: arrivalRate 1-100000 req/s; capacity 10-200000 work/s; workMultiplier 1-10; absorptionRate 0-100%; retryRate 0-100%; skew 0-100%.
+- Every situation must set focusProblemId to one of the selected learnerProblems. Use the focus to make the situation answer one concrete design question.
 - The three prediction IDs must be exactly healthy, watch, and stress. Make their labels describe increasing modeled pressure, not a guaranteed production outcome.
 - Explain the concept in system-design terms and use honest educational assumptions. Do not claim that the output is a benchmark or capacity recommendation.
 - Keep all text plain, concise, and safe to display. Do not include markup or control characters.`;

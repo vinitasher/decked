@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+const proSetup = await readFile(new URL('../docs/pro-setup.md', import.meta.url), 'utf8');
+const prewarmWorkflow = await readFile(new URL('../../.github/workflows/sandbox-prewarm.yml', import.meta.url), 'utf8');
 
 test('README documents the deployed AI generation and daily quota model', () => {
   for (const staleClaim of [
@@ -27,4 +29,15 @@ test('README documents the deployed AI generation and daily quota model', () => 
   ]) {
     assert.match(readme, requiredStatement);
   }
+});
+
+test('prewarm operations are documented and configured for serial token-safe runs', () => {
+  assert.match(readme, /sends one topic, waits for its result, and only then sends the next/i);
+  assert.match(proSetup, /SANDBOX_PREWARM_TOKEN/);
+  assert.match(proSetup, /one topic and\s+waits for its result before submitting the next/i);
+  assert.match(prewarmWorkflow, /workflow_dispatch/);
+  assert.match(prewarmWorkflow, /cron: '17 \*\/6 \* \* \*'/);
+  assert.match(prewarmWorkflow, /cancel-in-progress: false/);
+  assert.match(prewarmWorkflow, /SANDBOX_PREWARM_TOKEN/);
+  assert.match(prewarmWorkflow, /node scripts\/prewarm-sandboxes\.mjs/);
 });

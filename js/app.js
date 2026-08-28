@@ -4,9 +4,9 @@ const SERVER_BASE = window.location.hostname === 'localhost' || window.location.
   ? 'http://localhost:3456' : '';
 
 /* Screens that are URL-addressable via hash routes (#/welcome, #/search, ...).
-   Wiki topics are addressable per-entry: #/wiki/<topic>. The wiki and sandbox
-   routes are compatibility aliases for the shared Concept Lab screen. */
-const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'wiki', 'sandbox', 'stats'];
+   Concept Lab has an index route and a per-concept child route. The wiki and
+   sandbox routes remain compatibility aliases for the child surface. */
+const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'concepts', 'concept', 'wiki', 'sandbox', 'stats'];
 
 /* A visible challenge ladder gives the adaptive planner a learner-facing
    progression. Thresholds are deliberately modest: level changes require
@@ -1964,16 +1964,31 @@ const APP = {
     if (this._currentRoute() !== route) this._navigate(route);
   },
 
+  _routeTopic(route) {
+    const prefix = route === 'concept' ? '#/concept/' : '#/wiki/';
+    const hash = String(window.location.hash || '');
+    if (!hash.startsWith(prefix)) return '';
+    const encoded = hash.slice(prefix.length).split('/')[0];
+    if (!encoded) return '';
+    try {
+      return decodeURIComponent(encoded);
+    } catch (_) {
+      return '';
+    }
+  },
+
   _handleHashChange() {
     let route = this._currentRoute() || 'welcome';
     if ((route === 'session' || route === 'session-end') && this.sessionCards.length === 0) {
       route = 'welcome';
     }
     this.showScreen(route);
-    if (route === 'wiki') {
-      const topicMatch = String(window.location.hash || '').match(/^#\/wiki\/([\w-]+)/);
-      const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : Object.keys(WIKI || {})[0];
-      this.showWiki(topic);
+    if (route === 'concepts') {
+      this.showConceptLab({ navigate: false });
+    } else if (route === 'concept' || route === 'wiki') {
+      const topic = this._routeTopic(route);
+      if (topic) this.openConcept(topic, { navigate: false });
+      else this.showConceptLab({ navigate: false });
     } else if (route === 'welcome') {
       this.renderDeckStats();
     } else if (route === 'create') {
@@ -1995,7 +2010,7 @@ const APP = {
 
   showScreen(id) {
     document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
-    const renderedScreen = id === 'sandbox' ? 'wiki' : id;
+    const renderedScreen = ['concept', 'wiki', 'sandbox'].includes(id) ? 'wiki' : id;
     const el = document.getElementById('screen-' + renderedScreen);
     if (el) el.classList.remove('hidden');
     // Supabase's implicit OAuth response lives in the hash. Keep it intact
@@ -2270,9 +2285,11 @@ const APP = {
     const currentNode = this._sandboxState
       ? getSandboxNode(this._sandboxState.nodeId)
       : null;
+    const currentMatchesTopic = currentNode && (!relatedModels.length
+      || relatedModels.some(model => model.id === currentNode.id));
     const node = nodeId
       ? getSandboxNode(nodeId)
-      : currentNode || relatedModels[0] || getSandboxNode();
+      : currentMatchesTopic ? currentNode : relatedModels[0] || currentNode || getSandboxNode();
     if (!this._sandboxState || this._sandboxState.nodeId !== node.id) {
       this._sandboxState = this._newSandboxState(node.id);
     }
@@ -2359,7 +2376,8 @@ const APP = {
       this._sandboxGenerationTopic = '';
       this._setSandboxGenerationStatus('', '');
     }
-    this.showScreen('sandbox');
+    this.showScreen('concept');
+    if (topic) this._navigate('concept/' + encodeURIComponent(topic));
     this.renderWikiSidebar();
     this.renderSandbox();
     if (topic) this.openWiki(topic, { navigate: false });
@@ -2398,7 +2416,7 @@ const APP = {
     const links = topics.map(topic => {
       const entry = typeof WIKI !== 'undefined' && WIKI ? WIKI[topic] : null;
       const label = entry?.title || formatPrerequisiteLabel(topic);
-      return `<button class="sandbox-wiki-topic" type="button" onclick="APP.showWiki('${this._escapeHtml(topic)}')">${this._escapeHtml(label)}</button>`;
+      return `<button class="sandbox-wiki-topic" type="button" onclick="APP.openConcept('${this._escapeHtml(topic)}')">${this._escapeHtml(label)}</button>`;
     }).join('');
     return `<aside class="sandbox-wiki-bridge" aria-label="Learn the concepts behind this experiment">
       <div class="sandbox-wiki-bridge-copy">
@@ -2421,6 +2439,41 @@ const APP = {
         ${preview.map((label, index) => `<span class="sandbox-preview-step"><small>${index + 1}</small>${this._escapeHtml(label)}</span>`).join('')}
       </div>
     </div>`;
+  },
+
+  _sandboxProblemsHtml(node, situation) {
+    const problems = typeof getSandboxLearnerProblems === 'function'
+      ? getSandboxLearnerProblems(node.id)
+      : [];
+    if (!problems.length) return '';
+    const focusId = situation.focusProblemId || problems[0].id;
+    return `<section class="sandbox-learner-problems-card" aria-labelledby="sandbox-problems-title">
+      <div class="sandbox-problems-heading"><div><span class="sandbox-problems-kicker">Answer a real design question</span><h3 id="sandbox-problems-title">What should this experiment help you decide?</h3></div><span class="sandbox-problems-focus">Focus: ${this._escapeHtml(problems.find(problem => problem.id === focusId)?.id || problems[0].id)}</span></div>
+      <div class="sandbox-problems-grid">${problems.map(problem => `
+        <article class="sandbox-problem${problem.id === focusId ? ' is-focus' : ''}">
+          <span class="sandbox-problem-label">${this._escapeHtml(GENERATED_SANDBOX_PROBLEM_SPECS?.[problem.id]?.label || problem.id)}</span>
+          <strong>${this._escapeHtml(problem.question)}</strong>
+          <p>${this._escapeHtml(problem.explanation)}</p>
+        </article>`).join('')}</div>
+    </section>`;
+  },
+
+  _sandboxProblemEvidenceHtml(node, situation, result) {
+    const problems = typeof getSandboxLearnerProblems === 'function'
+      ? getSandboxLearnerProblems(node.id)
+      : [];
+    if (!problems.length || typeof getSandboxProblemEvidence !== 'function') return '';
+    const focusId = situation.focusProblemId || problems[0].id;
+    const problem = problems.find(item => item.id === focusId) || problems[0];
+    const evidence = getSandboxProblemEvidence(node.id, problem.id, result);
+    if (!evidence.length) return '';
+    return `<section class="sandbox-problem-evidence" aria-labelledby="sandbox-evidence-title">
+      <span class="sandbox-problems-kicker">Evidence for your decision</span>
+      <h3 id="sandbox-evidence-title">${this._escapeHtml(problem.question)}</h3>
+      <p>${this._escapeHtml(problem.explanation)}</p>
+      <div class="sandbox-evidence-grid">${evidence.map(item => `
+        <div class="sandbox-evidence-item"><span>${this._escapeHtml(item.label)}</span><strong>${this._sandboxFormatMetric(item.value)} <small>${this._escapeHtml(item.unit)}</small></strong><em>${item.source === 'input' ? 'assumption' : 'derived signal'}</em></div>`).join('')}</div>
+    </section>`;
   },
 
   _sandboxSimulationHtml(result) {
@@ -2474,6 +2527,8 @@ const APP = {
     if (nodeDescription) nodeDescription.textContent = node.description;
     const wikiLinks = document.getElementById('sandbox-wiki-links');
     if (wikiLinks) wikiLinks.innerHTML = this._sandboxWikiBridgeHtml(node);
+    const learnerProblems = document.getElementById('sandbox-learner-problems');
+    if (learnerProblems) learnerProblems.innerHTML = this._sandboxProblemsHtml(node, situation);
 
     const situationSelect = document.getElementById('sandbox-situation');
     if (situationSelect) {
@@ -2499,7 +2554,12 @@ const APP = {
     }
 
     const question = document.getElementById('sandbox-prediction-question');
-    if (question) question.textContent = node.predictionQuestion;
+    const learnerProblemsForQuestion = typeof getSandboxLearnerProblems === 'function'
+      ? getSandboxLearnerProblems(node.id)
+      : [];
+    const focusProblem = learnerProblemsForQuestion.find(problem => problem.id === situation.focusProblemId)
+      || learnerProblemsForQuestion[0];
+    if (question) question.textContent = focusProblem?.question || node.predictionQuestion;
     const predictions = document.getElementById('sandbox-predictions');
     if (predictions) {
       predictions.innerHTML = node.predictionOptions.map(option => `
@@ -2537,6 +2597,7 @@ const APP = {
 
   _sandboxResultHtml(node, state) {
     const result = state.result;
+    const situation = node.situations.find(item => item.id === state.situationId) || node.situations[0];
     const expectedId = getSandboxPredictionBucket(node.id, result.input);
     const expected = node.predictionOptions.find(option => option.id === expectedId);
     const selected = node.predictionOptions.find(option => option.id === result.prediction);
@@ -2560,6 +2621,7 @@ const APP = {
         <p>You chose: ${this._escapeHtml(selected?.label || 'Unknown')}<br>Model expected: ${this._escapeHtml(expected?.label || 'Unknown')}</p>
       </div>
       ${state.dirty ? '<p class="sandbox-dirty-note">The controls changed after this run. Run again to evaluate the new assumptions.</p>' : ''}
+      ${this._sandboxProblemEvidenceHtml(node, situation, result)}
       ${this._sandboxSimulationHtml(result)}
       <div class="sandbox-metrics">${metrics}</div>
       <h3>What happened</h3>
@@ -2704,9 +2766,73 @@ const APP = {
       .replace(/'/g, '&#39;');
   },
 
-  showWiki(topic) {
-    const selectedTopic = topic || this._activeWikiTopic || Object.keys(WIKI || {})[0] || '';
-    if (!selectedTopic) return;
+  _conceptEntries() {
+    const seen = new Set();
+    return Object.entries(WIKI || {})
+      .map(([key, entry]) => ({
+        ...entry,
+        topic: typeof entry?.topic === 'string' ? entry.topic : key
+      }))
+      .filter(entry => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.topic))
+      .filter(entry => {
+        if (seen.has(entry.topic)) return false;
+        seen.add(entry.topic);
+        return true;
+      })
+      .sort((a, b) => String(a.title || a.topic).localeCompare(String(b.title || b.topic)));
+  },
+
+  _conceptCloudWeight(entry) {
+    const catalog = typeof TOPIC_CATALOG !== 'undefined' ? TOPIC_CATALOG[entry.topic] : null;
+    const related = Array.isArray(entry.related_topics) ? entry.related_topics.length : 0;
+    const prerequisites = Array.isArray(catalog?.prerequisites) ? catalog.prerequisites.length : 0;
+    let coverage = 0;
+    if (this.profile && typeof this.getTopicScore === 'function') {
+      try { coverage = Math.max(0, Math.min(1, Number(this.getTopicScore(entry.topic)) || 0)); } catch (_) {}
+    }
+    return related + prerequisites + coverage * 4;
+  },
+
+  renderConceptCloud() {
+    const cloud = document.getElementById('concept-cloud');
+    if (!cloud) return;
+    const entries = this._conceptEntries();
+    const count = document.getElementById('concept-cloud-count');
+    if (count) count.textContent = `${entries.length} concept${entries.length === 1 ? '' : 's'}`;
+    if (!entries.length) {
+      cloud.innerHTML = '<p class="concept-cloud-empty">No concepts are available yet. Add a Wiki entry to begin exploring.</p>';
+      return;
+    }
+    const weights = entries.map(entry => this._conceptCloudWeight(entry));
+    const minimum = Math.min(...weights);
+    const maximum = Math.max(...weights);
+    cloud.innerHTML = entries.map((entry, index) => {
+      const size = maximum === minimum
+        ? 3
+        : 1 + Math.round((weights[index] - minimum) / (maximum - minimum) * 4);
+      const title = entry.title || formatPrerequisiteLabel(entry.topic);
+      const topic = this._escapeHtml(entry.topic);
+      return `<button class="concept-cloud-item concept-cloud-size-${size}" type="button" role="listitem" data-topic="${topic}" aria-label="Open ${this._escapeHtml(title)} concept" onclick="APP.openConcept('${topic}')">${this._escapeHtml(title)}</button>`;
+    }).join('');
+  },
+
+  showConceptLab({ navigate = true } = {}) {
+    if (navigate) this._navigate('concepts');
+    this.showScreen('concepts');
+    this.renderConceptCloud();
+    const status = document.getElementById('concept-prewarm-status');
+    if (status) status.textContent = 'Sandbox experiments are prepared in the background. A missing one will be generated when you open it.';
+  },
+
+  openConcept(topic, { navigate = true } = {}) {
+    const normalized = typeof normalizeConceptName === 'function' ? normalizeConceptName(topic) : String(topic || '').trim();
+    const selectedTopic = (typeof matchWikiTopic === 'function' ? matchWikiTopic(topic) : null)
+      || normalized
+      || this._activeWikiTopic
+      || Object.keys(WIKI || {})[0]
+      || '';
+    if (!selectedTopic) return this.showConceptLab({ navigate });
+    if (navigate) this._navigate('concept/' + encodeURIComponent(selectedTopic));
     if (typeof getSandboxModelsForWikiTopic === 'function'
         && !getSandboxModelsForWikiTopic(selectedTopic).length) {
       this._loadCachedGeneratedSandbox(selectedTopic);
@@ -2717,17 +2843,23 @@ const APP = {
     if (typeof getSandboxNode === 'function') {
       this._ensureConceptLabNode(relatedModels.length ? selectedTopic : '');
     }
-    this.showScreen('wiki');
+    this.showScreen('concept');
     this.renderWikiSidebar();
     if (typeof getSandboxNode === 'function') this.renderSandbox();
-    this.openWiki(selectedTopic);
+    this.openWiki(selectedTopic, { navigate: false });
 
+    const generatedModel = relatedModels.find(model => model.generated);
+    if (generatedModel) {
+      this._sandboxGenerationTopic = selectedTopic;
+      this._setSandboxGenerationStatus('Generated experiment ready. It uses the app’s bounded educational model.', 'ready');
+      return;
+    }
     if (!relatedModels.length) {
       this._sandboxGenerationTopic = selectedTopic;
       this._setSandboxGenerationStatus('Generating a bounded experiment for this concept…', 'loading');
       return this._ensureGeneratedSandboxForTopic(selectedTopic)
         .then(model => {
-          if (!model || this._activeWikiTopic !== selectedTopic) return;
+          if (!model || this._activeWikiTopic !== selectedTopic) return model;
           const activeState = this._sandboxState;
           const preserveExperiment = Boolean(activeState?.result || activeState?.dirty);
           if (!preserveExperiment) this._sandboxState = this._newSandboxState(model.id);
@@ -2739,20 +2871,26 @@ const APP = {
           );
           this.renderSandbox();
           this.openWiki(selectedTopic, { navigate: false });
+          return model;
         })
         .catch(error => {
-          if (this._activeWikiTopic !== selectedTopic) return;
+          if (this._activeWikiTopic !== selectedTopic) return null;
           console.error('Sandbox generation failed for', selectedTopic, error);
           this._setSandboxGenerationStatus(
             'A concept-specific experiment is unavailable right now. The reviewed Sandbox catalog is still available.',
             'error'
           );
           this.renderSandbox();
+          return null;
         });
-    } else {
-      this._sandboxGenerationTopic = '';
-      this._setSandboxGenerationStatus('', '');
     }
+    this._sandboxGenerationTopic = '';
+    this._setSandboxGenerationStatus('', '');
+  },
+
+  /* Legacy Wiki links now land on the Concept Lab child page. */
+  showWiki(topic) {
+    return topic ? this.openConcept(topic) : this.showConceptLab();
   },
 
   renderWikiSidebar() {
@@ -2761,7 +2899,7 @@ const APP = {
     const active = this._activeWikiTopic || '';
     const entries = Object.values(WIKI || {}).sort((a, b) => a.title.localeCompare(b.title));
     sidebar.innerHTML = entries.map(entry =>
-      `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.showWiki('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
+      `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openConcept('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
     ).join('');
   },
 
@@ -2786,7 +2924,7 @@ const APP = {
     const el = document.getElementById('wiki-content');
     if (!el) return;
     this._activeWikiTopic = topic;
-    if (navigate) this._navigate('wiki/' + encodeURIComponent(topic));
+    if (navigate) this._navigate('concept/' + encodeURIComponent(topic));
     document.querySelectorAll('.wiki-topic').forEach(button =>
       button.classList.toggle('active', button.dataset.topic === topic)
     );

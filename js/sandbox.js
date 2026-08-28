@@ -2661,12 +2661,60 @@ const GENERATED_SANDBOX_CONTROL_SPECS = Object.freeze({
   retryRate: Object.freeze({ min: 0, max: 100, step: 1, unit: '%', default: 0 }),
   skew: Object.freeze({ min: 0, max: 100, step: 1, unit: '%', default: 0 })
 });
+const GENERATED_SANDBOX_PROBLEM_SPECS = Object.freeze({
+  'keep-up': Object.freeze({
+    label: 'Keep up with demand',
+    evidenceKeys: Object.freeze(['offeredWorkRps', 'effectiveWorkRps', 'effectiveCapacityRps', 'backlogWork'])
+  }),
+  'protect-latency': Object.freeze({
+    label: 'Protect user-visible latency',
+    evidenceKeys: Object.freeze(['estimatedP95LatencyMs', 'utilizationPct', 'backlogWork', 'effectiveWorkRps'])
+  }),
+  'avoid-amplification': Object.freeze({
+    label: 'Avoid pressure amplification',
+    evidenceKeys: Object.freeze(['retryWorkRps', 'offeredWorkRps', 'effectiveWorkRps', 'backlogWork'])
+  }),
+  'find-concentration': Object.freeze({
+    label: 'Find concentrated pressure',
+    evidenceKeys: Object.freeze(['skew', 'effectiveCapacityRps', 'utilizationPct', 'backlogWork'])
+  })
+});
+const GENERATED_SANDBOX_PROBLEM_IDS = Object.freeze(Object.keys(GENERATED_SANDBOX_PROBLEM_SPECS));
 const GENERATED_SANDBOX_PREDICTION_IDS = Object.freeze(['healthy', 'watch', 'stress']);
+
+const DEFAULT_SANDBOX_LEARNER_PROBLEMS = Object.freeze([
+  Object.freeze({
+    id: 'keep-up',
+    question: 'Can this path keep up as demand grows?',
+    explanation: 'Compare incoming work with the capacity that can actually process it before backlog grows.',
+    evidenceKeys: Object.freeze([])
+  }),
+  Object.freeze({
+    id: 'protect-latency',
+    question: 'Where does user-visible delay appear first?',
+    explanation: 'Watch utilization, waiting work, or lag to find the point where a healthy-looking path becomes slow.',
+    evidenceKeys: Object.freeze([])
+  }),
+  Object.freeze({
+    id: 'avoid-amplification',
+    question: 'Do failures or extra work amplify pressure?',
+    explanation: 'Retries and repeated processing can add load to the same constrained path when recovery is not bounded.',
+    evidenceKeys: Object.freeze([])
+  }),
+  Object.freeze({
+    id: 'find-concentration',
+    question: 'Can one partition or key become the real limit?',
+    explanation: 'Aggregate capacity can hide skew, so inspect the hottest slice instead of trusting only the average.',
+    evidenceKeys: Object.freeze([])
+  })
+]);
 
 function generatedSandboxText(value, field, min, max) {
   if (typeof value !== 'string') throw new Error(`Invalid field: ${field}`);
   const text = value.trim();
-  if (text.length < min || text.length > max || /[\u0000-\u001f\u007f]/.test(text)) {
+  if (text.length < min || text.length > max
+      || /[\u0000-\u001f\u007f]/.test(text)
+      || /<[^>]*>|(?:javascript:|https?:\/\/)|\b(?:function|return|eval)\b|=>/i.test(text)) {
     throw new Error(`Invalid field: ${field}`);
   }
   return text;
@@ -2724,6 +2772,41 @@ function validateGeneratedSandboxDefinition(raw, expectedTopic = '') {
   });
   if (!keys.has('arrivalRate') || !keys.has('capacity')) throw new Error('Generated sandbox needs arrivalRate and capacity');
 
+  if (!Array.isArray(raw.learnerProblems)
+      || raw.learnerProblems.length < 3
+      || raw.learnerProblems.length > GENERATED_SANDBOX_PROBLEM_IDS.length) {
+    throw new Error('Invalid generated sandbox learner problems');
+  }
+  const problemIds = new Set();
+  const learnerProblems = raw.learnerProblems.map((problem, index) => {
+    if (!problem || typeof problem !== 'object'
+        || !GENERATED_SANDBOX_PROBLEM_IDS.includes(problem.id)
+        || problemIds.has(problem.id)) {
+      throw new Error(`Invalid generated sandbox learner problem ${index}`);
+    }
+    problemIds.add(problem.id);
+    const allowedEvidence = GENERATED_SANDBOX_PROBLEM_SPECS[problem.id].evidenceKeys;
+    if (!Array.isArray(problem.evidenceKeys)
+        || problem.evidenceKeys.length < 2
+        || problem.evidenceKeys.length > 3) {
+      throw new Error(`Invalid generated sandbox learner problem evidence ${index}`);
+    }
+    const evidenceKeys = [...new Set(problem.evidenceKeys)];
+    if (evidenceKeys.length !== problem.evidenceKeys.length
+        || evidenceKeys.some(key => !allowedEvidence.includes(key))) {
+      throw new Error(`Invalid generated sandbox learner problem evidence ${index}`);
+    }
+    if (evidenceKeys.includes('skew') && !keys.has('skew')) {
+      throw new Error(`Invalid generated sandbox learner problem evidence ${index}`);
+    }
+    return {
+      id: problem.id,
+      question: generatedSandboxText(problem.question, `learnerProblems[${index}].question`, 25, 180),
+      explanation: generatedSandboxText(problem.explanation, `learnerProblems[${index}].explanation`, 30, 220),
+      evidenceKeys
+    };
+  });
+
   if (!Array.isArray(raw.situations) || raw.situations.length !== 5) throw new Error('Invalid generated sandbox situations');
   const situationIds = new Set();
   const controlKeys = controls.map(control => control.key);
@@ -2749,6 +2832,12 @@ function validateGeneratedSandboxDefinition(raw, expectedTopic = '') {
       level: index + 1,
       description: generatedSandboxText(situation.description, `situations[${index}].description`, 20, 220),
       objective: generatedSandboxText(situation.objective, `situations[${index}].objective`, 20, 220),
+      focusProblemId: (() => {
+        if (!problemIds.has(situation.focusProblemId)) {
+          throw new Error(`Invalid generated sandbox focus problem ${index}`);
+        }
+        return situation.focusProblemId;
+      })(),
       values
     };
   });
@@ -2775,6 +2864,7 @@ function validateGeneratedSandboxDefinition(raw, expectedTopic = '') {
     description: generatedSandboxText(raw.description, 'description', 30, 260),
     predictionQuestion: generatedSandboxText(raw.predictionQuestion, 'predictionQuestion', 20, 180),
     controls,
+    learnerProblems,
     situations,
     predictionOptions,
     assumptions: raw.assumptions.map((assumption, index) =>
@@ -2903,6 +2993,7 @@ function createGeneratedSandboxModel(rawDefinition) {
     sourceConcept: definition.topic,
     modelKind: definition.modelKind,
     predictionQuestion: definition.predictionQuestion,
+    learnerProblems: definition.learnerProblems,
     metrics: [
       ...inputMetrics,
       { label: 'Effective work', key: 'effectiveWorkRps', unit: 'work/s' },
@@ -3296,6 +3387,59 @@ const SANDBOX_NODE_MODELS = [
 function getSandboxWikiTopics(nodeId = 'redis-cache') {
   const node = SANDBOX_NODE_MODELS.find(model => model.id === nodeId);
   return node && Array.isArray(node.wikiTopics) ? [...node.wikiTopics] : [];
+}
+
+function getSandboxLearnerProblems(nodeId = 'redis-cache') {
+  const node = SANDBOX_NODE_MODELS.find(model => model.id === nodeId);
+  const problems = node?.generated && Array.isArray(node.learnerProblems)
+    ? node.learnerProblems
+    : DEFAULT_SANDBOX_LEARNER_PROBLEMS;
+  return problems.map(problem => ({
+    id: problem.id,
+    question: problem.question,
+    explanation: problem.explanation,
+    evidenceKeys: [...(problem.evidenceKeys || [])]
+  }));
+}
+
+function getSandboxProblemEvidence(nodeId = 'redis-cache', problemId, result = {}) {
+  const node = getSandboxNode(nodeId);
+  const problem = getSandboxLearnerProblems(node.id).find(item => item.id === problemId);
+  const fallback = (node.metrics || []).slice(0, 3).map(metric => ({
+    key: metric.key,
+    label: metric.label,
+    unit: metric.unit,
+    source: metric.source === 'input' ? 'input' : 'result'
+  }));
+  const keys = problem?.evidenceKeys?.length ? problem.evidenceKeys : fallback.map(item => item.key);
+  const generatedEvidence = keys.map(key => {
+    const spec = Object.values(GENERATED_SANDBOX_PROBLEM_SPECS)
+      .flatMap(item => item.evidenceKeys)
+      .includes(key)
+      ? key
+      : null;
+    if (!spec) return null;
+    const source = key === 'skew' ? 'input' : 'result';
+    const labels = {
+      offeredWorkRps: ['Offered work', 'work/s'],
+      effectiveWorkRps: ['Effective work', 'work/s'],
+      effectiveCapacityRps: ['Effective capacity', 'work/s'],
+      backlogWork: ['Backlog', 'work units'],
+      estimatedP95LatencyMs: ['Estimated p95 latency', 'ms'],
+      utilizationPct: ['Node utilization', '%'],
+      retryWorkRps: ['Retry work', 'work/s'],
+      skew: ['Concentration skew', '%']
+    }[key];
+    return {
+      key,
+      label: labels[0],
+      unit: labels[1],
+      source,
+      value: source === 'input' ? result.input?.[key] : result[key]
+    };
+  }).filter(Boolean);
+  if (generatedEvidence.length) return generatedEvidence;
+  return fallback.map(item => ({ ...item, value: item.source === 'input' ? result.input?.[item.key] : result[item.key] }));
 }
 
 function getSandboxModelsForWikiTopic(topic) {

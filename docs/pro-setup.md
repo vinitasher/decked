@@ -54,8 +54,24 @@ stable identity; entitlements live in Cloudflare KV.
 | `FREE_DAILY_CARD_LIMIT` | optional, default `10` | no |
 | `FREE_DAILY_WIKI_LIMIT` | optional, default `10` | no |
 | `FREE_DAILY_SANDBOX_LIMIT` | optional, default `3` | no |
+| `SANDBOX_PREWARM_TOKEN` | shared bearer token for maintenance prewarming | **yes** |
 
 Saving environment variables triggers a redeploy.
+
+### Background Sandbox prewarming
+
+The repository's `sandbox-prewarm.yml` workflow reads the bundled Wiki catalog
+and calls `POST /api/sandbox/prewarm` after changes, on a schedule, or through
+manual dispatch. Add the same `SANDBOX_PREWARM_TOKEN` value as a GitHub Actions
+secret and as a Cloudflare Pages secret. The workflow submits one topic and
+waits for its result before submitting the next, so only one bulk provider call
+is in flight. `SANDBOX_PREWARM_URL` is an optional GitHub Actions secret for
+preview testing; it defaults to `https://decked.pages.dev/api/sandbox/prewarm`.
+
+The endpoint accepts small batches for operators, skips valid cached entries,
+and reports each topic independently without consuming learner quota. Missing
+or invalid definitions remain retryable, while a learner can still use the
+quota-aware on-demand `/api/sandbox` fallback.
 
 ## 4. Verify
 

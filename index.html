@@ -107,11 +107,35 @@
         <button class="btn btn-outline" onclick="APP.showStats()">📊 View Statistics</button>
         <button class="btn btn-outline" onclick="APP.showHistory()">📜 Session History</button>
         <button class="btn btn-outline" onclick="APP.showLearningPath()">🧭 Topic Map</button>
-        <button class="btn btn-outline" onclick="APP.showWiki()">📚 Concept Lab · Wiki + Sandbox</button>
+        <button class="btn btn-outline" onclick="APP.showConceptLab()">📚 Explore Concept Lab</button>
         <button class="btn btn-outline" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
         <button class="btn btn-outline" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
         <button class="btn btn-outline" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
       </nav>
+    </section>
+  </div>
+
+  <!-- Concept Lab index -->
+  <div id="screen-concepts" class="screen hidden">
+    <div class="concept-index-topline">
+      <div>
+        <span class="eyebrow">Explore · choose · test</span>
+        <h1>Concept Lab</h1>
+        <p class="screen-intro">Choose a system-design idea to open its explanation and pressure test on one child page.</p>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">← Dashboard</button>
+    </div>
+    <section class="concept-cloud-card" aria-labelledby="concept-cloud-title">
+      <div class="concept-cloud-heading">
+        <div>
+          <span class="concept-lab-pane-kicker">The map of ideas</span>
+          <h2 id="concept-cloud-title">What do you want to understand?</h2>
+          <p>Every concept is available. Larger words reflect connections and study coverage as a discovery hint, not a ranking or a gate.</p>
+        </div>
+        <span class="concept-cloud-count" id="concept-cloud-count"></span>
+      </div>
+      <p id="concept-prewarm-status" class="concept-prewarm-status" role="status" aria-live="polite">Sandbox experiments are prepared in the background.</p>
+      <div id="concept-cloud" class="concept-cloud" role="list" aria-label="System design concepts"></div>
     </section>
   </div>
 
@@ -251,7 +275,7 @@
         <span class="eyebrow">Understand · test · explain</span>
         <h1>Concept Lab</h1>
       </div>
-      <button class="btn btn-sm btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">← Dashboard</button>
+      <button class="btn btn-sm btn-outline" onclick="APP.showConceptLab()">← All concepts</button>
     </div>
     <p class="screen-intro">Read the concept on one side, change a constraint on the other, and keep both views in context. Everything is deterministic and educational — it never connects to infrastructure.</p>
     <div class="concept-lab-layout">
@@ -284,6 +308,7 @@
           </div>
         </div>
         <p id="sandbox-generation-status" class="sandbox-generation-status" role="status" aria-live="polite"></p>
+        <div id="sandbox-learner-problems" class="sandbox-learner-problems" aria-label="Questions this sandbox helps answer"></div>
         <div class="sandbox-layout">
           <section class="sandbox-controls-panel" aria-labelledby="sandbox-situation-heading">
             <div class="sandbox-situation-heading">

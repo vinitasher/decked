@@ -54,14 +54,15 @@ function createContext() {
   };
 
   for (const id of [
-    'screen-welcome', 'screen-wiki', 'wiki-sidebar', 'wiki-content', 'challenge-ladder',
+    'screen-welcome', 'screen-concepts', 'screen-wiki', 'concept-cloud', 'concept-cloud-count',
+    'concept-prewarm-status', 'wiki-sidebar', 'wiki-content', 'challenge-ladder',
     'learning-level-title', 'learning-level-copy', 'learning-level-next',
     'learning-level-fill', 'learning-level-steps', 'sandbox-progress-summary', 'sandbox-node',
     'sandbox-node-description', 'sandbox-situation', 'sandbox-situation-description',
     'sandbox-situation-objective', 'sandbox-wiki-links', 'sandbox-controls', 'sandbox-prediction-question',
     'sandbox-predictions', 'sandbox-prediction-error', 'sandbox-progress-text',
     'sandbox-progress-fill', 'sandbox-current-level', 'sandbox-run-btn',
-    'sandbox-next-btn', 'sandbox-results', 'sandbox-generation-status'
+    'sandbox-next-btn', 'sandbox-results', 'sandbox-generation-status', 'sandbox-learner-problems'
   ]) makeElement(id, id.startsWith('screen-'));
 
   const context = {
@@ -106,6 +107,8 @@ globalThis.getSandboxNode = getSandboxNode;
 globalThis.getSandboxPredictionBucket = getSandboxPredictionBucket;
 globalThis.getSandboxWikiTopics = getSandboxWikiTopics;
 globalThis.getSandboxModelsForWikiTopic = getSandboxModelsForWikiTopic;
+globalThis.getSandboxLearnerProblems = getSandboxLearnerProblems;
+globalThis.getSandboxProblemEvidence = getSandboxProblemEvidence;
 globalThis.validateGeneratedSandboxDefinition = validateGeneratedSandboxDefinition;
 globalThis.registerGeneratedSandboxModel = registerGeneratedSandboxModel;
 ${appSource}
@@ -167,6 +170,12 @@ function generatedDefinition(topic) {
     label: 'Generated pressure',
     description: 'A bounded experiment connects incoming work, capacity, and concentrated pressure for this concept.',
     predictionQuestion: 'Will effective work stay below the modeled capacity?',
+    learnerProblems: [
+      { id: 'keep-up', question: 'Can the modeled path keep up as demand grows?', explanation: 'Compare effective demand with effective capacity to see when work begins waiting.', evidenceKeys: ['effectiveWorkRps', 'effectiveCapacityRps', 'backlogWork'] },
+      { id: 'protect-latency', question: 'Where does user-visible delay appear first?', explanation: 'Use utilization, backlog, and estimated latency to find the pressure boundary.', evidenceKeys: ['estimatedP95LatencyMs', 'utilizationPct', 'backlogWork'] },
+      { id: 'avoid-amplification', question: 'Do retries or extra work amplify pressure?', explanation: 'Trace retry work into offered and effective work to see whether failure adds load.', evidenceKeys: ['retryWorkRps', 'offeredWorkRps', 'effectiveWorkRps'] },
+      { id: 'find-concentration', question: 'Can skew make one partition the real limit?', explanation: 'Compare skew-adjusted capacity with demand instead of trusting aggregate capacity.', evidenceKeys: ['skew', 'effectiveCapacityRps', 'utilizationPct'] }
+    ],
     controls: [
       { key: 'arrivalRate', label: 'Incoming work', advanced: false },
       { key: 'capacity', label: 'Modeled capacity', advanced: false },
@@ -178,6 +187,7 @@ function generatedDefinition(topic) {
       level,
       description: 'This situation changes a bounded pressure input so the learner can compare modeled outcomes.',
       objective: 'Predict whether the node stays healthy, needs watching, or enters stress.',
+      focusProblemId: ['keep-up', 'protect-latency', 'avoid-amplification', 'find-concentration', 'keep-up'][level - 1],
       values: { arrivalRate: level === 5 ? 20000 : level * 1000, capacity: 10000, skew: (level - 1) * 15 }
     })),
     predictionOptions: [
@@ -253,7 +263,10 @@ test('sandbox route and offline shell include the model module', () => {
   assert.match(htmlSource, /id="sandbox-node"/);
   assert.match(htmlSource, /id="sandbox-generation-status"/);
   assert.match(htmlSource, /Open Concept Lab/);
-  assert.match(htmlSource, /Concept Lab · Wiki \+ Sandbox/);
+  assert.match(htmlSource, /Explore Concept Lab/);
+  assert.match(htmlSource, /id="screen-concepts"/);
+  assert.match(htmlSource, /id="concept-cloud"/);
+  assert.match(htmlSource, /id="sandbox-learner-problems"/);
   assert.match(htmlSource, /js\/sandbox\.js/);
   assert.match(appSource, /'sandbox'/);
   assert.match(serviceWorkerSource, /'\/js\/sandbox\.js'/);
@@ -272,6 +285,43 @@ test('Wiki and Sandbox entry points render the same two-sided Concept Lab screen
   assert.equal(screen.classList.contains('hidden'), false);
   assert.equal(app._activeWikiTopic, 'http-cacheability');
   assert.match(context.document.getElementById('sandbox-node').innerHTML, /URL shortener/);
+});
+
+test('Concept Lab word cloud renders every Wiki concept exactly once', () => {
+  const app = freshApp();
+  app.showConceptLab();
+  const cloud = context.document.getElementById('concept-cloud').innerHTML;
+  const buttons = cloud.match(/<button class="concept-cloud-item/g) || [];
+  assert.equal(buttons.length, Object.keys(context.WIKI).length);
+  for (const topic of Object.keys(context.WIKI)) {
+    assert.match(cloud, new RegExp(`data-topic="${topic}"`));
+  }
+  assert.equal(context.document.getElementById('concept-cloud-count').textContent, `${buttons.length} concepts`);
+  assert.match(cloud, /concept-cloud-size-[1-5]/);
+  assert.equal(context.window.location.hash, '#/concepts');
+});
+
+test('selecting a cloud concept opens one Wiki and Sandbox child page', () => {
+  const app = freshApp();
+  app.openConcept('http-cacheability');
+  assert.equal(context.window.location.hash, '#/concept/http-cacheability');
+  assert.equal(context.document.getElementById('screen-wiki').classList.contains('hidden'), false);
+  assert.match(context.document.getElementById('wiki-content').innerHTML, /Loading wiki entry|HTTP Cacheability/);
+  assert.match(context.document.getElementById('sandbox-node').innerHTML, /URL shortener/);
+});
+
+test('sandbox names learner problems and ties a completed run to fixed evidence', () => {
+  const app = freshApp();
+  app.showSandbox('redis-cache');
+  const problems = context.document.getElementById('sandbox-learner-problems').innerHTML;
+  assert.match(problems, /What should this experiment help you decide/);
+  assert.match(problems, /Can this path keep up as demand grows/);
+  const expected = context.getSandboxPredictionBucket('redis-cache', app._sandboxState.input);
+  app.selectSandboxPrediction(expected);
+  assert.equal(app.runSandbox(), true);
+  const result = context.document.getElementById('sandbox-results').innerHTML;
+  assert.match(result, /Evidence for your decision/);
+  assert.match(result, /derived signal|assumption/);
 });
 
 test('sandbox selector exposes the full reviewed node catalog', () => {
@@ -303,7 +353,7 @@ test('sandbox links each node trade-off to its Wiki entries', () => {
 
   assert.match(bridge, /Learn the concept/);
   assert.match(bridge, /HTTP Cacheability/i);
-  assert.match(bridge, /APP\.showWiki\('http-cacheability'\)/);
+  assert.match(bridge, /APP\.openConcept\('http-cacheability'\)/);
   assert.ok(context.getSandboxWikiTopics('url-shortener').length >= 3);
 });
 
@@ -354,7 +404,7 @@ test('sandbox requires a prediction and does not record a blocked run', () => {
   assert.equal(app.runSandbox(), false);
   assert.match(context.document.getElementById('sandbox-prediction-error').textContent, /Choose the outcome/i);
   assert.equal(app.profile.sandbox.runs, 0);
-  assert.equal(context.window.location.hash, '#/sandbox');
+  assert.equal(context.window.location.hash, '#/concept/queues');
   app.selectSandboxSituation('burst-arrivals');
   assert.equal(context.document.getElementById('sandbox-prediction-error').textContent, '');
 });

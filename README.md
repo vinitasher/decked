@@ -42,9 +42,10 @@ decision-based practice with adaptive difficulty.
   Know First list aggregates the prerequisites from every option
 - A navigable topic map shows prerequisites, dependent topics, mastery, and
   focused practice actions without locking advanced content
-- Every screen is URL-addressable via hash routes (`#/search`, `#/wiki`,
-  `#/sandbox`, `#/stats`, `#/wiki/<concept>`, ...), so any page can be bookmarked, shared,
-  or deep-linked and survives refresh and back/forward navigation
+- Every screen is URL-addressable via hash routes (`#/search`, `#/concepts`,
+  `#/concept/<concept>`, `#/stats`, ...), so any page can be bookmarked, shared,
+  or deep-linked and survives refresh and back/forward navigation. Legacy
+  `#/wiki` and `#/sandbox` links remain supported as Concept Lab aliases.
 
 **User profile:**
 - Tracked per topic: load balancers, caching, databases, queues, consensus,
@@ -126,6 +127,9 @@ decision-based practice with adaptive difficulty.
 - The full Wiki destination opens the shared Concept Lab with the Wiki
   explanation on one side and the experiment on the other; the topic side
   panel remains clickable for every concept
+- Concept Lab opens with an accessible word cloud of every bundled concept;
+  selecting one opens a child page at `#/concept/<concept>` with both views
+  together
 - Know First links still provide a quick inline Wiki explanation without
   interrupting the current card
 - Entries are bundled with the app as `js/wiki.js` in a fixed schema
@@ -157,6 +161,11 @@ decision-based practice with adaptive difficulty.
   three-stage path and observed branches, so learners can see where work went
   instead of reading metrics in isolation. The pre-run state shows the same
   path as a compact preview.
+- Each generated experiment names the learner problem it is testing: keep up
+  with demand, protect user-visible latency, avoid pressure amplification, or
+  find concentrated partition/key pressure. After a run, fixed simulator
+  signals provide evidence for that question rather than only a generic status
+  label.
 
 **Generated content and quotas:**
 - Cards are generated on demand with AI, cached for reuse, and supported by an
@@ -171,6 +180,12 @@ decision-based practice with adaptive difficulty.
   definitions are cached in `WIKI_CACHE` under `sandbox:v1:<topic>` and in
   local storage for offline replay. A failed generation leaves the Wiki and
   reviewed Sandbox catalog usable.
+- Bundled concepts are prewarmed asynchronously by the protected
+  `POST /api/sandbox/prewarm` maintenance endpoint and the scheduled/manual
+  `sandbox-prewarm.yml` workflow. The workflow derives topics from `js/wiki.js`,
+  sends one topic, waits for its result, and only then sends the next; bulk
+  provider concurrency is intentionally one. A newly lazy-generated Wiki entry
+  schedules the same Sandbox fill in the background.
 
 ## Concept wiki
 

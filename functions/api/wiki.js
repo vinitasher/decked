@@ -4,6 +4,7 @@
 
 import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
 import { API_MODEL_SEQUENCE } from '../shared/model-routing.js';
+import { ensureGeneratedSandbox } from '../shared/generated-sandbox-service.js';
 
 const TOPIC_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REQUIRED = ['topic', 'title', 'summary', 'why_it_matters', 'key_points', 'common_pitfalls', 'related_topics'];
@@ -147,6 +148,15 @@ export async function onRequest(context) {
     const write = env.WIKI_CACHE.put(`wiki:${topic}`, JSON.stringify(entry), { expirationTtl: 2592000 });
     if (typeof context.waitUntil === 'function') context.waitUntil(write);
     else write.catch(() => {});
+  }
+  /* A newly generated Wiki topic should converge on a matching Sandbox, but
+     the learner must not wait for a second provider call. Pages supplies
+     waitUntil for this best-effort background lifecycle. */
+  if (typeof context.waitUntil === 'function') {
+    const warm = ensureGeneratedSandbox(env, topic).catch(error => {
+      console.error('Sandbox prewarm after Wiki generation failed', topic, error?.message);
+    });
+    context.waitUntil(warm);
   }
   return jsonResponse(entry);
 }

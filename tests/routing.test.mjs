@@ -28,9 +28,10 @@ test('session pages without an active session fall back to the dashboard', () =>
   assert.match(appSource, /route = 'welcome';/);
 });
 
-test('wiki topics are deep-linkable at #/wiki/<topic>', () => {
-  assert.match(appSource, /#\\\/wiki\\\/\(\[\\w-\]\+\)/);
-  assert.match(appSource, /_navigate\('wiki\/' \+ encodeURIComponent\(topic\)\)/);
+test('Concept Lab topics are deep-linkable at #/concept/<topic> with a Wiki alias', () => {
+  assert.match(appSource, /route === 'concept' \|\| route === 'wiki'/);
+  assert.match(appSource, /route === 'concept' \? '#\/concept\/' : '#\/wiki\//);
+  assert.match(appSource, /_navigate\('concept\/'.*encodeURIComponent/);
 });
 
 function routerApp(hash) {
@@ -52,6 +53,8 @@ function routerApp(hash) {
 test('the router parses the current screen from the hash', () => {
   assert.equal(routerApp('')._currentRoute(), null);
   assert.equal(routerApp('#/search')._currentRoute(), 'search');
+  assert.equal(routerApp('#/concepts')._currentRoute(), 'concepts');
+  assert.equal(routerApp('#/concept/caching')._currentRoute(), 'concept');
   assert.equal(routerApp('#/wiki')._currentRoute(), 'wiki');
   assert.equal(routerApp('#/not-a-screen')._currentRoute(), null);
 });
@@ -89,13 +92,22 @@ test('an OAuth access-token fragment is preserved while the account initializes'
   assert.equal(app.testLocation.hash, callbackHash);
 });
 
-test('a deep link to #/wiki/<topic> opens that topic', () => {
+test('a legacy deep link to #/wiki/<topic> opens the Concept Lab child', () => {
   const app = routerApp('#/wiki/queues');
   let topic = null;
-  app.showWiki = t => { topic = t; };
+  app.openConcept = (t) => { topic = t; };
   app._handleHashChange();
   assert.equal(topic, 'queues');
   assert.equal(app._currentRoute(), 'wiki');
+});
+
+test('a Concept Lab deep link opens the selected child', () => {
+  const app = routerApp('#/concept/caching');
+  let topic = null;
+  app.openConcept = t => { topic = t; };
+  app._handleHashChange();
+  assert.equal(topic, 'caching');
+  assert.equal(app._currentRoute(), 'concept');
 });
 
 test('navigating to a routable screen updates the hash', () => {

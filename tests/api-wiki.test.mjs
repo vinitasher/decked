@@ -22,6 +22,42 @@ const goodEntry = {
   related_topics: ['cache-eviction', 'workload-skew']
 };
 
+const generatedSandbox = topic => ({
+  topic,
+  label: 'Bounded pressure',
+  description: 'A bounded pressure model connects incoming work, capacity, and concentration for learning.',
+  predictionQuestion: 'Will effective work stay below the modeled capacity?',
+  learnerProblems: [
+    { id: 'keep-up', question: 'Can the modeled path keep up as demand grows?', explanation: 'Compare effective demand with effective capacity to see when work begins waiting.', evidenceKeys: ['effectiveWorkRps', 'effectiveCapacityRps', 'backlogWork'] },
+    { id: 'protect-latency', question: 'Where does user-visible delay appear first?', explanation: 'Use utilization, backlog, and estimated latency to find the pressure boundary.', evidenceKeys: ['estimatedP95LatencyMs', 'utilizationPct', 'backlogWork'] },
+    { id: 'find-concentration', question: 'Can skew make one partition the real limit?', explanation: 'Compare skew-adjusted capacity with demand instead of trusting aggregate capacity.', evidenceKeys: ['skew', 'effectiveCapacityRps', 'utilizationPct'] }
+  ],
+  controls: [
+    { key: 'arrivalRate', label: 'Incoming work', advanced: false },
+    { key: 'capacity', label: 'Modeled capacity', advanced: false },
+    { key: 'skew', label: 'Pressure skew', advanced: true }
+  ],
+  situations: [1, 2, 3, 4, 5].map(level => ({
+    id: `pressure-level-${level}`,
+    label: `Pressure level ${level}`,
+    level,
+    description: 'This situation changes a bounded pressure input for comparison.',
+    objective: 'Predict the pressure state before running the model.',
+    focusProblemId: ['keep-up', 'protect-latency', 'find-concentration', 'keep-up', 'protect-latency'][level - 1],
+    values: { arrivalRate: level * 1000, capacity: 10000, skew: (level - 1) * 15 }
+  })),
+  predictionOptions: [
+    { id: 'healthy', label: 'The modeled path keeps comfortable headroom' },
+    { id: 'watch', label: 'The modeled path is nearing a pressure boundary' },
+    { id: 'stress', label: 'The modeled path develops backlog and stress' }
+  ],
+  assumptions: [
+    'The input values are bounded teaching examples, not production recommendations.',
+    'Capacity is represented by one effective work budget for the modeled path.',
+    'Skew represents concentration on one representative partition or key.'
+  ]
+});
+
 function env(overrides = {}) {
   return {
     OPENCODE_API_KEY: 'test-key',
@@ -143,6 +179,39 @@ test('wiki endpoint normalizes related topic names into kebab-case', async () =>
       ['eventual-consistency', 'database', 'cache-eviction']
     );
     assert.deepEqual(JSON.parse(cached.value).related_topics, ['eventual-consistency', 'database', 'cache-eviction']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('wiki generation schedules a non-blocking Sandbox prewarm after its cache write', async () => {
+  const originalFetch = globalThis.fetch;
+  const waits = [];
+  const cache = {
+    get: async () => null,
+    put: async (key, value) => { cache.values.set(key, value); },
+    values: new Map()
+  };
+  let providerCalls = 0;
+  globalThis.fetch = async (_url, options) => {
+    providerCalls++;
+    const prompt = JSON.parse(options.body).messages[0].content;
+    const body = prompt.includes('wiki entry') ? { ...goodEntry, topic: 'new-topic' } : generatedSandbox('new-topic');
+    return Response.json({ choices: [{ message: { content: JSON.stringify(body) } }] });
+  };
+  try {
+    const response = await onRequest({
+      request: new Request('https://example.com/api/wiki?topic=new-topic'),
+      env: env({ WIKI_CACHE: cache }),
+      waitUntil: promise => waits.push(promise)
+    });
+    assert.equal(response.status, 200);
+    assert.equal(providerCalls, 1, 'Wiki response returns before Sandbox generation completes');
+    assert.equal(waits.length, 2, 'Wiki write and Sandbox prewarm are both background tasks');
+    await Promise.all(waits);
+    assert.equal(providerCalls, 2);
+    assert.ok(cache.values.has('wiki:new-topic'));
+    assert.ok(cache.values.has('sandbox:v1:new-topic'));
   } finally {
     globalThis.fetch = originalFetch;
   }

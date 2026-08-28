@@ -6,15 +6,16 @@
  */
 
 import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
-import { API_MODEL_SEQUENCE } from '../shared/model-routing.js';
 import {
-  buildGeneratedSandboxPrompt,
   GENERATED_SANDBOX_MAX_TOPIC_LENGTH,
-  GENERATED_SANDBOX_TOPIC_RE,
-  normalizeGeneratedSandboxDefinition
+  GENERATED_SANDBOX_TOPIC_RE
 } from '../shared/generated-sandbox.js';
-
-const CACHE_TTL_SECONDS = 2592000;
+import {
+  generateGeneratedSandboxDefinition,
+  readCachedGeneratedSandbox,
+  sandboxCache,
+  writeGeneratedSandbox
+} from '../shared/generated-sandbox-service.js';
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -27,61 +28,6 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-function sandboxCache(env) {
-  return env.SANDBOX_CACHE || env.WIKI_CACHE || null;
-}
-
-function cacheKey(topic) {
-  return `sandbox:v1:${topic}`;
-}
-
-function providerJson(content) {
-  const cleaned = String(content || '')
-    .replace(/```json?/gi, '')
-    .replace(/```/g, '')
-    .trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('Provider returned no JSON object');
-  return JSON.parse(cleaned.slice(start, end + 1));
-}
-
-async function generateDefinition(context, topic) {
-  const { env } = context;
-  let lastError = null;
-  for (let attempt = 0; attempt < API_MODEL_SEQUENCE.length; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 45000);
-    try {
-      const response = await fetch('https://opencode.ai/zen/go/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${env.OPENCODE_API_KEY}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'opencode/1.18.9'
-        },
-        body: JSON.stringify({
-          model: API_MODEL_SEQUENCE[attempt],
-          messages: [{ role: 'user', content: buildGeneratedSandboxPrompt(topic) }],
-          max_tokens: 4096,
-          temperature: 0.4,
-          thinking: { type: 'disabled' }
-        }),
-        signal: controller.signal
-      });
-      if (!response.ok) throw new Error(`provider HTTP ${response.status}`);
-      const completion = await response.json();
-      const content = completion?.choices?.[0]?.message?.content || '';
-      return normalizeGeneratedSandboxDefinition(providerJson(content), topic);
-    } catch (error) {
-      lastError = error;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastError || new Error('provider returned no definition');
-}
-
 export async function onRequestGet(context) {
   const { request, env } = context;
   const topic = (new URL(request.url)).searchParams.get('topic') || '';
@@ -90,22 +36,8 @@ export async function onRequestGet(context) {
     return jsonResponse({ error: 'Invalid topic' }, 400);
   }
 
-  const cache = sandboxCache(env);
-  const key = cacheKey(topic);
-  if (cache) {
-    try {
-      const cached = await cache.get(key);
-      if (cached) {
-        try {
-          return jsonResponse(normalizeGeneratedSandboxDefinition(JSON.parse(cached), topic));
-        } catch (_) {
-          // A stale or corrupt definition is treated as a cache miss.
-        }
-      }
-    } catch (_) {
-      // A temporarily unavailable cache must not prevent a fresh attempt.
-    }
-  }
+  const cached = await readCachedGeneratedSandbox(env, topic);
+  if (cached) return jsonResponse(cached);
 
   if (!env.OPENCODE_API_KEY) {
     return jsonResponse({ error: 'Sandbox generation is not configured' }, 500);
@@ -125,7 +57,7 @@ export async function onRequestGet(context) {
 
   let definition;
   try {
-    definition = await generateDefinition(context, topic);
+    definition = await generateGeneratedSandboxDefinition(env, topic);
   } catch (error) {
     console.error('Sandbox generation failed', topic, error?.message);
     return jsonResponse({ error: 'Sandbox generation is temporarily unavailable' }, 503);
@@ -133,8 +65,9 @@ export async function onRequestGet(context) {
 
   if (!entitlement.pro) await consumeQuota(env, entitlement.identity, 'sandbox');
 
+  const cache = sandboxCache(env);
   if (cache) {
-    const write = cache.put(key, JSON.stringify(definition), { expirationTtl: CACHE_TTL_SECONDS });
+    const write = writeGeneratedSandbox(env, definition);
     if (typeof context.waitUntil === 'function') context.waitUntil(write);
     else write.catch(() => {});
   }
