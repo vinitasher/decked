@@ -123,16 +123,20 @@ decision-based practice with adaptive difficulty.
 ```
 
 **Concept Wiki:**
-- Every know-first topic opens a Concept Wiki screen with a clickable topic
-  side panel for each concept
+- The full Wiki destination opens the shared Concept Lab with the Wiki
+  explanation on one side and the experiment on the other; the topic side
+  panel remains clickable for every concept
+- Know First links still provide a quick inline Wiki explanation without
+  interrupting the current card
 - Entries are bundled with the app as `js/wiki.js` in a fixed schema
   (`topic`, `title`, `summary`, `why_it_matters`, `key_points`,
   `common_pitfalls`, `related_topics`) and shown inline on cards via the Know
   First links and a modal
 
 **Concept Sandbox:**
-- A deterministic, offline `#/sandbox` laboratory lets learners predict, run,
-  and explain a node under changing constraints.
+- A deterministic, offline `#/sandbox` entry point opens the same Concept Lab;
+  learners predict, run, and explain a node while its Wiki context stays
+  visible alongside it.
 - The reviewed node-model catalog includes the original Redis-like cache,
   queue + worker, and relational database, plus ten common-interview patterns:
   social feed, realtime messaging, video pipeline, geospatial dispatch, URL
@@ -187,11 +191,12 @@ points, common pitfalls, and related topics) for that concept.
   `tests/wiki.test.mjs` and `tests/api-wiki.test.mjs`.
 
 The wiki UI — the sidebar index and the link affordance on Know First topics
-in card question headers — lives in `js/app.js`. The Wiki and Sandbox form a
-local learning loop: every reviewed node exposes its bundled concept links,
-and mapped Wiki entries offer a direct `Try` action for the relevant node.
-Returning to the same node keeps its in-memory experiment state; concepts
-without a reviewed node fall back to the full Sandbox catalog.
+in card question headers — lives in `js/app.js`. The Concept Wiki and Sandbox
+now share one Concept Lab screen: the Wiki explains the idea on the left and
+the deterministic experiment tests it on the right (stacked in that order on
+narrow screens). The legacy `#/wiki/<topic>` and `#/sandbox` links both open
+this same surface; changing a concept keeps the visible experiment state,
+while explicitly changing the node resets that node to its baseline.
 
 The product contract and implementation verification path for the learning
 ladder and sandbox live in
@@ -388,4 +393,4 @@ chromium --headless --no-sandbox --window-size=390,1200 \
 The learning ladder and Concept Sandbox are behavior changes in addition to the
 shared visual system: the ladder updates from study evidence, sandbox
 prediction aggregates are included in the existing local profile sync path,
-and the Wiki provides the concept context for each reviewed experiment.
+and the Wiki and experiment now share one two-pane learning surface.

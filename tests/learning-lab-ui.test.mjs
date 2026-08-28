@@ -53,7 +53,7 @@ function createContext() {
   };
 
   for (const id of [
-    'screen-welcome', 'screen-sandbox', 'challenge-ladder',
+    'screen-welcome', 'screen-wiki', 'wiki-sidebar', 'wiki-content', 'challenge-ladder',
     'learning-level-title', 'learning-level-copy', 'learning-level-next',
     'learning-level-fill', 'learning-level-steps', 'sandbox-progress-summary', 'sandbox-node',
     'sandbox-node-description', 'sandbox-situation', 'sandbox-situation-description',
@@ -195,12 +195,32 @@ test('challenge ladder renders the current level and next milestone', () => {
 });
 
 test('sandbox route and offline shell include the model module', () => {
-  assert.match(htmlSource, /id="screen-sandbox"/);
+  assert.match(htmlSource, /id="screen-wiki"/);
+  assert.match(htmlSource, /class="concept-lab-layout"/);
+  assert.match(htmlSource, /class="concept-lab-pane concept-lab-wiki-pane"/);
+  assert.match(htmlSource, /class="concept-lab-pane concept-lab-sandbox-pane"/);
+  assert.doesNotMatch(htmlSource, /id="screen-sandbox"/);
   assert.match(htmlSource, /id="sandbox-node"/);
-  assert.match(htmlSource, /Open Concept Sandbox/);
+  assert.match(htmlSource, /Open Concept Lab/);
+  assert.match(htmlSource, /Concept Lab · Wiki \+ Sandbox/);
   assert.match(htmlSource, /js\/sandbox\.js/);
   assert.match(appSource, /'sandbox'/);
   assert.match(serviceWorkerSource, /'\/js\/sandbox\.js'/);
+});
+
+test('Wiki and Sandbox entry points render the same two-sided Concept Lab screen', () => {
+  const app = freshApp();
+  const screen = context.document.getElementById('screen-wiki');
+
+  app.showWiki('http-cacheability');
+  assert.equal(screen.classList.contains('hidden'), false);
+  assert.equal(app._activeWikiTopic, 'http-cacheability');
+  assert.equal(app._sandboxState.nodeId, 'url-shortener');
+
+  app.showSandbox('url-shortener');
+  assert.equal(screen.classList.contains('hidden'), false);
+  assert.equal(app._activeWikiTopic, 'http-cacheability');
+  assert.match(context.document.getElementById('sandbox-node').innerHTML, /URL shortener/);
 });
 
 test('sandbox selector exposes the full reviewed node catalog', () => {
@@ -258,6 +278,15 @@ test('returning from Wiki preserves the active same-node experiment state', () =
 
   assert.equal(app._sandboxState.situationId, 'cold-redirect-cache');
   assert.equal(JSON.stringify(app._sandboxState), before);
+});
+
+test('selecting a different sandbox node refreshes the Wiki side to its mapped concept', () => {
+  const app = freshApp();
+  app.showSandbox('redis-cache');
+  app.selectSandboxNode('url-shortener');
+
+  assert.equal(app._sandboxState.nodeId, 'url-shortener');
+  assert.equal(app._activeWikiTopic, 'http-cacheability');
 });
 
 test('sandbox controls keep native radio and range inputs from expanding the layout', () => {

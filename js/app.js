@@ -4,7 +4,8 @@ const SERVER_BASE = window.location.hostname === 'localhost' || window.location.
   ? 'http://localhost:3456' : '';
 
 /* Screens that are URL-addressable via hash routes (#/welcome, #/search, ...).
-   Wiki topics are addressable per-entry: #/wiki/<topic>. */
+   Wiki topics are addressable per-entry: #/wiki/<topic>. The wiki and sandbox
+   routes are compatibility aliases for the shared Concept Lab screen. */
 const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'wiki', 'sandbox', 'stats'];
 
 /* A visible challenge ladder gives the adaptive planner a learner-facing
@@ -1981,7 +1982,8 @@ const APP = {
 
   showScreen(id) {
     document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
-    const el = document.getElementById('screen-' + id);
+    const renderedScreen = id === 'sandbox' ? 'wiki' : id;
+    const el = document.getElementById('screen-' + renderedScreen);
     if (el) el.classList.remove('hidden');
     // Supabase's implicit OAuth response lives in the hash. Keep it intact
     // until the Supabase client has consumed it instead of replacing it with
@@ -2247,12 +2249,39 @@ const APP = {
     return this._sandboxState;
   },
 
-  showSandbox(nodeId) {
-    if (!this._sandboxState || (nodeId && this._sandboxState.nodeId !== getSandboxNode(nodeId).id)) {
-      this._sandboxState = this._newSandboxState(nodeId || 'redis-cache');
+  _ensureConceptLabNode(topic = '', nodeId = '') {
+    if (typeof getSandboxNode !== 'function') return null;
+    const relatedModels = topic && typeof getSandboxModelsForWikiTopic === 'function'
+      ? getSandboxModelsForWikiTopic(topic)
+      : [];
+    const currentNode = this._sandboxState
+      ? getSandboxNode(this._sandboxState.nodeId)
+      : null;
+    const node = nodeId
+      ? getSandboxNode(nodeId)
+      : currentNode || relatedModels[0] || getSandboxNode();
+    if (!this._sandboxState || this._sandboxState.nodeId !== node.id) {
+      this._sandboxState = this._newSandboxState(node.id);
     }
-    this.renderSandbox();
+    return node;
+  },
+
+  _conceptForSandboxNode(node) {
+    const topics = typeof getSandboxWikiTopics === 'function'
+      ? getSandboxWikiTopics(node.id)
+      : [];
+    if (topics.includes(this._activeWikiTopic)) return this._activeWikiTopic;
+    return topics[0] || Object.keys(WIKI || {})[0] || '';
+  },
+
+  showSandbox(nodeId) {
+    const node = this._ensureConceptLabNode('', nodeId || '');
+    if (!node) return;
+    const topic = this._conceptForSandboxNode(node);
     this.showScreen('sandbox');
+    this.renderWikiSidebar();
+    this.renderSandbox();
+    if (topic) this.openWiki(topic, { navigate: false });
   },
 
   _sandboxFormatValue(value, control) {
@@ -2474,6 +2503,8 @@ const APP = {
     const node = getSandboxNode(nodeId);
     this._sandboxState = this._newSandboxState(node.id);
     this.renderSandbox();
+    const topic = this._conceptForSandboxNode(node);
+    if (topic) this.openWiki(topic, { navigate: false });
   },
 
   selectSandboxSituation(situationId) {
@@ -2586,9 +2617,12 @@ const APP = {
   },
 
   showWiki(topic) {
-    this.renderWikiSidebar();
-    this.openWiki(topic || Object.keys(WIKI || {})[0] || '');
+    const selectedTopic = topic || this._activeWikiTopic || Object.keys(WIKI || {})[0] || '';
+    if (typeof getSandboxNode === 'function') this._ensureConceptLabNode(selectedTopic);
     this.showScreen('wiki');
+    this.renderWikiSidebar();
+    if (typeof getSandboxNode === 'function') this.renderSandbox();
+    this.openWiki(selectedTopic);
   },
 
   renderWikiSidebar() {
@@ -2618,11 +2652,11 @@ const APP = {
     return entry;
   },
 
-  openWiki(topic) {
+  openWiki(topic, { navigate = true } = {}) {
     const el = document.getElementById('wiki-content');
     if (!el) return;
     this._activeWikiTopic = topic;
-    this._navigate('wiki/' + encodeURIComponent(topic));
+    if (navigate) this._navigate('wiki/' + encodeURIComponent(topic));
     document.querySelectorAll('.wiki-topic').forEach(button =>
       button.classList.toggle('active', button.dataset.topic === topic)
     );

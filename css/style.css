@@ -190,6 +190,22 @@ footer a:hover { color: var(--primary); }
 }
 
 /* ——— Concept Wiki ——— */
+.concept-lab-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.concept-lab-topline h1 { margin-bottom: 0; }
+.concept-lab-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 18px; align-items: start; }
+.concept-lab-pane { min-width: 0; padding: 18px; border: 1px solid var(--card-border); border-radius: 18px; background: var(--surface-soft); box-shadow: 0 10px 24px var(--stat-shadow); }
+.concept-lab-pane-heading { margin-bottom: 14px; }
+.concept-lab-pane-kicker { color: var(--primary); font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.concept-lab-pane-heading h2 { margin: 4px 0 4px; }
+.concept-lab-pane-heading p { margin: 0; color: var(--muted-text); font-size: 0.78rem; line-height: 1.45; }
+.concept-lab-wiki-pane .wiki-layout { flex-direction: column; align-items: stretch; }
+.concept-lab-wiki-pane .wiki-sidebar { width: 100%; max-height: 28vh; display: flex; flex-wrap: wrap; gap: 4px; overflow-y: auto; }
+.concept-lab-wiki-pane .wiki-topic { width: auto; }
+.concept-lab-wiki-pane .wiki-content { max-width: none; }
+.concept-lab-sandbox-pane .sandbox-lab-header { grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr); margin-top: 0; }
+.concept-lab-sandbox-pane .sandbox-layout { grid-template-columns: 1fr; }
+.concept-lab-sandbox-pane .sandbox-progress-wrap { grid-column: 1 / -1; text-align: left; }
+.concept-lab-sandbox-pane .sandbox-disclaimer { margin-bottom: 0; }
 .wiki-layout { display: flex; gap: 16px; align-items: flex-start; }
 .wiki-sidebar { width: 230px; max-height: 65vh; overflow-y: auto; flex: 0 0 auto; padding: 8px; border: 1px solid var(--card-border); border-radius: 8px; background: var(--card-bg); }
 .wiki-topic { display: block; width: 100%; text-align: left; padding: 6px 10px; margin: 1px 0; border: none; border-radius: 6px; background: none; color: var(--fg); font-size: 0.82rem; cursor: pointer; }
@@ -206,6 +222,10 @@ footer a:hover { color: var(--primary); }
   .wiki-layout { flex-direction: column; }
   .wiki-sidebar { width: 100%; max-height: 30vh; display: flex; flex-wrap: wrap; gap: 4px; overflow-y: auto; }
   .wiki-topic { width: auto; }
+}
+
+@media (max-width: 1100px) {
+  .concept-lab-layout { grid-template-columns: 1fr; }
 }
 
 /* Inline wiki links on cards + wiki modal */
@@ -759,6 +779,8 @@ footer { padding-top: 34px; color: var(--muted); }
   .challenge-ladder-footer { align-items: stretch; flex-direction: column; }
   .challenge-sandbox-btn { width: 100%; }
   .sandbox-lab-header { grid-template-columns: 1fr; }
+  .concept-lab-sandbox-pane .sandbox-lab-header { grid-template-columns: 1fr; }
+  .concept-lab-sandbox-pane .sandbox-progress-wrap { grid-column: auto; }
   .sandbox-progress-wrap { grid-column: auto; }
 }
 @media (max-width: 520px) {
