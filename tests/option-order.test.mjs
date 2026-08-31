@@ -18,6 +18,7 @@ function makeClassList(initial = []) {
 function createContext() {
   const elements = new Map();
   const optionButtons = [];
+  const renderCalls = [];
   const makeElement = id => ({
     id,
     textContent: '',
@@ -35,7 +36,7 @@ function createContext() {
     'card-counter', 'card-topic', 'card-difficulty', 'scenario',
     'card-prerequisites', 'diagram-container', 'options', 'bookmark-btn',
     'feedback', 'post-answer-actions', 'confidence-buttons', 'next-btn',
-    'regenerate-btn', 'compare-btn', 'quality-rating', 'screen-session'
+    'regenerate-btn', 'quality-rating', 'screen-session'
   ]) elements.set(id, makeElement(id));
 
   const keydownListeners = [];
@@ -69,13 +70,14 @@ function createContext() {
     formatPrerequisiteLabel(value) { return value; },
     TOPIC_CATALOG: { queues: { label: 'Queues' } },
     SEED_CARDS: [], fetch() { throw new Error('unexpected fetch'); },
+    Render: { diagram(...args) { renderCalls.push(args); } },
     clearTimeout() {}
   };
   vm.createContext(context);
   vm.runInContext(`${source}
 globalThis.shuffleForTest = shuffledOptions;
 globalThis.appForTest = APP;`, context);
-  return { context, elements, optionButtons, keydownListeners };
+  return { context, elements, optionButtons, keydownListeners, renderCalls };
 }
 
 const options = ['A', 'B', 'C', 'D'].map(id => ({ id, label: `Choice ${id}` }));
@@ -111,8 +113,8 @@ test('deterministic shuffles place the authored correct option in every position
   assert.deepEqual([...positions].sort(), [0, 1, 2, 3]);
 });
 
-test('card rendering and answer feedback use one stable shuffled identity order', () => {
-  const { context, optionButtons } = createContext();
+test('card rendering, answer feedback, and diagram rendering use one stable shuffled identity order', () => {
+  const { context, optionButtons, renderCalls } = createContext();
   const app = context.appForTest;
   const card = {
     id: 'card-1', topic: 'queues', difficulty: 2, scenario: 'Choose.',
@@ -136,6 +138,10 @@ test('card rendering and answer feedback use one stable shuffled identity order'
 
   assert.equal(app._cardCorrect, true);
   assert.equal(optionButtons[0].classList.contains('correct'), true);
+  assert.equal(renderCalls.length, 1);
+  assert.equal(renderCalls[0][0], card);
+  assert.equal(renderCalls[0][2].reveal, true);
+  assert.equal(renderCalls[0][2].compare, true);
 
   optionButtons.forEach(button => {
     button.disabled = false;
@@ -147,6 +153,9 @@ test('card rendering and answer feedback use one stable shuffled identity order'
   assert.equal(optionButtons[0].classList.contains('correct'), true);
   assert.equal(optionButtons[1].classList.contains('incorrect'), true);
   assert.match(context.document.getElementById('feedback').innerHTML, /Option B wins; Option A fails\./);
+  assert.equal(renderCalls.length, 2);
+  assert.equal(renderCalls[1][2].reveal, true);
+  assert.equal(renderCalls[1][2].compare, true);
 });
 
 test('numeric shortcuts select displayed positions', () => {

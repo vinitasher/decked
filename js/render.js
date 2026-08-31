@@ -180,7 +180,7 @@ const Render = {
     }));
   },
 
-  /* Per-option wiring colors for the compare view. */
+  /* Per-option wiring colors for the unified answer view. */
   OPTION_COLORS: { A: '#1976d2', B: '#2e7d32', C: '#e65100', D: '#7b1fa2' },
 
   /* Entry point: Mermaid is the only diagram renderer. */

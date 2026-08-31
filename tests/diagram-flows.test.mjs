@@ -328,11 +328,20 @@ test('compare mode renders every option wiring through Mermaid', async () => {
   context.window = undefined;
 });
 
-test('compare mode is wired to a toggle button in the app', () => {
-  assert.match(html, /id="compare-btn"[^>]*onclick="APP\.showCompareDiagram\(\)"/);
-  assert.match(appSource, /showCompareDiagram\(\) \{/);
-  assert.match(appSource, /compare: true/);
-  assert.match(appSource, /this\._compareMode = false;/);
+test('answer immediately renders one unified option diagram and removes redundant controls', () => {
+  assert.doesNotMatch(html, /id="compare-btn"/);
+  assert.doesNotMatch(html, /id="diagram-peek-btn"/);
+  assert.doesNotMatch(appSource, /showCompareDiagram|peekDiagram|_compareMode|_diagramPeeking/);
+
+  const answerStart = appSource.indexOf('  answer(selectedId) {');
+  const answerEnd = appSource.indexOf('  rateConfidence(confidence) {', answerStart);
+  assert.ok(answerStart >= 0);
+  assert.ok(answerEnd > answerStart);
+  const answerSource = appSource.slice(answerStart, answerEnd);
+  const diagramCall = answerSource.indexOf("Render.diagram(card, 'diagram-container', { reveal: true, compare: true });");
+  const feedback = answerSource.indexOf("const feedbackEl = document.getElementById('feedback');");
+  assert.ok(diagramCall >= 0, 'answer renders compare view');
+  assert.ok(feedback > diagramCall, 'diagram starts before feedback controls');
 });
 
 test('client card pools discard invalid option diagrams', () => {
@@ -474,9 +483,12 @@ test('diagram prefers Mermaid', () => {
   assert.match(serviceWorker, /mermaid@11\/dist\/mermaid\.min\.js/);
 });
 
-test('rateConfidence passes the chosen option to the diagram renderer', () => {
-  assert.match(appSource, /Render\.diagram\(card, 'diagram-container', \{/);
-  assert.match(appSource, /option: \(card\.options \|\| \[\]\)\.find\(option => option\.id === this\._selectedId\)/);
+test('confidence submission does not gate the unified diagram', () => {
+  const rateStart = appSource.indexOf('  rateConfidence(confidence) {');
+  const rateEnd = appSource.indexOf('  async regenerateCard()', rateStart);
+  assert.ok(rateStart >= 0);
+  assert.ok(rateEnd > rateStart);
+  assert.doesNotMatch(appSource.slice(rateStart, rateEnd), /Render\.diagram/);
 });
 
 test('snapshots persist card and option flows', () => {

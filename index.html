@@ -206,14 +206,12 @@
           <div class="next-card-actions">
             <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>
             <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
-            <button id="compare-btn" class="btn btn-outline hidden" onclick="APP.showCompareDiagram()" title="Overlay all four option wirings">🔀 Compare options</button>
           </div>
         </div>
       </div>
       <aside class="session-diagram" aria-label="Architecture diagram">
         <div class="diagram-panel-header">
           <strong>System design</strong>
-          <button id="diagram-peek-btn" class="btn btn-sm btn-outline" onclick="APP.peekDiagram()" title="Show the architecture diagram before answering">👁 Peek</button>
         </div>
         <div id="diagram-container"></div>
       </aside>

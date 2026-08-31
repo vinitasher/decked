@@ -84,16 +84,15 @@ decision-based practice with adaptive difficulty.
   exact wiring it implies. Cards with incomplete or invalid correct-option
   wiring are rejected from server/browser caches, custom-card fallback, saved
   profiles, and resumed sessions so they can be regenerated instead of
-  reaching compare mode. Options without distinct wiring may inherit the
+  reaching diagram rendering. Options without distinct wiring may inherit the
   validated correct-option graph; cards whose options collapse into one
-  identical linear topology are also rejected before compare mode.
-  Diagrams use Mermaid
-  flowcharts with parallel branches, callback back-edges, verb-labeled edges,
-  theme-aware colors, and on reveal they
-  highlight the correct wiring — red where the chosen option diverges. Every
-  diagram uses top-to-bottom flowchart mode, including the compare view. If
-  Mermaid is unavailable or fails to render, the app shows a reload message
-  instead of generating a second diagram format.
+  identical linear topology are also rejected before rendering.
+  Diagrams use Mermaid flowcharts with parallel branches, callback back-edges,
+  verb-labeled edges, and theme-aware colors. Immediately after an answer,
+  every option's wiring is overlaid in one top-to-bottom diagram with a
+  color-coded legend and a checkmark for the correct option. If Mermaid is
+  unavailable or fails to render, the app shows a reload message instead of
+  generating a second diagram format.
 
 **Data model:**
 ```json

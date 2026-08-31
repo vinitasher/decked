@@ -5,6 +5,8 @@ import test from 'node:test';
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
 const proSetup = await readFile(new URL('../docs/pro-setup.md', import.meta.url), 'utf8');
 const prewarmWorkflow = await readFile(new URL('../../.github/workflows/sandbox-prewarm.yml', import.meta.url), 'utf8');
+const immediateDiagramPrd = await readFile(new URL('../../PRDs/flashcard-immediate-system-design.md', import.meta.url), 'utf8');
+const immediateDiagramPlan = await readFile(new URL('../../PRDs/flashcard-immediate-system-design-plan.md', import.meta.url), 'utf8');
 
 test('README documents the deployed AI generation and daily quota model', () => {
   for (const staleClaim of [
@@ -40,4 +42,14 @@ test('prewarm operations are documented and configured for serial token-safe run
   assert.match(prewarmWorkflow, /cancel-in-progress: false/);
   assert.match(prewarmWorkflow, /SANDBOX_PREWARM_TOKEN/);
   assert.match(prewarmWorkflow, /node scripts\/prewarm-sandboxes\.mjs/);
+});
+
+test('immediate system-design visibility has a paired product contract and plan', () => {
+  assert.match(immediateDiagramPrd, /Status: Complete/);
+  assert.match(immediateDiagramPrd, /reveal: true/);
+  assert.match(immediateDiagramPrd, /compare: true/);
+  assert.match(immediateDiagramPrd, /neither Peek nor Compare/);
+  assert.match(immediateDiagramPlan, /PRD: \[flashcard-immediate-system-design\.md\]/);
+  assert.match(immediateDiagramPlan, /APP\.answer\(selectedId\)/);
+  assert.match(immediateDiagramPlan, /bash check\.sh/);
 });

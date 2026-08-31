@@ -365,7 +365,6 @@ const APP = {
   _displayedOptions: [],
   _retriedCardIds: new Set(),
   _sessionResults: {},
-  _compareMode: false,
   _profileSyncReady: false,
   _profileSyncInFlight: false,
   _profileSyncTimer: null,
@@ -1334,7 +1333,6 @@ const APP = {
     const card = this.currentCard;
     this._recordDisplayedScenario(card);
     this._confidenceSubmitted = false;
-    this._compareMode = false;
 
     document.getElementById('card-counter').textContent =
       `${this.sessionIndex + 1} / ${this.sessionCards.length}${card.retry ? ' · retry' : ''}`;
@@ -1366,13 +1364,9 @@ const APP = {
       ? `Know first: ${prerequisites.map(topic => this._wikiLink(topic)).join(', ')}`
       : 'Foundational topic';
 
-    // retrieval practice: hide diagram until answered (user can toggle to peek)
-    if (!this._diagramPeeking) this._diagramPeeking = {};
-    const canPeek = this._diagramPeeking[card.id] || false;
-    document.getElementById('diagram-container').innerHTML = '<p class="diagram-placeholder">📐 Diagram hidden for retrieval practice<br>Answer first, then the diagram reveals</p>';
-    if (canPeek) {
-      this.peekDiagram();
-    }
+    // Retrieval practice: keep the design hidden until the learner commits to
+    // an option. The answer action reveals every option wiring together.
+    document.getElementById('diagram-container').innerHTML = '<p class="diagram-placeholder">📐 Choose an option to reveal the unified system design</p>';
 
     // render options
     const optionsEl = document.getElementById('options');
@@ -1406,7 +1400,6 @@ const APP = {
     });
     document.getElementById('next-btn').classList.add('hidden');
     document.getElementById('regenerate-btn').classList.add('hidden');
-    document.getElementById('compare-btn').classList.add('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
   },
 
@@ -1424,6 +1417,11 @@ const APP = {
       else if (opt.id === selectedId && !this._cardCorrect) btn.classList.add('incorrect');
     });
 
+    // Reveal the complete candidate wiring immediately after the choice. This
+    // is intentionally before confidence submission so the diagram explains
+    // the result while the decision is still fresh.
+    Render.diagram(card, 'diagram-container', { reveal: true, compare: true });
+
     // show feedback with correct answer, then let user rate confidence
     const feedbackEl = document.getElementById('feedback');
     const isCorrect = this._cardCorrect;
@@ -1437,7 +1435,6 @@ const APP = {
     const actionsEl = document.getElementById('post-answer-actions');
     actionsEl.classList.remove('hidden');
     document.getElementById('confidence-buttons').classList.remove('hidden');
-    document.getElementById('compare-btn').classList.remove('hidden');
     document.getElementById('next-btn').classList.add('hidden'); // wait for confidence
     document.getElementById('regenerate-btn').classList.add('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
@@ -1525,10 +1522,6 @@ const APP = {
       console.error('Unable to persist confidence feedback', error);
     }
 
-    Render.diagram(card, 'diagram-container', {
-      reveal: true,
-      option: (card.options || []).find(option => option.id === this._selectedId)
-    });
     this.renderDeckStats();
     this.prefetchNext();
   },
@@ -1621,28 +1614,6 @@ const APP = {
       this.updateTopicScore(card.topic, false, 0.3);
     }
     document.getElementById('quality-rating').querySelectorAll('button').forEach(b => b.disabled = true);
-  },
-
-  peekDiagram() {
-    const card = this.currentCard;
-    this._diagramPeeking[card.id] = true;
-    Render.diagram(card, 'diagram-container', { reveal: false });
-  },
-
-  /* Toggle the compare view: all four options' wirings overlaid, color-coded
-     with a legend. Off again → back to the chosen-vs-correct highlight. */
-  showCompareDiagram() {
-    this._compareMode = !this._compareMode;
-    const card = this.currentCard;
-    if (!card) return;
-    if (this._compareMode) {
-      Render.diagram(card, 'diagram-container', { reveal: true, compare: true });
-    } else {
-      Render.diagram(card, 'diagram-container', {
-        reveal: true,
-        option: (card.options || []).find(option => option.id === this._selectedId)
-      });
-    }
   },
 
   nextCard() {

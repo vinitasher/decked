@@ -50,14 +50,13 @@ test('the session layout gives the diagram a full-height right-side panel', () =
   assert.match(css, /@media \(max-width: 860px\)[\s\S]*\.session-diagram \{ position: static;/);
 });
 
-test('the diagram panel owns its title and peek control', () => {
+test('the diagram panel owns its title without redundant controls', () => {
   const sessionStart = html.indexOf('id="screen-session"');
   const header = html.indexOf('class="card-header"', sessionStart);
   const prerequisites = html.indexOf('id="card-prerequisites"', header);
   const layout = html.indexOf('class="session-layout"', prerequisites);
   const aside = html.indexOf('class="session-diagram"', layout);
   const panelHeader = html.indexOf('class="diagram-panel-header"', aside);
-  const peek = html.indexOf('id="diagram-peek-btn"', panelHeader);
   const container = html.indexOf('id="diagram-container"', panelHeader);
 
   assert.ok(header > sessionStart);
@@ -65,7 +64,8 @@ test('the diagram panel owns its title and peek control', () => {
   assert.ok(layout > prerequisites);
   assert.ok(aside > layout);
   assert.ok(panelHeader > aside);
-  assert.ok(peek > panelHeader && peek < container, 'peek control lives in the diagram panel');
+  assert.equal(html.indexOf('id="diagram-peek-btn"'), -1);
+  assert.equal(html.indexOf('id="compare-btn"'), -1);
   assert.match(html, /<div class="diagram-panel-header">\s*<strong>System design<\/strong>/);
   assert.match(html, /<aside class="session-diagram"[^>]*>[\s\S]*<div id="diagram-container">/);
   assert.match(css, /#diagram-container \{ margin: 8px 0 0;/);
