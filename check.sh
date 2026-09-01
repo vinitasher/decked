@@ -24,6 +24,7 @@ run_checks() {
   syntax_check_sources
 
   node scripts/audit-card-difficulties.mjs
+  node scripts/audit-option-prerequisites.mjs
   node --test tests/*.test.mjs
   bash -n build.sh
   bash -n deploy.sh

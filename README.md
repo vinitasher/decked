@@ -377,6 +377,12 @@ bash check.sh
 bash deploy.sh
 ```
 
+`check.sh` includes a read-only audit of the committed production card
+snapshot. It verifies that every option has two to four granular prerequisite
+concepts and that each card's Know First list is exactly their deduplicated
+union. To inspect another local fixture without contacting production KV, run
+`node scripts/audit-option-prerequisites.mjs --snapshot <path>`.
+
 The script verifies Cloudflare authentication and configured resource IDs,
 stages only public PWA assets, bundles the functions under `functions/`, and
 publishes the production branch to `https://decked.pages.dev`.

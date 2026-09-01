@@ -16,6 +16,7 @@
       {
         "id": "A",
         "label": "Direct database reads: The API server queries PostgreSQL on every request without caching, relying on its B-tree indexes.",
+        "prerequisiteTopics": ["database-indexing", "query-cost", "disk-io-latency"],
         "flows": [
           {
             "from": "Java Spring Boot Application",
@@ -34,6 +35,7 @@
       {
         "id": "B",
         "label": "Cache-aside with Redis: The API server reads from Redis; on content publication, it updates both Redis and PostgreSQL synchronously.",
+        "prerequisiteTopics": ["cache-aside", "write-through-caching", "cache-coherence"],
         "flows": [
           {
             "from": "Java Spring Boot Application",
@@ -82,6 +84,7 @@
       {
         "id": "C",
         "label": "Memcached with TTL: The API server caches feed responses in Memcached with a 1-second TTL; updates are written directly to PostgreSQL and asynchronously invalidate the cache.",
+        "prerequisiteTopics": ["ttl-expiry", "asynchronous-invalidation", "stale-reads"],
         "flows": [
           {
             "from": "Java Spring Boot Application",
@@ -106,6 +109,7 @@
       {
         "id": "D",
         "label": "In-memory data grid with Hazelcast: All feed data is stored in Hazelcast maps, bypassing PostgreSQL entirely, with replication across nodes.",
+        "prerequisiteTopics": ["in-memory-storage", "replication-cost", "data-durability"],
         "flows": [
           {
             "from": "Cloudflare CDN",
@@ -124,7 +128,11 @@
     ],
     "correct": "B",
     "explanation": "Option A fails because direct database reads introduce disk I/O and query overhead that cannot meet the 50ms p99 latency target. Option C fails because asynchronous cache invalidation can result in stale reads that exceed the 500ms update window, violating consistency requirements. Option D fails due to the prohibitively high hardware and licensing costs of an in-memory data grid at 20k QPS. Option B succeeds by using Redis as a cache with synchronous writes to PostgreSQL, providing low latency, strong consistency, and reasonable cost.",
-    "prerequisiteTopics": [],
+    "prerequisiteTopics": [
+      "database-indexing", "query-cost", "disk-io-latency", "cache-aside",
+      "write-through-caching", "cache-coherence", "ttl-expiry", "asynchronous-invalidation",
+      "stale-reads", "in-memory-storage", "replication-cost", "data-durability"
+    ],
     "flows": [
       {
         "from": "End User",
@@ -205,6 +213,7 @@
       {
         "id": "A",
         "label": "Use direct PostgreSQL queries for all requests, ensuring strong consistency.",
+        "prerequisiteTopics": ["database-bottlenecks", "disk-io-latency", "connection-pooling"],
         "flows": [
           {
             "from": "HAProxy",
@@ -223,6 +232,7 @@
       {
         "id": "B",
         "label": "Implement Redis cache with write-through to PostgreSQL and async queue for updates.",
+        "prerequisiteTopics": ["write-through-caching", "asynchronous-updates", "cache-coherence"],
         "flows": [
           {
             "from": "HAProxy",
@@ -259,6 +269,7 @@
       {
         "id": "C",
         "label": "Deploy a monolithic server with Apache and MySQL on a single high-end instance.",
+        "prerequisiteTopics": ["vertical-scaling", "capacity-planning", "hardware-cost"],
         "flows": [
           {
             "from": "Node.js",
@@ -271,6 +282,7 @@
       {
         "id": "D",
         "label": "Use only Redis in-memory cache with no database persistence for maximum speed.",
+        "prerequisiteTopics": ["in-memory-storage", "data-durability", "crash-recovery"],
         "flows": [
           {
             "from": "HAProxy",
@@ -289,7 +301,11 @@
     ],
     "correct": "B",
     "explanation": "Option A fails for latency due to slow disk I/O from direct PostgreSQL queries, causing bottlenecks at high QPS. Option C fails for cost as vertical scaling with a single server is expensive for peak loads. Option D fails for consistency because Redis without persistence loses data on restart. Option B wins by using Redis cache for low latency reads, PostgreSQL for durability, and async updates to balance consistency and performance.",
-    "prerequisiteTopics": [],
+    "prerequisiteTopics": [
+      "database-bottlenecks", "disk-io-latency", "connection-pooling", "write-through-caching",
+      "asynchronous-updates", "cache-coherence", "vertical-scaling", "capacity-planning",
+      "hardware-cost", "in-memory-storage", "data-durability", "crash-recovery"
+    ],
     "flows": [
       {
         "from": "End User",
@@ -340,7 +356,9 @@
     "topic": "caching",
     "difficulty": 5,
     "prerequisiteTopics": [
-      "api-design"
+      "cdn-caching", "cache-invalidation", "content-freshness", "cache-aside",
+      "cache-eviction", "aggregation-latency", "read-replication", "replication-lag",
+      "connection-pooling", "write-through-caching", "write-latency", "cache-coherence"
     ],
     "scenario": "Design a caching layer for a social media feed API. The API handles 5,000 QPS for feed reads. Each feed request aggregates 50 posts from a database of 100 million posts, and the database response time is 150ms. The latency requirement is under 50ms. The trade-off is between serving slightly stale cached data to reduce latency and the high cost of scaling the database to meet latency demands.",
     "nodes": [
@@ -355,6 +373,7 @@
       {
         "id": "A",
         "label": "Use a global CDN (CloudFront) to cache full feed responses with a long TTL (10 minutes). No backend cache.",
+        "prerequisiteTopics": ["cdn-caching", "cache-invalidation", "content-freshness"],
         "flows": [
           {
             "from": "AWS CloudFront CDN",
@@ -397,6 +416,7 @@
       {
         "id": "B",
         "label": "Use a Redis cluster for cache-aside caching with a short TTL of 60 seconds. Cache individual posts and aggregate in the app server.",
+        "prerequisiteTopics": ["cache-aside", "cache-eviction", "aggregation-latency"],
         "flows": [
           {
             "from": "HAProxy Load Balancer",
@@ -445,6 +465,7 @@
       {
         "id": "C",
         "label": "Scale the MySQL cluster with multiple read replicas to handle 5,000 QPS and use connection pooling.",
+        "prerequisiteTopics": ["read-replication", "replication-lag", "connection-pooling"],
         "flows": [
           {
             "from": "HAProxy Load Balancer",
@@ -475,6 +496,7 @@
       {
         "id": "D",
         "label": "Use a write-through cache where every new post immediately updates the cache before responding to the client.",
+        "prerequisiteTopics": ["write-through-caching", "write-latency", "cache-coherence"],
         "flows": [
           {
             "from": "Node.js Application Server",
@@ -599,7 +621,7 @@
           {
             "id": "A",
             "label": "Write-through cache: new posts immediately update Redis before DB.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["write-through-caching", "write-latency", "cache-coherence"],
             "flows": [
               {
                 "from": "Express.js Web Servers",
@@ -618,7 +640,7 @@
           {
             "id": "B",
             "label": "Write-behind cache: posts are written to Kafka and asynchronously update Redis.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["write-behind-caching", "asynchronous-processing", "eventual-consistency"],
             "flows": [
               {
                 "from": "Express.js Web Servers",
@@ -637,7 +659,7 @@
           {
             "id": "C",
             "label": "Long TTL cache: feeds cached for 30 seconds, no invalidation on writes.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["ttl-expiry", "stale-reads", "content-freshness"],
             "flows": [
               {
                 "from": "Express.js Web Servers",
@@ -662,7 +684,7 @@
           {
             "id": "D",
             "label": "Massive Redis cluster: store all feeds with 100% hit rate, multiple replicas.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["cache-hit-ratio", "replication-cost", "over-provisioning"],
             "flows": [
               {
                 "from": "Express.js Web Servers",
@@ -676,7 +698,9 @@
         "correct": "B",
         "explanation": "Option A (write-through) fails because synchronous cache updates block writes, increasing p99 latency beyond the 200ms goal during write bursts. Option C (long TTL) violates the 5-second freshness constraint, serving stale feeds and degrading user experience. Option D (over-provisioning) uses too many nodes, incurring high infrastructure costs. Option B (write-behind with Kafka) decouples writes from reads, enabling low read latency and high write throughput while staying within budget. Its 5-second TTL meets freshness requirements, and the asynchronous update avoids write-time bottlenecks.",
         "prerequisiteTopics": [
-          "api-design"
+          "write-through-caching", "write-latency", "cache-coherence", "write-behind-caching",
+          "asynchronous-processing", "eventual-consistency", "ttl-expiry", "stale-reads",
+          "content-freshness", "cache-hit-ratio", "replication-cost", "over-provisioning"
         ],
         "flows": [
           {
@@ -736,6 +760,7 @@
       {
         "id": "A",
         "label": "Classic Paxos with strict quorum across all data centers (5 nodes)",
+        "prerequisiteTopics": ["multi-phase-consensus", "quorum-commit", "cross-datacenter-latency"],
         "flows": [
           {
             "from": "Consensus Cluster (etcd/Raft)",
@@ -748,6 +773,7 @@
       {
         "id": "B",
         "label": "Raft with leader in one DC, batching, and pipeline replication",
+        "prerequisiteTopics": ["leader-election", "log-replication", "write-batching"],
         "flows": [
           {
             "from": "Load Balancer (Envoy)",
@@ -760,6 +786,7 @@
       {
         "id": "C",
         "label": "DynamoDB-style eventual consistency with conflict resolution",
+        "prerequisiteTopics": ["eventual-consistency", "conflict-resolution", "serializability"],
         "flows": [
           {
             "from": "Payment SDK (GRPC client)",
@@ -778,6 +805,7 @@
       {
         "id": "D",
         "label": "Byzantine Fault Tolerant (PBFT) with all nodes participating in each round",
+        "prerequisiteTopics": ["byzantine-fault-tolerance", "message-complexity", "replica-requirements"],
         "flows": [
           {
             "from": "Consensus Cluster (etcd/Raft)",
@@ -797,8 +825,9 @@
     "correct": "B",
     "explanation": "Option A fails due to high latency: Classic Paxos requires multiple phases (2 round trips) per consensus, and with cross-DC RTT of 10ms, it cannot meet 50ms p99 for high throughput. Option C fails consistency: eventual consistency does not guarantee strict serializability, violating correctness for financial transactions. Option D fails cost and performance: PBFT incurs high computational overhead (O(n²) messages) and requires 3f+1 replicas, leading to latency and resource waste beyond necessary. Option B succeeds because Raft with leader leases reduces round trips: a strong leader in one DC can batch writes and pipeline replication to followers, achieving low latency (<10ms replications within same DC) while maintaining strong linearizability. Batching amortizes overhead, and leader leases enable fast reads without extra consensus rounds.",
     "prerequisiteTopics": [
-      "databases",
-      "storage"
+      "multi-phase-consensus", "quorum-commit", "cross-datacenter-latency", "leader-election",
+      "log-replication", "write-batching", "eventual-consistency", "conflict-resolution",
+      "serializability", "byzantine-fault-tolerance", "message-complexity", "replica-requirements"
     ],
     "flows": [
       {
@@ -864,7 +893,7 @@
           {
             "id": "A",
             "label": "Single MySQL master with read replicas and sharding at application layer",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["read-replication", "replication-lag", "write-bottlenecks"],
             "flows": [
               {
                 "from": "API Server (Node.js)",
@@ -883,7 +912,7 @@
           {
             "id": "B",
             "label": "Geo-distributed CockroachDB cluster with strong consistency",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["distributed-transactions", "linearizability", "geo-replication"],
             "flows": [
               {
                 "from": "API Server (Node.js)",
@@ -902,7 +931,7 @@
           {
             "id": "C",
             "label": "MongoDB cluster with eventual consistency and sharding",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["eventual-consistency", "data-sharding", "write-conflicts"],
             "flows": [
               {
                 "from": "API Server (Node.js)",
@@ -921,7 +950,7 @@
           {
             "id": "D",
             "label": "Amazon DynamoDB with DAX cache and strong consistency",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["provisioned-capacity", "capacity-cost", "strong-consistency"],
             "flows": [
               {
                 "from": "API Server (Node.js)",
@@ -947,7 +976,9 @@
         "correct": "B",
         "explanation": "Option A fails due to write latency and bottleneck: a single MySQL master cannot sustain 10K writes/sec, and application sharding adds complexity without native support. Option C fails due to consistency: eventual consistency can lead to double-booking and stale reads in ride-matching. Option D fails due to cost: DynamoDB with strong consistency at this throughput requires high provisioned capacity and DAX, becoming prohibitively expensive. Option B wins because CockroachDB offers linearizable consistency, automatic horizontal scaling, and geo-distribution, keeping latency low while handling write throughput cost-effectively by adding nodes.",
         "prerequisiteTopics": [
-          "api-design"
+          "read-replication", "replication-lag", "write-bottlenecks", "distributed-transactions",
+          "linearizability", "geo-replication", "eventual-consistency", "data-sharding",
+          "write-conflicts", "provisioned-capacity", "capacity-cost", "strong-consistency"
         ],
         "flows": [
           {
@@ -1007,7 +1038,9 @@
     "topic": "databases",
     "difficulty": 5,
     "prerequisiteTopics": [
-      "api-design"
+      "read-replication", "replication-lag", "read-after-write-consistency", "tunable-consistency",
+      "local-quorum", "hot-key-caching", "vertical-scaling", "connection-pooling", "queueing-latency",
+      "multi-master-replication", "write-conflicts", "conflict-resolution"
     ],
     "scenario": "Design a database backend for a social media feed service that handles 1M QPS reads, 10K QPS writes (post creation), with p99 latency <20ms. Total data size is 10TB growing 1TB/month. The service requires strong consistency for read-after-write for user's own posts but can tolerate eventual consistency for others.",
     "nodes": [
@@ -1021,11 +1054,13 @@
     "options": [
       {
         "id": "A",
-        "label": "Single PostgreSQL instance with read replicas, using ephemeral caching"
+        "label": "Single PostgreSQL instance with read replicas, using ephemeral caching",
+        "prerequisiteTopics": ["read-replication", "replication-lag", "read-after-write-consistency"]
       },
       {
         "id": "B",
         "label": "Distributed Cassandra cluster with local quorum consistency and a Redis cache for hot keys",
+        "prerequisiteTopics": ["tunable-consistency", "local-quorum", "hot-key-caching"],
         "flows": [
           {
             "from": "Application Server",
@@ -1073,11 +1108,13 @@
       },
       {
         "id": "C",
-        "label": "Vertically scaled PostgreSQL with connection pooling and in-memory query cache"
+        "label": "Vertically scaled PostgreSQL with connection pooling and in-memory query cache",
+        "prerequisiteTopics": ["vertical-scaling", "connection-pooling", "queueing-latency"]
       },
       {
         "id": "D",
-        "label": "Multi-master MySQL setup with global transaction IDs and proxy layer"
+        "label": "Multi-master MySQL setup with global transaction IDs and proxy layer",
+        "prerequisiteTopics": ["multi-master-replication", "write-conflicts", "conflict-resolution"]
       }
     ],
     "correct": "B",
@@ -1180,6 +1217,7 @@
       {
         "id": "A",
         "label": "Ingest all logs and traces into Datadog with full granularity.",
+        "prerequisiteTopics": ["ingestion-cost", "retention-cost", "granularity-vs-cost"],
         "flows": [
           {
             "from": "Istio",
@@ -1198,6 +1236,7 @@
       {
         "id": "B",
         "label": "Self-hosted Prometheus + Thanos for metrics, Loki for logs, Jaeger for traces.",
+        "prerequisiteTopics": ["metrics-aggregation", "log-storage", "distributed-tracing"],
         "flows": [
           {
             "from": "Kubernetes",
@@ -1228,6 +1267,7 @@
       {
         "id": "C",
         "label": "Use AWS CloudWatch Logs and Metrics with default settings.",
+        "prerequisiteTopics": ["log-indexing", "query-latency", "default-config-limits"],
         "flows": [
           {
             "from": "Kubernetes",
@@ -1246,6 +1286,7 @@
       {
         "id": "D",
         "label": "Ship logs to Elasticsearch cluster and use correlation IDs for tracing.",
+        "prerequisiteTopics": ["log-shipping", "correlation-ids", "trace-reconstruction"],
         "flows": [
           {
             "from": "NGINX",
@@ -1270,6 +1311,11 @@
     ],
     "correct": "B",
     "explanation": "Option A is incorrect because fully managed services like Datadog charge per ingested GB, making it prohibitively expensive at ~$30,000/month for 600 GB/day of logs and traces. Option C relies on CloudWatch which has limited indexing, resulting in query latencies often exceeding 5 seconds, failing the sub-2s requirement. Option D uses a small Elasticsearch cluster that can lose logs under high throughput and lacks built-in distributed tracing, leading to inconsistent observability data. Option B wins by combining Prometheus with Thanos for efficient metric storage, Loki on S3 for cheap log storage, and Jaeger for structured tracing, all self-hosted to balance performance and cost.",
+    "prerequisiteTopics": [
+      "ingestion-cost", "retention-cost", "granularity-vs-cost", "metrics-aggregation", "log-storage",
+      "distributed-tracing", "log-indexing", "query-latency", "default-config-limits", "log-shipping",
+      "correlation-ids", "trace-reconstruction"
+    ],
     "flows": [
       {
         "from": "End User",
@@ -1328,7 +1374,6 @@
         "topic": "observability",
         "difficulty": 5,
         "prerequisiteTopics": [
-          "api-design",
           "head-based-sampling",
           "trace-context-propagation",
           "kafka-buffering",
@@ -1621,7 +1666,7 @@
           {
             "id": "A",
             "label": "Use a Redis List as a simple queue with multiple workers polling for new orders.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["durable-queues", "polling-consumers", "message-loss"],
             "flows": [
               {
                 "from": "Worker Pool (Python Celery)",
@@ -1640,7 +1685,7 @@
           {
             "id": "B",
             "label": "Use AWS SQS with a Dead Letter Queue and auto‑scaling workers.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["dead-letter-queues", "auto-scaling-workers", "at-least-once-delivery"],
             "flows": [
               {
                 "from": "Queue System",
@@ -1659,7 +1704,7 @@
           {
             "id": "C",
             "label": "Use Apache Kafka with a single consumer group and one topic per order type.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["consumer-groups", "topic-partitioning", "tail-latency"],
             "flows": [
               {
                 "from": "Order API (Spring Boot)",
@@ -1678,7 +1723,7 @@
           {
             "id": "D",
             "label": "Use a PostgreSQL table as a queue with row‑level locking and a worker checking for new rows.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["table-as-queue", "row-locking", "contention-bottlenecks"],
             "flows": [
               {
                 "from": "Order API (Spring Boot)",
@@ -1703,9 +1748,11 @@
         ],
         "correct": "B",
         "explanation": "Option A (Redis List) risks losing orders if Redis crashes without persistence, violating at‑least‑once delivery. Option C (Kafka) can achieve at‑least‑once, but its typical tail latency at moderate QPS often exceeds 500 ms, and the cost and complexity of running a Kafka cluster are higher than needed. Option D (PostgreSQL as queue) creates a scalability bottleneck; as traffic spikes, row contention and lock waiting increase latency and cost. Option B (AWS SQS) provides reliable at‑least‑once delivery, built‑in dead letter handling, and auto‑scaling workers can handle spikes without manual intervention, all at a reasonable cost for this workload.",
-        "prerequisiteTopics": [
-          "api-design"
-        ],
+    "prerequisiteTopics": [
+      "durable-queues", "polling-consumers", "message-loss", "dead-letter-queues",
+      "auto-scaling-workers", "at-least-once-delivery", "consumer-groups", "topic-partitioning",
+      "tail-latency", "table-as-queue", "row-locking", "contention-bottlenecks"
+    ],
         "flows": [
           {
             "from": "End User",
@@ -1772,12 +1819,12 @@
           {
             "id": "A",
             "label": "Use RabbitMQ with direct exchanges for each restaurant (1 queue per restaurant).",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": ["queue-per-key", "queue-proliferation", "management-overhead"]
           },
           {
             "id": "B",
             "label": "Use Apache Kafka with partitions keyed by restaurant ID, combined with idempotent producers.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["keyed-partitioning", "partition-ordering", "idempotent-producers"],
             "flows": [
               {
                 "from": "Order Processing Workers (Golang)",
@@ -1796,12 +1843,12 @@
           {
             "id": "C",
             "label": "Use Amazon SQS FIFO queues, one per restaurant.",
-            "prerequisiteTopics": []
+            "prerequisiteTopics": ["fifo-queues", "throughput-limits", "ordering-guarantees"]
           },
           {
             "id": "D",
             "label": "Use Redis Pub/Sub with sharding by restaurant ID, and a Redis Cluster for persistence.",
-            "prerequisiteTopics": [],
+            "prerequisiteTopics": ["pub-sub-messaging", "message-persistence", "at-least-once-delivery"],
             "flows": [
               {
                 "from": "Order Processing Workers (Golang)",
@@ -1821,7 +1868,9 @@
         "correct": "B",
         "explanation": "Option A fails because managing thousands of queues in RabbitMQ becomes a bottleneck, increasing latency beyond the SLA due to poor scalability. Option C fails due to cost and throughput limitations: SQS FIFO only supports 300 TPS, requiring many queues and increasing complexity. Option D fails because Redis Pub/Sub does not guarantee message persistence or at-least-once delivery, risking order loss. Option B wins as Kafka provides high throughput (100k+/sec), strict partition-level ordering, and persistence via replication, meeting all requirements.",
         "prerequisiteTopics": [
-          "api-design"
+          "queue-per-key", "queue-proliferation", "management-overhead", "keyed-partitioning",
+          "partition-ordering", "idempotent-producers", "fifo-queues", "throughput-limits",
+          "ordering-guarantees", "pub-sub-messaging", "message-persistence", "at-least-once-delivery"
         ],
         "flows": [
           {

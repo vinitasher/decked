@@ -87,6 +87,7 @@ test('check script retains the existing verification commands', async () => {
   const checkScriptContents = await readFile(checkScript, 'utf8');
 
   assert.match(checkScriptContents, /node scripts\/audit-card-difficulties\.mjs/);
+  assert.match(checkScriptContents, /node scripts\/audit-option-prerequisites\.mjs/);
   assert.match(checkScriptContents, /node --test tests\/\*\.test\.mjs/);
   assert.match(checkScriptContents, /bash -n build\.sh/);
   assert.match(checkScriptContents, /bash -n deploy\.sh/);
