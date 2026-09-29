@@ -236,6 +236,282 @@ and its [implementation plan](../PRDs/flashcard-learning-lab-progression-plan.md
 - **AI generation:** cards are generated on demand, with cached results reused
   and bundled seed cards available as an offline fallback
 
+## Design Decisions
+
+This section records the major architecture choices behind the current
+implementation. The "Suggested tech stack" above is the original seed sketch;
+the decisions below describe what was actually built and why. Each entry is a
+decision matrix comparing the viable options across the criteria that matter
+for this product, followed by the decision made and its rationale. They are
+ordered by dependency: the data-store choice drives several downstream choices,
+so it comes first.
+
+### 1. Data store — SQL vs NoSQL (key-value)
+
+**Question.** Where should generated content, learner profiles, and cached wiki
+entries live?
+
+The app is read-heavy (a card or profile is read far more often than it is
+written), writes are infrequent and user-scoped, and the payloads are
+self-contained JSON blobs that are fetched by key and never joined across
+records.
+
+| Criterion | SQL (PostgreSQL) | NoSQL document (MongoDB) | NoSQL key-value (Cloudflare KV) |
+| --- | --- | --- | --- |
+| Read latency at the edge | Weak (origin round-trip) | Weak (origin round-trip) | Strong (edge-replicated) |
+| Schema flexibility | Weak (migrations) | Good (flexible docs) | Strong (opaque JSON values) |
+| Cross-record joins | Strong | Fair | Weak (not supported) |
+| Write-volume fit | Overkill | Overkill | Well matched (low) |
+| Operational cost / ops | High (server, backups) | High | Minimal (managed) |
+| Time-to-live expiry | Needs cron/jobs | Needs TTL index | Built in |
+| Offline first-load path | Needs a live API | Needs a live API | Pairs with bundled JSON |
+
+**Decision:** NoSQL key-value (Cloudflare KV) for generated cards (`CARD_CACHE`),
+learner profiles (`profile:v1:`), wiki entries (`WIKI_CACHE`), and sandbox
+recipes (`sandbox:v1:`); the seed card catalog and the 80-entry wiki snapshot
+ship as static JSON inside the PWA bundle.
+
+**Rationale.** The access pattern is keyed reads of self-contained JSON blobs
+with no relational queries, which is exactly KV's sweet spot. Bundling seed
+content as static JSON removes the database from the critical first-load path
+and keeps the app usable offline. A relational engine would add migrations,
+server operations, and origin latency for features the app never uses.
+
+### 2. Compute — serverless edge functions vs self-hosted application server
+
+**Question.** Where does the small amount of server logic (card/wiki generation,
+profile sync, sandbox prewarm) actually run?
+
+| Criterion | Self-hosted server (FastAPI on a VPS) | Containerized service | Serverless edge (Cloudflare Pages Functions) |
+| --- | --- | --- | --- |
+| Global latency | Weak (one region) | Weak (one region) | Strong (edge network) |
+| Ops / patching burden | High | Medium | None (managed) |
+| Cost at low/idle traffic | Fixed, wasted | Fixed, wasted | Pay per request |
+| Cold starts / scaling | Manual | Manual | Automatic |
+| Long-running generation calls | Strong | Strong | Fair (CPU-time limits) |
+| Vendor lock-in | None | Low | High |
+
+**Decision:** Serverless edge functions on Cloudflare Pages, with the
+long-running model call isolated to a single function invoked per request.
+
+**Rationale.** The server surface is tiny — a handful of endpoints that call an
+external model, validate the result, and cache it. Serverless removes patching
+and scaling entirely, and edge placement puts the endpoints close to users
+worldwide. The main risk, CPU-time limits, is avoided because generation is
+I/O-bound (waiting on the provider), not compute-bound.
+
+### 3. Frontend delivery — static PWA vs server-rendered vs native app
+
+**Question.** How is the product delivered to the learner's device?
+
+| Criterion | Server-rendered (SSR/MPA) | Static SPA + PWA | Native app (iOS/Android) |
+| --- | --- | --- | --- |
+| Offline / installable | Weak | Strong | Strong |
+| First-load speed | Fair (server work) | Strong (CDN-cached) | Strong (installed) |
+| App-store gate | None | None | Required |
+| Build/CI complexity | Medium | Low | High (two platforms) |
+| Reach (one codebase) | Strong | Strong | Weak (separate builds) |
+| Push / device APIs | Weak | Fair (service worker) | Strong |
+
+**Decision:** A static, installable PWA served from a CDN (Cloudflare Pages),
+written in vanilla JavaScript with a service worker.
+
+**Rationale.** The experience is one-card-at-a-time and fully client-driven
+once the deck is loaded, so there is no server rendering to do. A PWA gives
+native-like installability and offline use without the app-store gate or the
+cost of maintaining two platform codebases.
+
+### 4. Client framework — vanilla JavaScript vs a frontend framework
+
+**Question.** Should the PWA be built on a framework (React/Svelte/Vue) or plain
+JavaScript?
+
+| Criterion | Vanilla JS | React/Vue/Svelte |
+| --- | --- | --- |
+| Dependency / bundle size | Strong (minimal) | Weak (larger) |
+| Build step required | Weak (served directly) | Strong (bundler) |
+| Control over SW/routing | Strong | Fair (abstracted) |
+| Hiring / ecosystem familiarity | Weak | Strong |
+| Long-term refactoring ergonomics | Weak | Strong |
+| Suitability for this UI (a few screens) | Strong | Overkill |
+
+**Decision:** Vanilla JavaScript with hash-based routing and a hand-rolled
+service worker.
+
+**Rationale.** The surface is a small number of screens (dashboard, card,
+concept lab, stats) with modest state. Shipping plain JavaScript means the app
+is served directly as static assets with no build step, keeping CI simple and
+the bundle tiny, while retaining full control over the service worker and
+offline caching that a PWA depends on.
+
+### 5. Profile state — client-side vs server-side vs hybrid sync
+
+**Question.** Where does the learner's progress live, and how does it survive
+device changes?
+
+| Criterion | Client-only (localStorage) | Server-only (DB) | Hybrid (local + sync) |
+| --- | --- | --- | --- |
+| Offline / instant UI | Strong | Weak | Strong |
+| Cross-device continuity | Weak | Strong | Strong |
+| Privacy / data ownership | Strong | Weak | Fair |
+| Conflict handling | None needed | None (single source) | Needed (timestamps) |
+| Resilience to server outage | Strong | Weak | Strong |
+
+**Decision:** Hybrid — the browser's local copy is the source of truth for
+immediate rendering and offline use, and changes synchronize asynchronously to
+Cloudflare KV under `profile:v1:<identity>`; signed-in profiles use the verified
+Supabase subject, anonymous profiles use the device id.
+
+**Rationale.** Local-first storage gives instant, offline-capable UI, while the
+KV mirror adds cross-device continuity. Because profiles are single-user, the
+only conflict is "two devices edited while apart," which is resolved by the
+newer-timestamp-wins rule the README already documents.
+
+### 6. Content generation — build-time vs runtime vs hybrid
+
+**Question.** When are cards and wiki entries produced — ahead of time, on
+demand, or both?
+
+| Criterion | Build-time only | Runtime only | Hybrid (snapshot + lazy) |
+| --- | --- | --- | --- |
+| First-load / offline coverage | Strong | Weak | Strong |
+| Freshness / long tail | Weak (fixed catalog) | Strong | Strong |
+| Model cost control | Strong (bounded) | Weak (unbounded) | Strong (quota + cache) |
+| Latency for new content | Instant | Depends on generation | Instant (cached) |
+| Content breadth | Weak | Strong | Strong |
+
+**Decision:** Hybrid — a committed snapshot (seed cards and 80 wiki entries)
+ships in the bundle, while unseen concepts and fresh cards are lazily generated
+at runtime and cached in KV (30-day TTL for wiki, permanent pools for cards).
+
+**Rationale.** The snapshot makes the most common content instant and offline;
+lazy generation covers the long tail without pre-paying for it. Quota limits
+(10 fresh cards + 10 wiki entries per UTC day) and cache reuse bound model cost,
+so cache hits never consume quota.
+
+### 7. Offline strategy — cache-first vs network-first
+
+**Question.** When the network is slow or down, what should the PWA serve?
+
+| Criterion | Cache-first | Network-first | Stale-while-revalidate |
+| --- | --- | --- | --- |
+| Perceived speed offline | Strong | Weak | Strong |
+| Freshness of app shell | Weak (stale risk) | Strong | Strong |
+| Freshness of generated content | Good (cached by key) | Strong | Fair |
+| Complexity | Low | Low | Medium |
+
+**Decision:** Network-first for same-origin application assets (so a deploy
+reaches users promptly, keeping the last good response for offline), and
+cache-first for generated content and the bundled snapshot (so cached cards,
+wiki entries, and profiles render without a request).
+
+**Rationale.** The app shell changes rarely and must update cleanly after a
+deploy, so it is refreshed from the network. Content, in contrast, is immutable
+by key and cached, so serving it cache-first is both fast and correct.
+
+### 8. Authentication — managed identity vs roll-your-own
+
+**Question.** How are users identified for synced profiles?
+
+| Criterion | Roll-your-own auth | Managed identity (Supabase) |
+| --- | --- | --- |
+| OAuth flows / security review | Weak (build + audit) | Strong (handled) |
+| Anonymous device-id path | Strong | Strong |
+| Time to ship | Weak | Strong |
+| Operational burden | High | Low |
+| Cost | Low (DIY) | Freemium tier |
+
+**Decision:** Supabase for verified signed-in identities, plus an anonymous
+browser device-id path; both resolve to a stable identity key for the KV
+profile namespace.
+
+**Rationale.** Identity and OAuth are high-risk, low-differentiation work.
+Delegating them to a managed provider removes the security review and redirect
+handling burden while the anonymous path keeps the product usable without an
+account.
+
+### 9. Consistency model — strong vs eventual
+
+**Question.** Must profile and cache writes be immediately consistent across
+replicas?
+
+| Criterion | Strong consistency | Eventual consistency |
+| --- | --- | --- |
+| Cross-device conflict freedom | Strong | Fair (LWW by timestamp) |
+| Edge write latency | Weak (coordination) | Strong |
+| Offline tolerance | Weak | Strong |
+| Operational complexity | High | Low |
+
+**Decision:** Eventual consistency, with last-writer-wins by timestamp for
+profile fields and immutable cached keys for generated content.
+
+**Rationale.** This is single-user, single-writer data with rare multi-device
+races, so the coordination cost of strong consistency buys nothing. Timestamped
+LWW handles the rare two-device race simply, and generated content is immutable
+by key so a cached read is always consistent with itself.
+
+### 10. Content storage — KV vs object storage vs relational
+
+**Question.** Is key-value the right store for all content, or do larger or
+relational artifacts need something else?
+
+| Criterion | KV (Cloudflare KV) | Object storage (R2) | Relational (SQL) |
+| --- | --- | --- | --- |
+| Small JSON blobs by key | Strong | Overkill | Overkill |
+| Large binaries / media | Weak (25 MB value cap) | Strong | Weak |
+| Querying across records | Weak | Weak | Strong |
+| Edge replication | Strong | Fair | Weak |
+| Cost for this payload profile | Strong | Fair | High |
+
+**Decision:** KV for small, keyed JSON blobs (cards, profiles, wiki entries,
+sandbox recipes) and static JSON in the bundle for seed content; no object
+store or relational engine is used because there are no large binaries and no
+cross-record queries.
+
+**Rationale.** Every stored artifact is small (well under KV's value-size cap)
+and read by key, so KV is the cheapest, simplest store that meets the needs.
+R2 and SQL would each solve a problem this app does not have.
+
+### 11. Deployment topology — multi-region edge vs single-region origin
+
+**Question.** Should the app be served from many edge locations or one origin
+region?
+
+| Criterion | Single-region origin | Multi-region edge (Cloudflare) |
+| --- | --- | --- |
+| Latency for global learners | Weak | Strong |
+| Availability / failover | Fair | Strong |
+| Operations / setup | Simple | Simple (managed) |
+| Cost | Low | Low (static + edge) |
+
+**Decision:** Multi-region edge via Cloudflare Pages + KV, with a global CDN for
+static assets.
+
+**Rationale.** The audience is global, and the payloads are static or
+edge-replicated, so serving from the edge collapses round-trip latency with no
+additional operational burden.
+
+### 12. Repository structure — monorepo vs polyrepo
+
+**Question.** Should this project live in its own repository or share the lab
+monorepo?
+
+| Criterion | Polyrepo (own repo) | Monorepo (lab subdirectory) |
+| --- | --- | --- |
+| Independent versioning/release | Strong | Fair |
+| Shared CI / portfolio context | Weak | Strong |
+| Cross-project drift visibility | Weak | Strong |
+| Promotion cost (when launched) | None | A one-time split |
+
+**Decision:** Monorepo — this project is one top-level subdirectory of mamaLab
+until a promotion trigger (launch, independent versioning, ownership, or bloat)
+fires, at which point it moves to its own repository.
+
+**Rationale.** This is inherited from the lab's governance (AGENTS.md): extra
+repositories fragment portfolio context and cost agent runs without a
+launch-level benefit. The project stays here until a concrete trigger justifies
+a split.
+
 ## Content strategy
 
 - Seed with ~50 curated fallback cards covering 10 core topics
