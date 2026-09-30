@@ -108,6 +108,7 @@
         <button class="btn btn-outline" onclick="APP.showHistory()">📜 Session History</button>
         <button class="btn btn-outline" onclick="APP.showLearningPath()">🧭 Topic Map</button>
         <button class="btn btn-outline" onclick="APP.showConceptLab()">📚 Explore Concept Lab</button>
+        <button class="btn btn-outline" onclick="APP.showDesignDecisions()">⚖️ Design Decisions</button>
         <button class="btn btn-outline" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
         <button class="btn btn-outline" onclick="APP.showScreen('bookmarks');APP.renderBookmarks()">🔖 Bookmarks</button>
         <button class="btn btn-outline" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
@@ -356,6 +357,19 @@
     <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Back to Dashboard</button>
   </div>
 
+  <!-- Design Decisions -->
+  <div id="screen-design-decisions" class="screen hidden">
+    <div class="design-decisions-topline">
+      <div>
+        <span class="eyebrow">Reference · compare · decide</span>
+        <h1>Design Decisions</h1>
+        <p class="screen-intro">The recurring architecture trade-offs behind real systems. Each decision compares the viable options across the criteria that matter, then records the choice and why it wins.</p>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">← Dashboard</button>
+    </div>
+    <div id="design-decisions-list"></div>
+  </div>
+
 </div>
 
 <!-- Concept Wiki Modal (opened from know-first links on cards) -->
@@ -404,6 +418,7 @@
 <script src="js/cards.js"></script>
 <script src="js/wiki.js"></script>
 <script src="js/concept-categories.js"></script>
+<script src="js/design-decisions.js"></script>
 <script src="js/srs.js"></script>
 <script src="js/render.js"></script>
 <script src="js/sandbox.js"></script>

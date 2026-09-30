@@ -6,7 +6,7 @@ const SERVER_BASE = window.location.hostname === 'localhost' || window.location.
 /* Screens that are URL-addressable via hash routes (#/welcome, #/search, ...).
    Concept Lab has an index route and a per-concept child route. The wiki and
    sandbox routes remain compatibility aliases for the child surface. */
-const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'concepts', 'concept', 'wiki', 'sandbox', 'stats'];
+const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'concepts', 'concept', 'wiki', 'sandbox', 'stats', 'design-decisions'];
 
 /* A visible challenge ladder gives the adaptive planner a learner-facing
    progression. Thresholds are deliberately modest: level changes require
@@ -1974,6 +1974,8 @@ const APP = {
       this.showSandbox();
     } else if (route === 'stats') {
       this.showStats();
+    } else if (route === 'design-decisions') {
+      this.renderDesignDecisions();
     } else if (route === 'history') {
       this.showHistory();
     }
@@ -2819,6 +2821,63 @@ const APP = {
         <div class="concept-group-items" role="list" aria-label="${label} concepts">${buttons}</div>
       </section>`;
     }).join('');
+  },
+
+  /* ——— Design Decisions reference ——— */
+
+  showDesignDecisions() {
+    this._navigate('design-decisions');
+    this.showScreen('design-decisions');
+    this.renderDesignDecisions();
+  },
+
+  renderDesignDecisions() {
+    const list = document.getElementById('design-decisions-list');
+    if (!list) return;
+    const decisions = Array.isArray(DESIGN_DECISIONS) ? DESIGN_DECISIONS : [];
+    if (!decisions.length) {
+      list.innerHTML = '<p class="concept-cloud-empty">No design decisions are available yet.</p>';
+      return;
+    }
+    list.innerHTML = decisions.map((decision, index) => this._decisionCardHtml(decision, index + 1)).join('');
+  },
+
+  _decisionCardHtml(decision, index) {
+    const title = this._escapeHtml(decision.title);
+    const question = this._escapeHtml(decision.question);
+    const context = decision.context
+      ? `<p class="decision-context">${this._escapeHtml(decision.context)}</p>`
+      : '';
+    const options = Array.isArray(decision.options) ? decision.options : [];
+    const criteria = Array.isArray(decision.criteria) ? decision.criteria : [];
+    const cells = Array.isArray(decision.cells) ? decision.cells : [];
+    const headRow = `<tr><th scope="col">Criterion</th>${options.map(option => `<th scope="col">${this._escapeHtml(option)}</th>`).join('')}</tr>`;
+    const bodyRows = criteria.map((criterion, rowIndex) => {
+      const row = Array.isArray(cells[rowIndex]) ? cells[rowIndex] : [];
+      return `<tr><th scope="row">${this._escapeHtml(criterion)}</th>${options.map((_option, colIndex) => `<td>${this._escapeHtml(row[colIndex] ?? '')}</td>`).join('')}</tr>`;
+    }).join('');
+    return `<article class="decision-card">
+      <header class="decision-card-header">
+        <span class="decision-index" aria-hidden="true">${index}</span>
+        <div>
+          <h2>${title}</h2>
+          <p class="decision-question">${question}</p>
+        </div>
+      </header>
+      ${context}
+      <div class="decision-table-wrap">
+        <table class="decision-table">
+          <thead>${headRow}</thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+      <div class="decision-outcome">
+        <p class="decision-label">Decision</p>
+        <p class="decision-text">${this._escapeHtml(decision.decision)}</p>
+        <p class="decision-label">Rationale</p>
+        <p class="decision-text">${this._escapeHtml(decision.rationale)}</p>
+      </div>
+    </article>`;
   },
 
   showConceptLab({ navigate = true } = {}) {

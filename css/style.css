@@ -853,3 +853,32 @@ footer { padding-top: 34px; color: var(--muted); }
   .sandbox-flow-outcomes { grid-template-columns: 1fr; }
   .sandbox-simulation-window { max-width: 44%; text-align: right; }
 }
+
+/* ——— Design Decisions reference ——— */
+
+.design-decisions-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.design-decisions-topline h1 { margin-bottom: 0; }
+.design-decisions-topline .screen-intro { max-width: 62ch; margin: 6px 0 0; }
+
+#design-decisions-list { margin-top: 18px; }
+
+.decision-card { margin: 0 0 16px; padding: 18px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--card-bg); box-shadow: 0 1px 3px var(--stat-shadow); }
+
+.decision-card-header { display: flex; gap: 12px; align-items: flex-start; }
+.decision-index { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 700; font-size: 0.85rem; }
+.decision-card-header h2 { margin: 0 0 4px; font-size: 1.05rem; color: var(--heading); }
+.decision-question { margin: 0; color: var(--muted-text); font-size: 0.85rem; font-style: italic; }
+
+.decision-context { margin: 10px 0 12px; color: var(--muted-text); font-size: 0.82rem; line-height: 1.5; }
+
+.decision-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.decision-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; line-height: 1.4; }
+.decision-table th, .decision-table td { padding: 7px 9px; border: 1px solid var(--card-border); text-align: left; vertical-align: top; }
+.decision-table thead th { background: var(--primary-bg); color: var(--heading); font-weight: 700; }
+.decision-table tbody th { font-weight: 600; color: var(--muted-text); white-space: nowrap; }
+.decision-table tbody td { color: var(--fg); }
+
+.decision-outcome { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--primary); background: var(--primary-bg); border-radius: 0 8px 8px 0; }
+.decision-label { margin: 8px 0 2px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--primary); }
+.decision-label:first-child { margin-top: 0; }
+.decision-text { margin: 0; color: var(--fg); font-size: 0.85rem; line-height: 1.55; }

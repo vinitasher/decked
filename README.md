@@ -43,9 +43,10 @@ decision-based practice with adaptive difficulty.
 - A navigable topic map shows prerequisites, dependent topics, mastery, and
   focused practice actions without locking advanced content
 - Every screen is URL-addressable via hash routes (`#/search`, `#/concepts`,
-  `#/concept/<concept>`, `#/stats`, ...), so any page can be bookmarked, shared,
-  or deep-linked and survives refresh and back/forward navigation. Legacy
-  `#/wiki` and `#/sandbox` links remain supported as Concept Lab aliases.
+  `#/concept/<concept>`, `#/design-decisions`, `#/stats`, ...), so any page can
+  be bookmarked, shared, or deep-linked and survives refresh and back/forward
+  navigation. Legacy `#/wiki` and `#/sandbox` links remain supported as Concept
+  Lab aliases.
 
 **User profile:**
 - Tracked per topic: load balancers, caching, databases, queues, consensus,
