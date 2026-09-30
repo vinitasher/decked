@@ -126,9 +126,11 @@ decision-based practice with adaptive difficulty.
 - The full Wiki destination opens the shared Concept Lab with the Wiki
   explanation on one side and the experiment on the other; the topic side
   panel remains clickable for every concept
-- Concept Lab opens with an accessible word cloud of every bundled concept;
-  selecting one opens a child page at `#/concept/<concept>` with both views
-  together
+- Concept Lab opens with every bundled concept grouped by area (API Basics,
+  Networking, Databases, Caching, Messaging & Queues, Data Processing,
+  Distributed Systems, Reliability & Scaling, Storage, and Security &
+  Observability); selecting one opens a child page at `#/concept/<concept>`
+  with both views together
 - Know First links still provide a quick inline Wiki explanation without
   interrupting the current card
 - Entries are bundled with the app as `js/wiki.js` in a fixed schema

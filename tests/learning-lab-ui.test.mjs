@@ -6,6 +6,7 @@ import test from 'node:test';
 const cardsSource = await readFile(new URL('../js/cards.js', import.meta.url), 'utf8');
 const srsSource = await readFile(new URL('../js/srs.js', import.meta.url), 'utf8');
 const wikiSource = await readFile(new URL('../js/wiki.js', import.meta.url), 'utf8');
+const conceptCategoriesSource = await readFile(new URL('../js/concept-categories.js', import.meta.url), 'utf8');
 const sandboxSource = await readFile(new URL('../js/sandbox.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
 const htmlSource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
@@ -101,6 +102,10 @@ ${srsSource}
 globalThis.SRS = SRS;
 ${wikiSource}
 globalThis.WIKI = WIKI;
+${conceptCategoriesSource}
+globalThis.CONCEPT_CATEGORIES = CONCEPT_CATEGORIES;
+globalThis.CONCEPT_CATEGORY_ORDER = CONCEPT_CATEGORY_ORDER;
+globalThis.conceptCategory = conceptCategory;
 ${sandboxSource}
 globalThis.SANDBOX_NODE_MODELS = SANDBOX_NODE_MODELS;
 globalThis.getSandboxNode = getSandboxNode;
@@ -287,7 +292,7 @@ test('Wiki and Sandbox entry points render the same two-sided Concept Lab screen
   assert.match(context.document.getElementById('sandbox-node').innerHTML, /URL shortener/);
 });
 
-test('Concept Lab word cloud renders every Wiki concept exactly once', () => {
+test('Concept Lab index renders every Wiki concept exactly once', () => {
   const app = freshApp();
   app.showConceptLab();
   const cloud = context.document.getElementById('concept-cloud').innerHTML;
@@ -299,6 +304,27 @@ test('Concept Lab word cloud renders every Wiki concept exactly once', () => {
   assert.equal(context.document.getElementById('concept-cloud-count').textContent, `${buttons.length} concepts`);
   assert.match(cloud, /concept-cloud-size-[1-5]/);
   assert.equal(context.window.location.hash, '#/concepts');
+});
+
+test('every bundled Wiki concept is assigned an authored category', () => {
+  for (const topic of Object.keys(context.WIKI)) {
+    assert.ok(context.CONCEPT_CATEGORIES[topic], `${topic}: missing category`);
+  }
+});
+
+test('Concept Lab groups concepts under authored category headings', () => {
+  const app = freshApp();
+  app.showConceptLab();
+  const cloud = context.document.getElementById('concept-cloud').innerHTML;
+
+  assert.match(cloud, /class="concept-group"/);
+  assert.match(cloud, /class="concept-group-items"/);
+  assert.match(cloud, />API Basics <span class="concept-group-count">13<\/span>/);
+  assert.match(cloud, />Databases <span class="concept-group-count">20<\/span>/);
+  assert.match(cloud, /Messaging &amp; Queues/);
+
+  const buttons = cloud.match(/<button class="concept-cloud-item/g) || [];
+  assert.equal(buttons.length, Object.keys(context.WIKI).length);
 });
 
 test('selecting a cloud concept opens one Wiki and Sandbox child page', () => {

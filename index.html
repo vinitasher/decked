@@ -121,21 +121,21 @@
       <div>
         <span class="eyebrow">Explore · choose · test</span>
         <h1>Concept Lab</h1>
-        <p class="screen-intro">Choose a system-design idea to open its explanation and pressure test on one child page.</p>
+        <p class="screen-intro">Choose a system-design idea, grouped by area, to open its explanation and pressure test on one child page.</p>
       </div>
       <button class="btn btn-sm btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">← Dashboard</button>
     </div>
     <section class="concept-cloud-card" aria-labelledby="concept-cloud-title">
       <div class="concept-cloud-heading">
         <div>
-          <span class="concept-lab-pane-kicker">The map of ideas</span>
+          <span class="concept-lab-pane-kicker">The map of ideas, by area</span>
           <h2 id="concept-cloud-title">What do you want to understand?</h2>
-          <p>Every concept is available. Larger words reflect connections and study coverage as a discovery hint, not a ranking or a gate.</p>
+          <p>Concepts are grouped by area. Larger words reflect connections and study coverage as a discovery hint, not a ranking or a gate.</p>
         </div>
         <span class="concept-cloud-count" id="concept-cloud-count"></span>
       </div>
       <p id="concept-prewarm-status" class="concept-prewarm-status" role="status" aria-live="polite">Sandbox experiments are prepared in the background.</p>
-      <div id="concept-cloud" class="concept-cloud" role="list" aria-label="System design concepts"></div>
+      <div id="concept-cloud" class="concept-cloud" role="region" aria-label="System design concepts"></div>
     </section>
   </div>
 
@@ -403,6 +403,7 @@
 
 <script src="js/cards.js"></script>
 <script src="js/wiki.js"></script>
+<script src="js/concept-categories.js"></script>
 <script src="js/srs.js"></script>
 <script src="js/render.js"></script>
 <script src="js/sandbox.js"></script>

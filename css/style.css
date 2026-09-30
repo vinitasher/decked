@@ -198,7 +198,12 @@ footer a:hover { color: var(--primary); }
 .concept-cloud-heading p { max-width: 62ch; margin: 0; color: var(--muted-text); font-size: 0.82rem; line-height: 1.5; }
 .concept-cloud-count { flex: 0 0 auto; padding: 6px 9px; border-radius: 999px; background: var(--card-bg); color: var(--primary); font-size: 0.7rem; font-weight: 800; }
 .concept-prewarm-status { margin: 17px 0 5px; color: var(--muted-text); font-size: 0.72rem; line-height: 1.45; }
-.concept-cloud { display: flex; min-height: 300px; flex-wrap: wrap; align-items: center; justify-content: center; gap: 9px 12px; padding: 26px 10px 10px; }
+.concept-cloud { display: flex; flex-direction: column; min-height: 300px; gap: 24px; padding: 26px 10px 10px; }
+.concept-group { display: flex; flex-direction: column; gap: 10px; }
+.concept-group-heading { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--heading); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; }
+.concept-group-heading::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); }
+.concept-group-count { color: var(--muted-text); font-size: 0.68rem; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.concept-group-items { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 12px; padding-left: 15px; border-left: 2px solid var(--card-border); }
 .concept-cloud-item { display: inline-flex; align-items: center; justify-content: center; padding: 6px 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--primary); font: inherit; font-weight: 850; line-height: 1.1; cursor: pointer; transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
 .concept-cloud-item:hover { background: var(--card-bg); border-color: var(--card-border); color: var(--heading); transform: translateY(-2px); }
 .concept-cloud-item:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
@@ -815,7 +820,8 @@ footer { padding-top: 34px; color: var(--muted); }
 @media (max-width: 700px) {
   .concept-index-topline { flex-wrap: wrap; }
   .concept-cloud-card { padding: 17px; }
-  .concept-cloud { min-height: 240px; padding-inline: 0; }
+  .concept-cloud { min-height: 240px; padding-inline: 0; gap: 20px; }
+  .concept-group-items { padding-left: 12px; }
   .challenge-ladder-heading { flex-direction: column; gap: 9px; }
   .challenge-next { max-width: none; text-align: left; }
   .challenge-steps { grid-template-columns: 1fr; gap: 6px; }

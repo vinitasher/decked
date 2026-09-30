@@ -2764,6 +2764,12 @@ const APP = {
     return related + prerequisites + coverage * 4;
   },
 
+  _conceptCloudItem(entry, size) {
+    const title = entry.title || formatPrerequisiteLabel(entry.topic);
+    const topic = this._escapeHtml(entry.topic);
+    return `<button class="concept-cloud-item concept-cloud-size-${size}" type="button" role="listitem" data-topic="${topic}" aria-label="Open ${this._escapeHtml(title)} concept" onclick="APP.openConcept('${topic}')">${this._escapeHtml(title)}</button>`;
+  },
+
   renderConceptCloud() {
     const cloud = document.getElementById('concept-cloud');
     if (!cloud) return;
@@ -2777,13 +2783,41 @@ const APP = {
     const weights = entries.map(entry => this._conceptCloudWeight(entry));
     const minimum = Math.min(...weights);
     const maximum = Math.max(...weights);
-    cloud.innerHTML = entries.map((entry, index) => {
-      const size = maximum === minimum
-        ? 3
-        : 1 + Math.round((weights[index] - minimum) / (maximum - minimum) * 4);
-      const title = entry.title || formatPrerequisiteLabel(entry.topic);
-      const topic = this._escapeHtml(entry.topic);
-      return `<button class="concept-cloud-item concept-cloud-size-${size}" type="button" role="listitem" data-topic="${topic}" aria-label="Open ${this._escapeHtml(title)} concept" onclick="APP.openConcept('${topic}')">${this._escapeHtml(title)}</button>`;
+    const sizeFor = index => maximum === minimum
+      ? 3
+      : 1 + Math.round((weights[index] - minimum) / (maximum - minimum) * 4);
+
+    /* Group the flat, alphabetized entry list by authored category, then
+       render each group as a labeled section. */
+    const groups = new Map();
+    entries.forEach((entry, index) => {
+      const category = typeof conceptCategory === 'function'
+        ? conceptCategory(entry.topic)
+        : 'Other';
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push({ entry, index });
+    });
+    const authoredOrder = typeof CONCEPT_CATEGORY_ORDER !== 'undefined'
+      ? CONCEPT_CATEGORY_ORDER
+      : [];
+    const orderedCategories = [...groups.keys()].sort((a, b) => {
+      const aIndex = authoredOrder.indexOf(a);
+      const bIndex = authoredOrder.indexOf(b);
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    cloud.innerHTML = orderedCategories.map(category => {
+      const items = groups.get(category);
+      const label = this._escapeHtml(category);
+      const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const buttons = items.map(({ entry, index }) => this._conceptCloudItem(entry, sizeFor(index))).join('');
+      return `<section class="concept-group" aria-labelledby="concept-group-${slug}">
+        <h3 class="concept-group-heading" id="concept-group-${slug}">${label} <span class="concept-group-count">${items.length}</span></h3>
+        <div class="concept-group-items" role="list" aria-label="${label} concepts">${buttons}</div>
+      </section>`;
     }).join('');
   },
 
