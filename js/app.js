@@ -6,7 +6,7 @@ const SERVER_BASE = window.location.hostname === 'localhost' || window.location.
 /* Screens that are URL-addressable via hash routes (#/welcome, #/search, ...).
    Concept Lab has an index route and a per-concept child route. The wiki and
    sandbox routes remain compatibility aliases for the child surface. */
-const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'concepts', 'concept', 'wiki', 'sandbox', 'stats', 'design-decisions'];
+const SCREEN_ROUTES = ['welcome', 'create', 'session', 'session-end', 'history', 'search', 'bookmarks', 'learning-path', 'concepts', 'concept', 'wiki', 'sandbox', 'stats', 'design-decisions', 'design-decision'];
 
 /* A visible challenge ladder gives the adaptive planner a learner-facing
    progression. Thresholds are deliberately modest: level changes require
@@ -1976,6 +1976,10 @@ const APP = {
       this.showStats();
     } else if (route === 'design-decisions') {
       this.renderDesignDecisions();
+    } else if (route === 'design-decision') {
+      const decisionId = this._routeDesignDecisionId();
+      if (decisionId) this.renderDesignDecision(decisionId);
+      else this.showDesignDecisions();
     } else if (route === 'history') {
       this.showHistory();
     }
@@ -2841,6 +2845,32 @@ const APP = {
     this.renderDesignDecisions();
   },
 
+  showDesignDecision(id) {
+    const decision = this._designDecisionById(id);
+    if (!decision) return this.showDesignDecisions();
+    this._navigate('design-decision/' + encodeURIComponent(decision.id));
+    this.showScreen('design-decision');
+    this.renderDesignDecision(decision.id);
+  },
+
+  _designDecisionById(id) {
+    const decisions = Array.isArray(DESIGN_DECISIONS) ? DESIGN_DECISIONS : [];
+    return decisions.find(decision => decision && decision.id === id) || null;
+  },
+
+  _routeDesignDecisionId() {
+    const hash = String(window.location.hash || '');
+    const prefix = '#/design-decision/';
+    if (!hash.startsWith(prefix)) return '';
+    const encoded = hash.slice(prefix.length).split('/')[0];
+    if (!encoded) return '';
+    try {
+      return decodeURIComponent(encoded);
+    } catch (_) {
+      return '';
+    }
+  },
+
   renderDesignDecisions() {
     const list = document.getElementById('design-decisions-list');
     if (!list) return;
@@ -2849,10 +2879,42 @@ const APP = {
       list.innerHTML = '<p class="concept-cloud-empty">No design decisions are available yet.</p>';
       return;
     }
-    list.innerHTML = decisions.map((decision, index) => this._decisionCardHtml(decision, index + 1)).join('');
+    list.innerHTML = decisions.map((decision, index) => this._decisionIndexHtml(decision, index + 1)).join('');
   },
 
-  _decisionCardHtml(decision, index) {
+  _decisionIndexHtml(decision, index) {
+    const title = this._escapeHtml(decision.title);
+    const question = this._escapeHtml(decision.question);
+    const id = this._escapeHtml(decision.id);
+    const open = `APP.showDesignDecision('${id}')`;
+    return `<article class="decision-card decision-card-link" role="link" tabindex="0"
+      aria-label="Open ${title}" onclick="${open}"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">
+      <header class="decision-card-header">
+        <span class="decision-index" aria-hidden="true">${index}</span>
+        <div>
+          <h2>${title}</h2>
+          <p class="decision-question">${question}</p>
+        </div>
+      </header>
+      <p class="decision-view">View decision →</p>
+    </article>`;
+  },
+
+  renderDesignDecision(id) {
+    const container = document.getElementById('design-decision-content');
+    const decision = this._designDecisionById(id);
+    if (!container) return;
+    if (!decision) {
+      this.showDesignDecisions();
+      return;
+    }
+    const decisions = Array.isArray(DESIGN_DECISIONS) ? DESIGN_DECISIONS : [];
+    const index = Math.max(0, decisions.findIndex(entry => entry && entry.id === decision.id)) + 1;
+    container.innerHTML = this._decisionDetailHtml(decision, index);
+  },
+
+  _decisionDetailHtml(decision, index) {
     const title = this._escapeHtml(decision.title);
     const question = this._escapeHtml(decision.question);
     const context = decision.context
@@ -2866,6 +2928,30 @@ const APP = {
       const row = Array.isArray(cells[rowIndex]) ? cells[rowIndex] : [];
       return `<tr><th scope="row">${this._escapeHtml(criterion)}</th>${options.map((_option, colIndex) => `<td>${this._escapeHtml(row[colIndex] ?? '')}</td>`).join('')}</tr>`;
     }).join('');
+
+    const conceptLinks = (Array.isArray(decision.relatedConcepts) ? decision.relatedConcepts : [])
+      .filter(topic => (WIKI || {})[topic])
+      .map(topic => {
+        const label = this._escapeHtml((WIKI || {})[topic].title || formatPrerequisiteLabel(topic));
+        const t = this._escapeHtml(topic);
+        return `<button class="btn btn-sm btn-outline decision-link-btn" type="button" onclick="APP.openConcept('${t}')">📚 ${label}</button>`;
+      }).join('');
+
+    const practiceLinks = (Array.isArray(decision.practiceTopics) ? decision.practiceTopics : [])
+      .filter(topic => (typeof TOPIC_CATALOG !== 'undefined' ? TOPIC_CATALOG[topic] : false))
+      .map(topic => {
+        const label = this._escapeHtml(formatPrerequisiteLabel(topic));
+        const t = this._escapeHtml(topic);
+        return `<button class="btn btn-sm btn-outline decision-link-btn" type="button" onclick="APP.startTopicSession('${t}')">🃏 ${label}</button>`;
+      }).join('');
+
+    const related = (conceptLinks || practiceLinks)
+      ? `<div class="decision-related">
+          ${conceptLinks ? `<div class="decision-related-group"><p class="decision-label">Read the concepts</p><div class="decision-links">${conceptLinks}</div></div>` : ''}
+          ${practiceLinks ? `<div class="decision-related-group"><p class="decision-label">Practice the flashcards</p><div class="decision-links">${practiceLinks}</div></div>` : ''}
+        </div>`
+      : '';
+
     return `<article class="decision-card">
       <header class="decision-card-header">
         <span class="decision-index" aria-hidden="true">${index}</span>
@@ -2887,6 +2973,7 @@ const APP = {
         <p class="decision-label">Rationale</p>
         <p class="decision-text">${this._escapeHtml(decision.rationale)}</p>
       </div>
+      ${related}
     </article>`;
   },
 

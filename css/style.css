@@ -887,3 +887,12 @@ footer { padding-top: 34px; color: var(--muted); }
 .decision-label { margin: 8px 0 2px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--primary); }
 .decision-label:first-child { margin-top: 0; }
 .decision-text { margin: 0; color: var(--fg); font-size: 0.85rem; line-height: 1.55; }
+
+.decision-card-link { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.decision-card-link:hover, .decision-card-link:focus-visible { border-color: var(--primary); box-shadow: 0 3px 10px var(--stat-shadow); outline: none; }
+.decision-view { margin: 10px 0 0; color: var(--primary); font-size: 0.8rem; font-weight: 700; }
+
+.decision-related { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.decision-related-group .decision-label { margin-top: 0; }
+.decision-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.decision-link-btn { font-size: 0.8rem; }

@@ -6,6 +6,8 @@
 const DESIGN_DECISIONS = [
   {
     id: 'data-store',
+    relatedConcepts: ["databases","distributed-databases","data-partitioning","database-indexing","read-replication","eventual-consistency","caching","storage"],
+    practiceTopics: ["databases","storage","caching"],
     title: 'Data store — SQL vs NoSQL (key-value)',
     question: 'Where should generated content, learner profiles, and cached wiki entries live?',
     context: 'The app is read-heavy (a card or profile is read far more often than it is written), writes are infrequent and user-scoped, and the payloads are self-contained JSON blobs fetched by key and never joined across records.',
@@ -25,6 +27,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'compute',
+    relatedConcepts: ["serverless-cold-starts","connection-lifecycle","vertical-scaling","async-io","connection-pooling"],
+    practiceTopics: ["api-design","observability"],
     title: 'Compute — serverless edge functions vs self-hosted application server',
     question: 'Where does the small amount of server logic (card/wiki generation, profile sync, sandbox prewarm) actually run?',
     context: 'The server surface is a handful of endpoints that call an external model, validate the result, and cache it.',
@@ -43,6 +47,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'frontend-delivery',
+    relatedConcepts: ["cdn-caching","http-cacheability","static-site-generation","content-freshness","dns"],
+    practiceTopics: ["caching","dns"],
     title: 'Frontend delivery — static PWA vs server-rendered vs native app',
     question: 'How is the product delivered to the learner\'s device?',
     context: 'The experience is one-card-at-a-time and fully client-driven once the deck is loaded.',
@@ -61,6 +67,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'client-framework',
+    relatedConcepts: ["static-site-generation","cdn-caching","http-cacheability"],
+    practiceTopics: ["caching"],
     title: 'Client framework — vanilla JavaScript vs a frontend framework',
     question: 'Should the PWA be built on a framework (React/Svelte/Vue) or plain JavaScript?',
     context: 'The surface is a small number of screens (dashboard, card, concept lab, stats) with modest state.',
@@ -79,6 +87,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'profile-state',
+    relatedConcepts: ["read-after-write-consistency","eventual-consistency","optimistic-concurrency","read-modify-write-races","local-caches"],
+    practiceTopics: ["databases","caching"],
     title: 'Profile state — client-side vs server-side vs hybrid sync',
     question: 'Where does the learner\'s progress live, and how does it survive device changes?',
     context: 'The profile must render instantly, work offline, and follow the user across devices.',
@@ -96,6 +106,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'content-generation',
+    relatedConcepts: ["static-site-generation","serverless-cold-starts","content-freshness","cache-invalidation","http-cacheability"],
+    practiceTopics: ["caching","api-design"],
     title: 'Content generation — build-time vs runtime vs hybrid',
     question: 'When are cards and wiki entries produced — ahead of time, on demand, or both?',
     context: 'The most common content must be instant and offline, while the long tail still needs fresh coverage.',
@@ -113,6 +125,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'offline-strategy',
+    relatedConcepts: ["http-cacheability","cdn-caching","cache-invalidation","content-freshness"],
+    practiceTopics: ["caching"],
     title: 'Offline strategy — cache-first vs network-first',
     question: 'When the network is slow or down, what should the PWA serve?',
     context: 'The app shell changes rarely; generated content is immutable by key.',
@@ -129,6 +143,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'authentication',
+    relatedConcepts: ["security","client-compatibility","webhook-callbacks","idempotency"],
+    practiceTopics: ["security"],
     title: 'Authentication — managed identity vs roll-your-own',
     question: 'How are users identified for synced profiles?',
     context: 'Identity is high-risk, low-differentiation work that must not block anonymous use.',
@@ -146,6 +162,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'consistency-model',
+    relatedConcepts: ["eventual-consistency","linearizability","quorum-commit","read-after-write-consistency","replication-lag","split-brain"],
+    practiceTopics: ["databases","consensus","storage"],
     title: 'Consistency model — strong vs eventual',
     question: 'Must profile and cache writes be immediately consistent across replicas?',
     context: 'This is single-user, single-writer data with rare multi-device races.',
@@ -162,6 +180,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'content-storage',
+    relatedConcepts: ["storage","distributed-databases","data-partitioning","database-indexing","caching"],
+    practiceTopics: ["storage","databases"],
     title: 'Content storage — KV vs object storage vs relational',
     question: 'Is key-value the right store for all content, or do larger or relational artifacts need something else?',
     context: 'Every stored artifact is a small, keyed JSON blob.',
@@ -179,6 +199,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'deployment-topology',
+    relatedConcepts: ["cdn-caching","dns","content-freshness","loadbalancing"],
+    practiceTopics: ["dns","loadbalancing","caching"],
     title: 'Deployment topology — multi-region edge vs single-region origin',
     question: 'Should the app be served from many edge locations or one origin region?',
     context: 'The audience is global, and the payloads are static or edge-replicated.',
@@ -195,6 +217,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'repository-structure',
+    relatedConcepts: ["api-design","messaging"],
+    practiceTopics: ["api-design"],
     title: 'Repository structure — monorepo vs polyrepo',
     question: 'Should this project live in its own repository or share the lab monorepo?',
     context: 'This is inherited from the lab\'s governance rather than a product-specific trade-off.',
