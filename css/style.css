@@ -222,7 +222,7 @@ footer a:hover { color: var(--primary); }
 .concept-lab-pane-heading h2 { margin: 4px 0 4px; }
 .concept-lab-pane-heading p { margin: 0; color: var(--muted-text); font-size: 0.78rem; line-height: 1.45; }
 .concept-lab-wiki-pane .wiki-layout { flex-direction: column; align-items: stretch; }
-.concept-lab-wiki-pane .wiki-sidebar { width: 100%; max-height: 28vh; display: flex; flex-wrap: wrap; gap: 4px; overflow-y: auto; }
+.concept-lab-wiki-pane .wiki-sidebar { width: 100%; max-height: 42vh; display: flex; flex-direction: column; flex-wrap: nowrap; gap: 12px; overflow-y: auto; padding: 12px; }
 .concept-lab-wiki-pane .wiki-topic { width: auto; }
 .concept-lab-wiki-pane .wiki-content { max-width: none; }
 .concept-lab-sandbox-pane .sandbox-lab-header { grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr); margin-top: 0; }
@@ -234,6 +234,11 @@ footer a:hover { color: var(--primary); }
 .wiki-topic { display: block; width: 100%; text-align: left; padding: 6px 10px; margin: 1px 0; border: none; border-radius: 6px; background: none; color: var(--fg); font-size: 0.82rem; cursor: pointer; }
 .wiki-topic:hover { background: var(--topic-bar-bg); }
 .wiki-topic.active { background: var(--primary); color: #fff; }
+.wiki-group { display: flex; flex-direction: column; gap: 6px; }
+.wiki-group-heading { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--heading); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
+.wiki-group-heading::before { content: ''; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+.wiki-group-count { color: var(--muted-text); font-size: 0.65rem; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.wiki-group-items { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 13px; border-left: 2px solid var(--card-border); }
 .wiki-content { flex: 1; min-width: 0; max-width: 680px; padding: 20px; border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); }
 .wiki-content h2 { margin-top: 0; }
 .wiki-content h3 { margin: 18px 0 8px; font-size: 0.95rem; }

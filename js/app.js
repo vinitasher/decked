@@ -2772,6 +2772,31 @@ const APP = {
     return `<button class="concept-cloud-item concept-cloud-size-${size}" type="button" role="listitem" data-topic="${topic}" aria-label="Open ${this._escapeHtml(title)} concept" onclick="APP.openConcept('${topic}')">${this._escapeHtml(title)}</button>`;
   },
 
+  /* Partition a flat, alphabetized entry list into authored categories in the
+     display order defined by CONCEPT_CATEGORY_ORDER. Unknown categories (and
+     the "Other" fallback) sort alphabetically after the authored order. */
+  _orderedConceptGroups(entries) {
+    const groups = new Map();
+    entries.forEach((entry, index) => {
+      const category = typeof conceptCategory === 'function'
+        ? conceptCategory(entry.topic)
+        : 'Other';
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push({ entry, index });
+    });
+    const authoredOrder = typeof CONCEPT_CATEGORY_ORDER !== 'undefined'
+      ? CONCEPT_CATEGORY_ORDER
+      : [];
+    return [...groups.keys()].sort((a, b) => {
+      const aIndex = authoredOrder.indexOf(a);
+      const bIndex = authoredOrder.indexOf(b);
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.localeCompare(b);
+    }).map(category => ({ category, items: groups.get(category) }));
+  },
+
   renderConceptCloud() {
     const cloud = document.getElementById('concept-cloud');
     if (!cloud) return;
@@ -2789,30 +2814,7 @@ const APP = {
       ? 3
       : 1 + Math.round((weights[index] - minimum) / (maximum - minimum) * 4);
 
-    /* Group the flat, alphabetized entry list by authored category, then
-       render each group as a labeled section. */
-    const groups = new Map();
-    entries.forEach((entry, index) => {
-      const category = typeof conceptCategory === 'function'
-        ? conceptCategory(entry.topic)
-        : 'Other';
-      if (!groups.has(category)) groups.set(category, []);
-      groups.get(category).push({ entry, index });
-    });
-    const authoredOrder = typeof CONCEPT_CATEGORY_ORDER !== 'undefined'
-      ? CONCEPT_CATEGORY_ORDER
-      : [];
-    const orderedCategories = [...groups.keys()].sort((a, b) => {
-      const aIndex = authoredOrder.indexOf(a);
-      const bIndex = authoredOrder.indexOf(b);
-      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-      if (aIndex !== -1) return -1;
-      if (bIndex !== -1) return 1;
-      return a.localeCompare(b);
-    });
-
-    cloud.innerHTML = orderedCategories.map(category => {
-      const items = groups.get(category);
+    cloud.innerHTML = this._orderedConceptGroups(entries).map(({ category, items }) => {
       const label = this._escapeHtml(category);
       const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       const buttons = items.map(({ entry, index }) => this._conceptCloudItem(entry, sizeFor(index))).join('');
@@ -2961,10 +2963,23 @@ const APP = {
     const sidebar = document.getElementById('wiki-sidebar');
     if (!sidebar) return;
     const active = this._activeWikiTopic || '';
-    const entries = Object.values(WIKI || {}).sort((a, b) => a.title.localeCompare(b.title));
-    sidebar.innerHTML = entries.map(entry =>
-      `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openConcept('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(entry.title)}</button>`
-    ).join('');
+    const entries = this._conceptEntries();
+    if (!entries.length) {
+      sidebar.innerHTML = '';
+      return;
+    }
+    sidebar.innerHTML = this._orderedConceptGroups(entries).map(({ category, items }) => {
+      const label = this._escapeHtml(category);
+      const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const buttons = items.map(({ entry }) => {
+        const title = entry.title || formatPrerequisiteLabel(entry.topic);
+        return `<button class="wiki-topic${entry.topic === active ? ' active' : ''}" data-topic="${this._escapeHtml(entry.topic)}" onclick="APP.openConcept('${this._escapeHtml(entry.topic)}')">${this._escapeHtml(title)}</button>`;
+      }).join('');
+      return `<div class="wiki-group" role="group" aria-labelledby="wiki-group-${slug}">
+        <h4 class="wiki-group-heading" id="wiki-group-${slug}">${label} <span class="wiki-group-count">${items.length}</span></h4>
+        <div class="wiki-group-items">${buttons}</div>
+      </div>`;
+    }).join('');
   },
 
   /* Lazy wiki: fetch a missing entry from /api/wiki, merge it into WIKI so

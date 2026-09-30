@@ -327,6 +327,21 @@ test('Concept Lab groups concepts under authored category headings', () => {
   assert.equal(buttons.length, Object.keys(context.WIKI).length);
 });
 
+test('Concept Lab sidebar groups concepts by category and marks the active topic', () => {
+  const app = freshApp();
+  app._activeWikiTopic = 'rate-limiting';
+  app.renderWikiSidebar();
+  const sidebar = context.document.getElementById('wiki-sidebar').innerHTML;
+
+  assert.match(sidebar, /class="wiki-group"/);
+  assert.match(sidebar, /class="wiki-group-heading"/);
+  assert.match(sidebar, />API Basics <span class="wiki-group-count">13<\/span>/);
+  assert.match(sidebar, /class="wiki-topic active" data-topic="rate-limiting"/);
+
+  const buttons = sidebar.match(/<button class="wiki-topic/g) || [];
+  assert.equal(buttons.length, Object.keys(context.WIKI).length);
+});
+
 test('selecting a cloud concept opens one Wiki and Sandbox child page', () => {
   const app = freshApp();
   app.openConcept('http-cacheability');
