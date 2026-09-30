@@ -77,7 +77,7 @@ globalThis.appForTest = APP;`, context);
 const dashboardElementIds = [
   'stat-total', 'stat-reviewed', 'stat-due', 'stat-streak',
   'resume-btn', 'achievement-list', 'topic-breakdown',
-  'goal-fill', 'goal-target', 'achievement-toast'
+  'goal-fill', 'goal-target', 'achievement-toast', 'intro-hero'
 ];
 const context = createContext(dashboardElementIds);
 const seedIds = context.SEED_CARDS.map(card => card.id);
@@ -204,6 +204,22 @@ test('unreviewed seed cards never count toward Due Now', () => {
   assert.equal(app._dueReviewCount(), 0);
   app.renderDeckStats();
   assert.equal(Number(context.document.getElementById('stat-due').textContent), 0);
+});
+
+test('the onboarding intro is shown to first-time users with no study history', () => {
+  const app = freshApp();
+  app.renderDeckStats();
+  const introHero = context.document.getElementById('intro-hero');
+  assert.equal(introHero.classList.contains('hidden'), false);
+});
+
+test('the onboarding intro is hidden for returning users with study history', () => {
+  const app = freshApp();
+  app.profile.cardHistory['gen-a'] = reviewRecord(Date.now() - 3600000,
+    snapshotCard('gen-a', 'A generated scenario', 'storage'));
+  app.renderDeckStats();
+  const introHero = context.document.getElementById('intro-hero');
+  assert.equal(introHero.classList.contains('hidden'), true);
 });
 
 test('a past-due reviewed seed card does count toward Due Now', () => {

@@ -1998,6 +1998,14 @@ const APP = {
     const reviewed = Object.keys(this.profile.cardHistory).length;
     const due = this._dueReviewCount();
 
+    // The onboarding intro is only relevant before a user has any study
+    // history; returning users land directly on their dashboard.
+    const introHero = document.getElementById('intro-hero');
+    if (introHero) {
+      if (this._profileHasData()) introHero.classList.add('hidden');
+      else introHero.classList.remove('hidden');
+    }
+
     const statTotal = document.getElementById('stat-total');
     if (statTotal) statTotal.textContent = total;
     const statReviewed = document.getElementById('stat-reviewed');
