@@ -37,7 +37,15 @@ const expectedModelIds = [
   'object-storage',
   'notification-fanout',
   'search-autocomplete',
-  'distributed-kv'
+  'distributed-kv',
+  'consistent-hashing',
+  'load-balancer',
+  'api-gateway',
+  'reverse-proxy',
+  'cdn',
+  'websockets',
+  'database-sharding',
+  'replication'
 ];
 const popularModelIds = expectedModelIds.slice(3);
 
@@ -47,7 +55,7 @@ function situation(model, id) {
 
 test('sandbox catalog exposes reviewed models with escalating situations', () => {
   assert.equal(models.map(model => model.id).join(','), expectedModelIds.join(','));
-  assert.equal(new Set(models.map(model => model.id)).size, 13);
+  assert.equal(new Set(models.map(model => model.id)).size, 21);
   for (const model of models) {
     assert.equal(model.situations.length, 5);
     assert.equal(model.controls.length > 0, true);
@@ -181,7 +189,15 @@ test('popular models produce deterministic derived metrics and pressure paths', 
     'object-storage': ['large-upload', 'write-pressure'],
     'notification-fanout': ['preference-overload', 'preference-pressure'],
     'search-autocomplete': ['corpus-growth', 'memory-pressure'],
-    'distributed-kv': ['weak-read', 'hot-shard']
+    'distributed-kv': ['weak-read', 'hot-shard'],
+    'consistent-hashing': ['rebuild-storm', 'churn'],
+    'load-balancer': ['costly-requests', 'overloaded'],
+    'api-gateway': ['gateway-saturation', 'saturated'],
+    'reverse-proxy': ['cold-connections', 'reconnect-cost'],
+    'cdn': ['cold-edge', 'origin-load'],
+    'websockets': ['memory-pressure', 'memory-bound'],
+    'database-sharding': ['hot-shard', 'hot-shard'],
+    'replication': ['high-lag', 'stale-reads']
   };
 
   for (const modelId of popularModelIds) {

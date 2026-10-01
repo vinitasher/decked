@@ -143,23 +143,24 @@ test('ranked topics include every catalog topic at a mastery-derived difficulty'
   assert.equal(ranked.find(item => item.topic === 'queues').difficulty, 3);
 });
 
-test('session plans cover all 13 topics and extend with unique topic+difficulty pairs', () => {
+test('session plans cover all catalog topics and extend with unique topic+difficulty pairs', () => {
   seedRandom(0);
   const app = freshApp();
+  const topicCount = catalogTopics.length;
 
-  const thirteen = app._buildSessionPlan(13);
-  assert.equal(thirteen.length, 13);
-  assert.equal(thirteen.map(item => item.topic).sort().join(','), [...catalogTopics].sort().join(','));
+  const full = app._buildSessionPlan(topicCount);
+  assert.equal(full.length, topicCount);
+  assert.equal(full.map(item => item.topic).sort().join(','), [...catalogTopics].sort().join(','));
 
-  const fifteen = app._buildSessionPlan(15);
-  assert.equal(fifteen.length, 15);
-  const keys = fifteen.map(item => `${item.topic}:${item.difficulty}`);
-  assert.equal(new Set(keys).size, 15);
-  for (const item of fifteen) {
+  const extended = app._buildSessionPlan(topicCount + 2);
+  assert.equal(extended.length, topicCount + 2);
+  const keys = extended.map(item => `${item.topic}:${item.difficulty}`);
+  assert.equal(new Set(keys).size, topicCount + 2);
+  for (const item of extended) {
     assert.ok(catalogTopics.includes(item.topic));
     assert.ok(item.difficulty >= 1 && item.difficulty <= 5);
   }
-  assert.equal(new Set(fifteen.map(item => item.topic)).size < 15, true);
+  assert.equal(new Set(extended.map(item => item.topic)).size, topicCount);
 
   const forty = app._buildSessionPlan(40);
   assert.equal(forty.length, 40);
@@ -283,9 +284,9 @@ test('generated cards ramp from low to high difficulty within a session', async 
     return generatedCard(`card-${calls}`, `Scenario ${calls}`, topic, difficulty);
   };
 
-  const { cards } = await app._generateSessionCards(30);
+  const { cards } = await app._generateSessionCards(60);
 
-  assert.equal(cards.length, 15); // fresh capped at half of the request
+  assert.equal(cards.length, 30); // fresh capped at half of the request
   const difficulties = cards.map(card => card.difficulty);
   assert.deepEqual(difficulties, difficulties.slice().sort((a, b) => a - b));
   assert.equal(difficulties[0], 1);

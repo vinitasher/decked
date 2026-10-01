@@ -1,4 +1,8 @@
-/* Auto-generated wiki (80 entries) — see scripts/generate-wiki.mjs */
+/* Wiki bundle (96 entries): 80 auto-generated via scripts/generate-wiki.mjs plus
+   16 hand-authored core concept entries (api-gateway, blob-storage, cdn,
+   client-server, consistent-hashing, denormalization, graphql, http-https,
+   ip-address, replication, rest-api, reverse-proxy, sharding, sql-vs-nosql,
+   webhooks, websockets). */
 const WIKI = {
   "api-design": {
     "topic": "api-design",
@@ -1998,6 +2002,406 @@ const WIKI = {
       "write-back-caching",
       "cache-invalidation",
       "eventual-consistency"
+    ]
+  },
+  "api-gateway": {
+    "topic": "api-gateway",
+    "title": "API Gateway",
+    "summary": "An API gateway is a single entry point that routes client requests to backend services and applies cross-cutting concerns like authentication, rate limiting, request validation, and logging. For example, a mobile app talks to one gateway, which fans out to the user, order, and payment services. It centralizes concerns that would otherwise be duplicated in every service.",
+    "why_it_matters": "Engineers must understand API gateways because they concentrate traffic, security, and resilience policy in one place, so their limits and failure modes affect every downstream service.",
+    "key_points": [
+      "An API gateway acts as a reverse proxy that sits in front of services and routes each request to the right backend.",
+      "It centralizes authentication, authorization, rate limiting, and request validation so services do not repeat them.",
+      "It can aggregate or transform responses, reducing the number of round trips a client must make.",
+      "Because all traffic flows through it, the gateway becomes a scaling and availability concern.",
+      "It is usually deployed as multiple instances behind a load balancer to avoid a single point of failure."
+    ],
+    "common_pitfalls": [
+      "Turning the gateway into a catch-all for business logic, which couples it to services and makes it a bottleneck.",
+      "Underestimating the gateway's own throughput and availability requirements relative to the services behind it.",
+      "Not defining consistent error and timeout behavior, so gateway failures cascade to clients.",
+      "Assuming one gateway fits all clients when mobile, web, and third parties may need different policies."
+    ],
+    "related_topics": [
+      "reverse-proxy",
+      "rate-limiting",
+      "api-design",
+      "loadbalancing"
+    ]
+  },
+  "blob-storage": {
+    "topic": "blob-storage",
+    "title": "Blob Storage",
+    "summary": "Blob storage is an object store for large, unstructured binary data such as images, videos, backups, and documents, accessed by a unique key over HTTP. For example, a photo service stores each uploaded image as an immutable object in a blob store and serves it back by URL. Unlike a filesystem or database, it optimizes for durability and scale over random updates.",
+    "why_it_matters": "Engineers must understand blob storage because it is the standard, cost-effective place for large binaries that relational databases handle poorly.",
+    "key_points": [
+      "Blob storage stores objects under unique keys, so it scales horizontally with simple get and put operations.",
+      "Objects are typically immutable, meaning updates create a new version rather than modifying bytes in place.",
+      "It trades rich querying and in-place updates for very high durability, replication, and cheap per-gigabyte cost.",
+      "Blob stores pair with a CDN to serve content close to users and offload origin bandwidth.",
+      "Storing large files directly in a database bloats it and hurts performance, which is why blobs are stored separately."
+    ],
+    "common_pitfalls": [
+      "Storing large binaries in a relational database instead of a blob store, inflating backup and query cost.",
+      "Assuming blob storage supports fast random updates or range queries when it is built for whole-object access.",
+      "Forgetting to version or set lifecycle policies, leading to runaway storage costs.",
+      "Exposing bucket or object permissions too broadly and leaking private data."
+    ],
+    "related_topics": [
+      "storage",
+      "cdn",
+      "data-partitioning",
+      "caching"
+    ]
+  },
+  "cdn": {
+    "topic": "cdn",
+    "title": "CDN",
+    "summary": "A content delivery network (CDN) is a distributed set of edge servers that cache and serve static content close to users, reducing latency and origin load. For example, a video platform serves thumbnails and video chunks from CDN edge nodes nearest each viewer. It shortens the network path and absorbs most read traffic before it reaches the origin.",
+    "why_it_matters": "Engineers must understand CDNs because they are the primary way to make global static content fast and to protect an origin from traffic spikes.",
+    "key_points": [
+      "A CDN caches content at many edge locations so users fetch data from a nearby node instead of a distant origin.",
+      "It reduces origin bandwidth and request load, which lowers cost and improves resilience to spikes.",
+      "Cache-control and cache-busting headers determine how long content stays fresh on the edge.",
+      "CDNs also provide TLS termination and DDoS mitigation at the network edge.",
+      "Dynamic or personalized content cannot be cached blindly and must be marked private or uncacheable."
+    ],
+    "common_pitfalls": [
+      "Caching personalized or authenticated content, which leaks one user's data to another.",
+      "Not setting cache headers, so content either never caches or stays stale too long.",
+      "Serving uncacheable dynamic requests through the CDN and still expecting full origin offload.",
+      "Forgetting cache invalidation when content changes, leaving users on old versions."
+    ],
+    "related_topics": [
+      "cdn-caching",
+      "caching",
+      "dns",
+      "content-freshness"
+    ]
+  },
+  "client-server": {
+    "topic": "client-server",
+    "title": "Client-Server Architecture",
+    "summary": "Client-server architecture splits a system into clients, which make requests, and servers, which hold data and logic and respond. For example, a browser client requests a web page from a server, which computes the response and returns it. This separation lets servers centralize shared state while many clients connect independently.",
+    "why_it_matters": "Engineers must understand client-server architecture because it is the foundation of nearly every web and networked system they will build.",
+    "key_points": [
+      "Clients initiate requests, and servers process them and return responses over a network.",
+      "The server is the single source of truth for shared data, while clients can be many and independently replaced.",
+      "Servers scale independently of clients by adding capacity or replicas behind a load balancer.",
+      "The request-response contract must handle latency, failures, and timeouts explicitly.",
+      "Client-server contrasts with peer-to-peer, where every node can act as both client and server."
+    ],
+    "common_pitfalls": [
+      "Assuming the server is always available and failing to handle network errors and retries on the client.",
+      "Putting business logic on the client that duplicates or contradicts the server's rules.",
+      "Ignoring the trust boundary and letting clients send unvalidated input to the server.",
+      "Coupling a single server to a single client type instead of designing a shared API."
+    ],
+    "related_topics": [
+      "http-https",
+      "api-design",
+      "connection-lifecycle",
+      "latency-budgets"
+    ]
+  },
+  "consistent-hashing": {
+    "topic": "consistent-hashing",
+    "title": "Consistent Hashing",
+    "summary": "Consistent hashing maps keys to nodes on a ring so that adding or removing a node moves only a fraction of keys instead of nearly all of them. For example, a distributed cache with 100 servers reassigns only a few percent of keys when one server is added. It is the standard way to shard caches and databases while keeping rebalancing cheap.",
+    "why_it_matters": "Engineers must understand consistent hashing because it minimizes the reshuffling cost of scaling a distributed cache or store horizontally.",
+    "key_points": [
+      "Consistent hashing places both keys and nodes on a hash ring and assigns each key to the next node clockwise.",
+      "Adding or removing a node reassigns only the keys that map to that node, leaving the rest in place.",
+      "Virtual nodes spread each physical node across many ring positions to smooth out load skew.",
+      "It keeps cache hit rates high during scaling because most keys stay on their original node.",
+      "It is the alternative to simple modulo hashing, which remaps almost every key when the node count changes."
+    ],
+    "common_pitfalls": [
+      "Using simple modulo hashing for shards and causing a mass remap on every scaling event.",
+      "Ignoring hot keys, which remain a single point of load no matter how the ring is balanced.",
+      "Using too few virtual nodes, which leaves uneven key distribution across physical nodes.",
+      "Assuming consistent hashing alone solves availability, when replication is still required."
+    ],
+    "related_topics": [
+      "sharding",
+      "caching",
+      "loadbalancing",
+      "data-partitioning"
+    ]
+  },
+  "denormalization": {
+    "topic": "denormalization",
+    "title": "Denormalization",
+    "summary": "Denormalization deliberately duplicates data across tables or records to speed up reads at the cost of more storage and write complexity. For example, a timeline service stores a copy of each post's author name so reads never join to the users table. It trades write-time work for read-time speed on read-heavy paths.",
+    "why_it_matters": "Engineers must understand denormalization because it is the primary lever for making read-heavy queries fast in relational and NoSQL systems.",
+    "key_points": [
+      "Denormalization precomputes or duplicates derived data so reads avoid expensive joins or multiple lookups.",
+      "It shifts work to writes, which is usually a good trade when reads far outnumber writes.",
+      "Duplicated data must be kept consistent, often through asynchronous updates or event-driven propagation.",
+      "It increases storage and widens the blast radius of an update, since one change touches many copies.",
+      "Read models and materialized views are common structured forms of denormalization."
+    ],
+    "common_pitfalls": [
+      "Duplicating data without a plan to keep copies consistent, producing stale reads.",
+      "Denormalizing write-heavy paths where the added write cost outweighs the read benefit.",
+      "Forgetting that a schema change now must propagate to every denormalized copy.",
+      "Using denormalization to hide a missing index instead of adding the index first."
+    ],
+    "related_topics": [
+      "read-models",
+      "databases",
+      "sql-vs-nosql",
+      "eventual-consistency"
+    ]
+  },
+  "graphql": {
+    "topic": "graphql",
+    "title": "GraphQL",
+    "summary": "GraphQL is a query language for APIs that lets clients request exactly the fields they need in a single request, with a schema describing available types. For example, a client queries a user and selects only their name and avatar, avoiding over-fetching. The server resolves each field against resolvers instead of fixed endpoints.",
+    "why_it_matters": "Engineers must understand GraphQL because it changes who controls data shape, shifting cost and flexibility between client and server.",
+    "key_points": [
+      "GraphQL clients specify the shape of the response, so they can avoid over-fetching and under-fetching.",
+      "A strongly typed schema is the contract, and it enables introspection and tooling.",
+      "Multiple resources are fetched in one request, reducing round trips compared with REST.",
+      "Complex nested queries can be expensive, so servers must guard against deep or broad queries.",
+      "Caching is harder than REST because responses are query-specific rather than keyed by URL."
+    ],
+    "common_pitfalls": [
+      "Exposing unbounded queries without depth or cost limits, enabling denial-of-service.",
+      "Solving an N+1 problem poorly by issuing one resolver query per related item.",
+      "Assuming GraphQL responses cache as simply as REST URLs, when they need normalized caching.",
+      "Using GraphQL for simple CRUD where REST's simplicity and cacheability are better."
+    ],
+    "related_topics": [
+      "graphql-schemas",
+      "query-cost-control",
+      "mutation-semantics",
+      "rest-api"
+    ]
+  },
+  "http-https": {
+    "topic": "http-https",
+    "title": "HTTP & HTTPS",
+    "summary": "HTTP is the request-response protocol clients and servers use to exchange resources on the web, and HTTPS adds transport encryption via TLS. For example, a browser sends a GET request over HTTPS to fetch a page, and the response carries a status code and body. HTTP defines methods, status codes, headers, and caching semantics that APIs build on.",
+    "why_it_matters": "Engineers must understand HTTP and HTTPS because they are the substrate of the web and the contract behind nearly every API they design or call.",
+    "key_points": [
+      "HTTP is stateless: each request is independent, and state is carried in headers, cookies, or the URL.",
+      "Methods such as GET, POST, PUT, and DELETE express intent, and status codes communicate outcomes.",
+      "HTTPS wraps HTTP in TLS, providing encryption, integrity, and server identity verification.",
+      "HTTP versions change connection multiplexing, header compression, and transport behavior.",
+      "Headers like Cache-Control and ETag drive the caching and revalidation that CDNs and browsers honor."
+    ],
+    "common_pitfalls": [
+      "Serving sensitive data over plain HTTP instead of HTTPS, exposing it to interception.",
+      "Using the wrong method, such as POST for idempotent reads or GET for state-changing actions.",
+      "Returning vague 500 errors instead of the precise status code that helps the client recover.",
+      "Ignoring cache headers and forcing the network to re-download unchanged resources."
+    ],
+    "related_topics": [
+      "http-method-semantics",
+      "http-cacheability",
+      "rest-api",
+      "security"
+    ]
+  },
+  "ip-address": {
+    "topic": "ip-address",
+    "title": "IP Address",
+    "summary": "An IP address is a numeric label that identifies a host on a network and routes traffic to it. For example, a packet addressed to 203.0.113.7 is forwarded hop by hop across routers until it reaches that host. IPv4 uses 32-bit addresses while IPv6 expands the space to 128 bits.",
+    "why_it_matters": "Engineers must understand IP addresses because routing, load balancing, firewalling, and service discovery all key off how hosts are addressed.",
+    "key_points": [
+      "An IP address uniquely identifies a network interface so routers can deliver packets to it.",
+      "IPv4 addresses are 32-bit and largely exhausted, while IPv6 offers a much larger 128-bit space.",
+      "Private address ranges are reused within networks and translated to public addresses at the edge.",
+      "DNS maps human-readable names to IP addresses, so clients can reach hosts without remembering numbers.",
+      "Anycast and multiple addresses let one service appear at many network locations."
+    ],
+    "common_pitfalls": [
+      "Treating an IP address as a stable identity when hosts can change addresses and share them.",
+      "Hardcoding IP addresses in configuration instead of resolving names through DNS.",
+      "Confusing public and private ranges when reasoning about reachability and NAT.",
+      "Building IPv4-only assumptions into code that later breaks on IPv6 deployments."
+    ],
+    "related_topics": [
+      "dns",
+      "loadbalancing",
+      "client-server",
+      "connection-lifecycle"
+    ]
+  },
+  "replication": {
+    "topic": "replication",
+    "title": "Replication",
+    "summary": "Replication maintains copies of data on multiple servers so reads can scale and the system survives the loss of a node. For example, a database primary streams its changes to several read replicas that serve query traffic. Replication can be synchronous or asynchronous, trading consistency against latency and availability.",
+    "why_it_matters": "Engineers must understand replication because it is the core technique behind durability, read scaling, and high availability.",
+    "key_points": [
+      "Replication copies data from a primary to replicas, enabling read fan-out and failover.",
+      "Synchronous replication waits for replicas to acknowledge before committing, giving strong consistency at higher latency.",
+      "Asynchronous replication applies changes in the background, giving lower latency but a window of possible lag and loss.",
+      "Read replicas may serve slightly stale data, so reads that need freshness must target the primary.",
+      "Replication alone does not solve writes; writes still converge on the primary unless multi-primary is used."
+    ],
+    "common_pitfalls": [
+      "Reading freshly written data from a lagging replica and seeing it disappear.",
+      "Assuming replicas make writes scale, when writes are still serialized through the primary.",
+      "Running without monitoring replica lag until a failover exposes stale data.",
+      "Neglecting that each replica also adds storage and operational cost."
+    ],
+    "related_topics": [
+      "read-replication",
+      "replication-lag",
+      "asynchronous-replication",
+      "databases"
+    ]
+  },
+  "rest-api": {
+    "topic": "rest-api",
+    "title": "REST API",
+    "summary": "REST is an architectural style for APIs that models the system as addressable resources manipulated through HTTP methods. For example, a REST API exposes /users and lets a client GET the collection, POST a new one, or PATCH a specific /users/42. It leans on HTTP's semantics, statelessness, and caching.",
+    "why_it_matters": "Engineers must understand REST because it is the dominant style for public and internal web APIs and sets the baseline other styles are compared against.",
+    "key_points": [
+      "REST models data as resources identified by URLs, with standard methods expressing operations on them.",
+      "Statelessness means each request carries everything needed to understand it, simplifying scaling.",
+      "Responses use HTTP status codes and can be cached when marked cacheable.",
+      "HATEOAS-style links can make an API discoverable, though many APIs omit them in practice.",
+      "Versioning and backward compatibility are first-class concerns for a public REST API."
+    ],
+    "common_pitfalls": [
+      "Overloading POST for every operation and ignoring the meaning of GET, PUT, PATCH, and DELETE.",
+      "Exposing internal database rows directly instead of stable, client-facing resources.",
+      "Making mutations non-idempotent when a safe retry is possible and expected.",
+      "Ignoring pagination on list endpoints and returning unbounded collections."
+    ],
+    "related_topics": [
+      "rest-resources",
+      "resource-modeling",
+      "http-method-semantics",
+      "api-design"
+    ]
+  },
+  "reverse-proxy": {
+    "topic": "reverse-proxy",
+    "title": "Reverse Proxy",
+    "summary": "A reverse proxy sits in front of servers, forwarding client requests to backends and returning responses, while hiding the backends from clients. For example, a reverse proxy terminates TLS and routes each request to one of many application servers. It centralizes load balancing, TLS, and caching at the edge.",
+    "why_it_matters": "Engineers must understand reverse proxies because they are the standard front door for services, providing security, routing, and scaling in one place.",
+    "key_points": [
+      "A reverse proxy receives client requests and forwards them to the appropriate backend, hiding the backend topology.",
+      "It commonly terminates TLS, offloading encryption work from application servers.",
+      "It can load balance, retry, cache, compress, and rate limit requests before they reach backends.",
+      "Because it sees all traffic, it is a natural place for routing and observability.",
+      "It is distinct from a forward proxy, which sits in front of clients instead of servers."
+    ],
+    "common_pitfalls": [
+      "Leaving the reverse proxy as an unmanaged single point of failure for the whole service.",
+      "Misconfiguring timeouts so slow backends hold connections open across the proxy.",
+      "Terminating TLS at the proxy and then sending plaintext over an untrusted internal network.",
+      "Routing on a header that clients can spoof, breaking the intended backend selection."
+    ],
+    "related_topics": [
+      "loadbalancing",
+      "api-gateway",
+      "http-https",
+      "connection-lifecycle"
+    ]
+  },
+  "sharding": {
+    "topic": "sharding",
+    "title": "Sharding",
+    "summary": "Sharding partitions a dataset across many database nodes so no single node must hold everything, allowing horizontal scale-out. For example, user records are spread across shards by hashing each user ID. It increases capacity but makes cross-shard queries and rebalancing harder.",
+    "why_it_matters": "Engineers must understand sharding because it is the main route to horizontal database scale once a single node is exhausted.",
+    "key_points": [
+      "Sharding splits data across nodes by a shard key, so each node owns a disjoint subset.",
+      "A good shard key spreads data and traffic evenly, avoiding hot shards.",
+      "Queries that touch one shard are fast, while cross-shard joins and aggregations are expensive or unsupported.",
+      "Rebalancing shards when a node is added or removed requires moving data, which consistent hashing helps minimize.",
+      "Sharding trades query flexibility and operational complexity for write and storage scale."
+    ],
+    "common_pitfalls": [
+      "Choosing a shard key that concentrates popular data on one hot shard.",
+      "Designing queries that require cross-shard joins after sharding the data.",
+      "Sharding prematurely, before exhausting simpler options like indexing, caching, or replicas.",
+      "Underestimating the operational cost of rebalancing and managing many shards."
+    ],
+    "related_topics": [
+      "data-partitioning",
+      "consistent-hashing",
+      "databases",
+      "workload-skew"
+    ]
+  },
+  "sql-vs-nosql": {
+    "topic": "sql-vs-nosql",
+    "title": "SQL vs NoSQL",
+    "summary": "SQL databases enforce a relational schema and support joins and transactions, while NoSQL stores relax one or more of those guarantees for flexibility and horizontal scale. For example, a relational store fits transactional orders, while a key-value store fits cached, self-contained profiles. The choice follows the access pattern, not fashion.",
+    "why_it_matters": "Engineers must understand SQL versus NoSQL because choosing the wrong data model imposes joins, migrations, or consistency costs for the life of the system.",
+    "key_points": [
+      "SQL databases provide strong consistency, ACID transactions, and rich joins across a defined schema.",
+      "NoSQL stores trade some consistency or query power for easier horizontal scaling and flexible schemas.",
+      "Key-value, document, wide-column, and graph are distinct NoSQL families with different strengths.",
+      "Read-heavy, self-contained records favor NoSQL; transactional, relational data favors SQL.",
+      "Polyglot persistence, using the right store per workload, is common in larger systems."
+    ],
+    "common_pitfalls": [
+      "Choosing NoSQL because it is trendy rather than because the access pattern needs it.",
+      "Forcing relational joins onto a NoSQL store that cannot do them efficiently.",
+      "Ignoring transactions and later discovering partial writes corrupt business data.",
+      "Assuming SQL cannot scale when indexing, caching, and replicas often resolve the need."
+    ],
+    "related_topics": [
+      "databases",
+      "sharding",
+      "denormalization",
+      "transaction-isolation"
+    ]
+  },
+  "webhooks": {
+    "topic": "webhooks",
+    "title": "Webhooks",
+    "summary": "A webhook is a user-defined HTTP callback that a provider invokes when an event happens, pushing data to a subscriber's URL. For example, a payment provider POSTs a transaction result to a merchant's webhook endpoint when a charge settles. They reverse the polling pattern so consumers learn about events immediately.",
+    "why_it_matters": "Engineers must understand webhooks because they are the standard way to receive real-time, event-driven notifications from external services.",
+    "key_points": [
+      "Webhooks push events to a subscriber-provided URL instead of requiring the subscriber to poll.",
+      "The receiver must be reachable, so webhooks work poorly behind firewalls or for offline clients.",
+      "Delivery is usually at-least-once, so receivers must deduplicate using idempotency keys.",
+      "Providers retry failed deliveries with backoff and expose delivery logs for debugging.",
+      "Securing webhooks typically means signing payloads so receivers can verify authenticity."
+    ],
+    "common_pitfalls": [
+      "Assuming exactly-once delivery and processing duplicates as if each event were new.",
+      "Exposing a webhook endpoint without signature verification, letting attackers forge events.",
+      "Failing to acknowledge quickly, causing the provider to retry and amplify load.",
+      "Choosing webhooks when the receiver cannot be reached or polling is simpler."
+    ],
+    "related_topics": [
+      "webhook-callbacks",
+      "idempotency",
+      "asynchronous-processing",
+      "rate-limiting"
+    ]
+  },
+  "websockets": {
+    "topic": "websockets",
+    "title": "WebSockets",
+    "summary": "WebSockets provide a full-duplex, persistent connection between a client and server over a single TCP connection, enabling low-latency two-way messaging. For example, a chat app keeps a WebSocket open so messages push to the user instantly without repeated requests. It avoids the overhead of repeated polling or new connections.",
+    "why_it_matters": "Engineers must understand WebSockets because they are the standard for real-time, bidirectional features like chat, live updates, and collaboration.",
+    "key_points": [
+      "A WebSocket upgrades an HTTP connection into a persistent, full-duplex channel after a handshake.",
+      "Both client and server can send messages at any time, unlike the request-response pattern.",
+      "It removes the overhead of repeatedly establishing connections for real-time data.",
+      "Long-lived connections change scaling: servers must hold state per connection and manage heartbeats.",
+      "Load balancers and proxies must be configured to support connection upgrades."
+    ],
+    "common_pitfalls": [
+      "Using WebSockets for one-way notifications when Server-Sent Events or polling would be simpler.",
+      "Forgetting heartbeats and idle timeouts, causing silently dead connections.",
+      "Not planning for connection state, which breaks when servers scale horizontally.",
+      "Assuming WebSockets work through every proxy or firewall without configuration."
+    ],
+    "related_topics": [
+      "connection-lifecycle",
+      "real-time",
+      "http-https",
+      "messaging"
     ]
   }
 };

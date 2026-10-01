@@ -13,7 +13,29 @@ const TOPIC_CATALOG = {
   "rate-limiting": { label: "Rate Limiting", prerequisites: ["api-design", "caching"] },
   observability: { label: "Observability", prerequisites: ["api-design"] },
   "real-time": { label: "Real-Time", prerequisites: ["api-design", "messaging"] },
-  consensus: { label: "Consensus", prerequisites: ["databases", "storage"] }
+  consensus: { label: "Consensus", prerequisites: ["databases", "storage"] },
+
+  /* ——— Networking & delivery ——— */
+  "client-server": { label: "Client-Server", prerequisites: [] },
+  "ip-address": { label: "IP Address", prerequisites: [] },
+  "http-https": { label: "HTTP & HTTPS", prerequisites: ["client-server", "ip-address"] },
+  "reverse-proxy": { label: "Reverse Proxy", prerequisites: ["loadbalancing", "http-https"] },
+  cdn: { label: "CDN", prerequisites: ["caching", "dns"] },
+
+  /* ——— API styles & integration ——— */
+  "rest-api": { label: "REST API", prerequisites: ["api-design", "http-https"] },
+  graphql: { label: "GraphQL", prerequisites: ["api-design"] },
+  websockets: { label: "WebSockets", prerequisites: ["http-https"] },
+  webhooks: { label: "Webhooks", prerequisites: ["api-design"] },
+  "api-gateway": { label: "API Gateway", prerequisites: ["api-design", "rate-limiting"] },
+
+  /* ——— Data & storage ——— */
+  "sql-vs-nosql": { label: "SQL vs NoSQL", prerequisites: ["databases"] },
+  sharding: { label: "Sharding", prerequisites: ["databases"] },
+  replication: { label: "Replication", prerequisites: ["databases"] },
+  denormalization: { label: "Denormalization", prerequisites: ["databases"] },
+  "consistent-hashing": { label: "Consistent Hashing", prerequisites: ["caching", "loadbalancing"] },
+  "blob-storage": { label: "Blob Storage", prerequisites: ["storage"] }
 };
 
 const LEGACY_OPTION_PREREQUISITES = {

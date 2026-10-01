@@ -50,7 +50,7 @@ export const PRODUCTION_OPTION_PREREQUISITES = {
   "observability-gen-1785703525081": {
     A: ["head-based-sampling", "trace-context-propagation", "kafka-buffering", "sampling-bias"],
     B: ["span-storage-cost", "hot-warm-tiering", "trace-id-indexing", "metric-cardinality"],
-    C: ["tail-based-sampling", "consistent-hashing", "trace-id-indexing", "metric-cardinality"],
+    C: ["tail-based-sampling", "data-partitioning", "trace-id-indexing", "metric-cardinality"],
     D: ["probabilistic-sampling", "latency-filtering", "query-latency", "correlation-ids"]
   },
   "queues-gen-1785309937957": {

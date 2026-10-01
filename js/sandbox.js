@@ -2631,6 +2631,1132 @@ function simulateNotificationFanout(input = {}) {
   };
 }
 
+/* ——— Consistent hashing model ——— */
+
+const CONSISTENT_HASHING_SANDBOX_LIMITS = Object.freeze({
+  nodeCount: { min: 1, max: 1000, step: 1 },
+  virtualNodesPerNode: { min: 1, max: 1000, step: 1 },
+  keyCount: { min: 1000, max: 100000000, step: 1000 },
+  addedNodes: { min: 0, max: 500, step: 1 },
+  hotKeyShare: { min: 0, max: 100, step: 1 }
+});
+
+const CONSISTENT_HASHING_SANDBOX_DEFAULTS = Object.freeze({
+  nodeCount: 10,
+  virtualNodesPerNode: 100,
+  keyCount: 1000000,
+  addedNodes: 1,
+  hotKeyShare: 10
+});
+
+const CONSISTENT_HASHING_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'nodeCount', label: 'Nodes', unit: 'nodes' },
+  { key: 'virtualNodesPerNode', label: 'Virtual nodes per node', unit: 'v-nodes' },
+  { key: 'keyCount', label: 'Keys', unit: 'keys' },
+  { key: 'addedNodes', label: 'Nodes added', unit: 'nodes' },
+  { key: 'hotKeyShare', label: 'Hottest-key share', unit: '%', advanced: true }
+]);
+
+const CONSISTENT_HASHING_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'steady-ring', label: 'Steady ring', level: 1,
+    description: 'A stable ring with many virtual nodes and a modest hot-key share.',
+    objective: 'See a well-balanced ring keep most keys in place.',
+    values: CONSISTENT_HASHING_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'scale-out', label: 'Scale out', level: 2,
+    description: 'The cluster grows by several nodes and must reshuffle keys.',
+    objective: 'Observe how few keys move when the ring absorbs new nodes.',
+    values: { ...CONSISTENT_HASHING_SANDBOX_DEFAULTS, addedNodes: 5 }
+  },
+  {
+    id: 'few-virtual-nodes', label: 'Few virtual nodes', level: 3,
+    description: 'Each node has only a handful of ring positions.',
+    objective: 'See uneven ownership when virtual nodes are scarce.',
+    values: { ...CONSISTENT_HASHING_SANDBOX_DEFAULTS, virtualNodesPerNode: 5 }
+  },
+  {
+    id: 'hot-keys', label: 'Hot keys', level: 4,
+    description: 'A small set of keys absorbs most of the traffic.',
+    objective: 'Understand why hashing cannot fix a hot key on its own.',
+    values: { ...CONSISTENT_HASHING_SANDBOX_DEFAULTS, hotKeyShare: 60 }
+  },
+  {
+    id: 'rebuild-storm', label: 'Rebuild storm', level: 5,
+    description: 'Many nodes join at once, forcing a large key reshuffle.',
+    objective: 'See a burst of churn when the ring absorbs many nodes.',
+    values: { ...CONSISTENT_HASHING_SANDBOX_DEFAULTS, nodeCount: 20, addedNodes: 60, hotKeyShare: 5 }
+  }
+]);
+
+const CONSISTENT_HASHING_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'balanced', label: 'The ring stays balanced' },
+  { id: 'churn', label: 'Many keys relocate' },
+  { id: 'hot-key', label: 'A hot key concentrates load' },
+  { id: 'uneven', label: 'Ownership becomes uneven' }
+]);
+
+function consistentHashingPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, CONSISTENT_HASHING_SANDBOX_LIMITS, CONSISTENT_HASHING_SANDBOX_DEFAULTS);
+  const keysMovedPct = values.addedNodes / (values.nodeCount + values.addedNodes) * 100;
+  if (values.hotKeyShare >= 40) return 'hot-key';
+  if (values.virtualNodesPerNode < 10) return 'uneven';
+  if (keysMovedPct >= 25) return 'churn';
+  return 'balanced';
+}
+
+function simulateConsistentHashing(input = {}) {
+  const values = normalizeModelInput(input, CONSISTENT_HASHING_SANDBOX_LIMITS, CONSISTENT_HASHING_SANDBOX_DEFAULTS);
+  const keysPerNode = values.keyCount / values.nodeCount;
+  const keysMovedPct = values.addedNodes / (values.nodeCount + values.addedNodes) * 100;
+  const ringPositions = values.nodeCount * values.virtualNodesPerNode;
+  const hotKeys = values.keyCount * values.hotKeyShare / 100;
+  const balanceQualityPct = Math.min(100, values.virtualNodesPerNode);
+  const hotKeyRisk = sandboxPressureTone(values.hotKeyShare / 100, 0.4, 1);
+  const balanceRisk = values.virtualNodesPerNode < 10 ? 'watch' : 'healthy';
+  const churnRisk = sandboxPressureTone(keysMovedPct / 100, 0.25, 0.5);
+  const status = sandboxStatus([hotKeyRisk, balanceRisk, churnRisk]);
+  let primaryRisk = 'none';
+  if (values.hotKeyShare >= 40) primaryRisk = 'hot-key';
+  else if (values.virtualNodesPerNode < 10) primaryRisk = 'uneven';
+  else if (keysMovedPct >= 25) primaryRisk = 'churn';
+  const teachingConclusion = {
+    none: 'The ring is well balanced with enough virtual nodes, and growth relocates only a small slice of keys.',
+    'hot-key': 'Hashing spreads keys, not popularity. A single hot key still lands on one node and concentrates load there.',
+    uneven: 'Too few virtual nodes leave large, uneven ownership ranges, so some nodes hold far more keys than others.',
+    churn: 'Adding many nodes at once relocates a meaningful share of keys, causing a burst of misses while caches refill.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Hashing ring',
+    windowLabel: 'Per-rebalance view',
+    caption: `${sandboxFormatNumber(values.keyCount, 0)} keys map onto ${sandboxFormatNumber(values.nodeCount, 0)} nodes with ${sandboxFormatNumber(values.virtualNodesPerNode, 0)} virtual nodes each.`,
+    stages: [
+      sandboxFlowStage('keys', 'Keys', sandboxFormatNumber(values.keyCount, 0), 'keys', `${sandboxFormatNumber(hotKeys, 0)} hot keys`, 'neutral'),
+      sandboxFlowStage('ring', 'Hash ring', sandboxFormatNumber(ringPositions, 0), 'positions', `${sandboxFormatNumber(values.nodeCount, 0)} nodes · ${sandboxFormatNumber(values.virtualNodesPerNode, 0)} v-nodes each`, balanceRisk),
+      sandboxFlowStage('nodes', 'Nodes', sandboxFormatNumber(values.nodeCount, 0), 'nodes', `${sandboxFormatNumber(keysPerNode, 0)} keys per node`, status)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('moved', 'Keys relocated', sandboxFormatNumber(keysMovedPct), '%', 'Share of keys that move after adding nodes.', churnRisk),
+      sandboxFlowOutcome('balance', 'Balance quality', sandboxFormatNumber(balanceQualityPct, 0), '%', 'Higher virtual-node counts smooth ownership.', balanceRisk),
+      sandboxFlowOutcome('hot', 'Hot-key share', sandboxFormatNumber(values.hotKeyShare, 0), '%', 'Traffic concentrated on the hottest keys.', hotKeyRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A hash ring places ${sandboxFormatNumber(values.keyCount, 0)} keys onto ${sandboxFormatNumber(values.nodeCount, 0)} nodes. Adding ${sandboxFormatNumber(values.addedNodes, 0)} nodes relocates ${sandboxFormatNumber(keysMovedPct)} percent of keys, and ${sandboxFormatNumber(values.hotKeyShare, 0)} percent of keys are hot.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    keysPerNode: sandboxRounded(keysPerNode),
+    keysMovedPct: sandboxRounded(keysMovedPct),
+    ringPositions: sandboxRounded(ringPositions),
+    hotKeys: sandboxRounded(hotKeys),
+    balanceQualityPct: sandboxRounded(balanceQualityPct),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `Adding ${sandboxFormatNumber(values.addedNodes, 0)} nodes relocates ${sandboxFormatNumber(keysMovedPct)}% of keys instead of a full remap.`,
+      `${sandboxFormatNumber(values.virtualNodesPerNode, 0)} virtual nodes per node produce ${sandboxFormatNumber(ringPositions, 0)} ring positions.`,
+      `${sandboxFormatNumber(values.hotKeyShare, 0)}% of keys are hot, concentrating ${sandboxFormatNumber(hotKeys, 0)} keys of load.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Keys and nodes hash uniformly onto the ring.',
+      'Added nodes only take over their clockwise range.',
+      'Hot keys concentrate load regardless of the hash placement.',
+      'Virtual-node count is treated as a proxy for balance quality.'
+    ]
+  };
+}
+
+/* ——— Load balancer model ——— */
+
+const LOAD_BALANCER_SANDBOX_LIMITS = Object.freeze({
+  requestRate: { min: 1, max: 1000000, step: 1 },
+  serverCount: { min: 1, max: 1000, step: 1 },
+  avgRequestMs: { min: 1, max: 1000, step: 1 },
+  requestVariancePct: { min: 0, max: 300, step: 1 },
+  hotClientShare: { min: 0, max: 100, step: 1 }
+});
+
+const LOAD_BALANCER_SANDBOX_DEFAULTS = Object.freeze({
+  requestRate: 300,
+  serverCount: 10,
+  avgRequestMs: 10,
+  requestVariancePct: 40,
+  hotClientShare: 15
+});
+
+const LOAD_BALANCER_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'requestRate', label: 'Requests', unit: 'req/s' },
+  { key: 'serverCount', label: 'Servers', unit: 'servers' },
+  { key: 'avgRequestMs', label: 'Average request cost', unit: 'ms' },
+  { key: 'requestVariancePct', label: 'Request variance', unit: '%', advanced: true },
+  { key: 'hotClientShare', label: 'Hottest-client share', unit: '%' }
+]);
+
+const LOAD_BALANCER_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'uniform-load', label: 'Uniform load', level: 1,
+    description: 'Requests are cheap and evenly distributed across servers.',
+    objective: 'See a simple round-robin keep every server near the average.',
+    values: LOAD_BALANCER_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'costly-requests', label: 'Costly requests', level: 2,
+    description: 'Requests are expensive, so per-server capacity shrinks.',
+    objective: 'Compare aggregate demand against a smaller per-server capacity.',
+    values: { ...LOAD_BALANCER_SANDBOX_DEFAULTS, avgRequestMs: 40 }
+  },
+  {
+    id: 'hot-client', label: 'Hot client', level: 3,
+    description: 'One client sends a large share of traffic.',
+    objective: 'Spot a single hot source overloading one server.',
+    values: { ...LOAD_BALANCER_SANDBOX_DEFAULTS, hotClientShare: 80 }
+  },
+  {
+    id: 'high-variance', label: 'High variance', level: 4,
+    description: 'Request cost varies widely, so round-robin misplaces load.',
+    objective: 'Understand why least-connections beats round-robin under variance.',
+    values: { ...LOAD_BALANCER_SANDBOX_DEFAULTS, requestVariancePct: 250 }
+  },
+  {
+    id: 'near-capacity', label: 'Near capacity', level: 5,
+    description: 'The fleet runs at its modeled ceiling.',
+    objective: 'See aggregate headroom vanish as demand approaches capacity.',
+    values: { ...LOAD_BALANCER_SANDBOX_DEFAULTS, requestRate: 1100 }
+  }
+]);
+
+const LOAD_BALANCER_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'balanced', label: 'Servers stay balanced' },
+  { id: 'hot-server', label: 'One server overheats' },
+  { id: 'overloaded', label: 'The fleet saturates' },
+  { id: 'misrouted', label: 'Uniform routing misplaces work' }
+]);
+
+function loadBalancerPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, LOAD_BALANCER_SANDBOX_LIMITS, LOAD_BALANCER_SANDBOX_DEFAULTS);
+  const capacityPerServerRps = 1000 / values.avgRequestMs;
+  const utilizationPct = values.requestRate / values.serverCount / capacityPerServerRps * 100;
+  const hotServerUtilizationPct = utilizationPct + values.hotClientShare;
+  if (utilizationPct >= 100) return 'overloaded';
+  if (hotServerUtilizationPct >= 100) return 'hot-server';
+  if (values.requestVariancePct >= 150) return 'misrouted';
+  return 'balanced';
+}
+
+function simulateLoadBalancer(input = {}) {
+  const values = normalizeModelInput(input, LOAD_BALANCER_SANDBOX_LIMITS, LOAD_BALANCER_SANDBOX_DEFAULTS);
+  const capacityPerServerRps = 1000 / values.avgRequestMs;
+  const perServerRps = values.requestRate / values.serverCount;
+  const utilizationPct = perServerRps / capacityPerServerRps * 100;
+  const hotClientRps = values.requestRate * values.hotClientShare / 100;
+  const hotServerUtilizationPct = utilizationPct + values.hotClientShare;
+  const varianceRisk = values.requestVariancePct >= 150 ? 'watch' : 'healthy';
+  const hotRisk = sandboxPressureTone(hotServerUtilizationPct / 100);
+  const saturationRisk = sandboxPressureTone(utilizationPct / 100);
+  const status = sandboxStatus([saturationRisk, hotRisk, varianceRisk]);
+  let primaryRisk = 'none';
+  if (utilizationPct >= 100) primaryRisk = 'overloaded';
+  else if (hotServerUtilizationPct >= 100) primaryRisk = 'hot-server';
+  else if (values.requestVariancePct >= 150) primaryRisk = 'misrouted';
+  const teachingConclusion = {
+    none: 'The fleet has headroom and requests are uniform enough that any simple algorithm keeps servers balanced.',
+    overloaded: 'Aggregate demand exceeds total capacity, so no routing algorithm can help; the fleet needs more servers.',
+    'hot-server': 'A hot client concentrates load on fewer servers, so uniform routing can overheat one while others idle.',
+    misrouted: 'High request-cost variance makes uniform routing misplace work; least-connections tracks in-flight load better.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Routing path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.requestRate)} requests/s spread across ${sandboxFormatNumber(values.serverCount, 0)} servers with ${sandboxFormatNumber(values.avgRequestMs)} ms average cost.`,
+    stages: [
+      sandboxFlowStage('clients', 'Client requests', sandboxFormatNumber(values.requestRate), 'req/s', `${sandboxFormatNumber(values.hotClientShare, 0)}% from one client`, 'neutral'),
+      sandboxFlowStage('lb', 'Load balancer', sandboxFormatNumber(perServerRps), 'req/s per server', `${sandboxFormatNumber(values.requestVariancePct, 0)}% cost variance`, varianceRisk),
+      sandboxFlowStage('servers', 'Server fleet', sandboxFormatNumber(values.serverCount, 0), 'servers', `${sandboxFormatNumber(utilizationPct, 0)}% utilized`, status)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('utilization', 'Fleet utilization', sandboxFormatNumber(utilizationPct, 0), '%', 'Average across servers.', saturationRisk),
+      sandboxFlowOutcome('hot-server', 'Hot server', sandboxFormatNumber(hotServerUtilizationPct, 0), '%', 'The busiest server under skew.', hotRisk),
+      sandboxFlowOutcome('hot-client', 'Hot client', sandboxFormatNumber(hotClientRps), 'req/s', `${sandboxFormatNumber(values.hotClientShare, 0)}% of traffic from one source`, hotRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A load balancer spreads ${sandboxFormatNumber(values.requestRate)} requests per second across ${sandboxFormatNumber(values.serverCount, 0)} servers. The fleet runs at ${sandboxFormatNumber(utilizationPct)} percent utilization, and the busiest server runs at ${sandboxFormatNumber(hotServerUtilizationPct)} percent.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    perServerRps: sandboxRounded(perServerRps),
+    utilizationPct: sandboxRounded(utilizationPct),
+    hotClientRps: sandboxRounded(hotClientRps),
+    hotServerUtilizationPct: sandboxRounded(hotServerUtilizationPct),
+    capacityPerServerRps: sandboxRounded(capacityPerServerRps),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `Each server handles ${sandboxFormatNumber(perServerRps)} requests/s against a ${sandboxFormatNumber(capacityPerServerRps)} requests/s capacity.`,
+      `The hottest client contributes ${sandboxFormatNumber(hotClientRps)} requests/s.`,
+      `${sandboxFormatNumber(values.requestVariancePct, 0)}% request-cost variance changes how well uniform routing performs.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Each server can process one request per average request cost.',
+      'The hottest client is routed uniformly, so skew lands on fewer servers.',
+      'Request variance is modeled as a proxy for least-connections benefit.',
+      'Capacity is an instructional, learner-supplied assumption.'
+    ]
+  };
+}
+
+/* ——— API gateway model ——— */
+
+const API_GATEWAY_SANDBOX_LIMITS = Object.freeze({
+  requestRate: { min: 1, max: 1000000, step: 1 },
+  upstreamCount: { min: 1, max: 100, step: 1 },
+  policyOverheadMs: { min: 0, max: 100, step: 0.5 },
+  routingOverheadMs: { min: 0, max: 50, step: 0.5 },
+  backendLatencyMs: { min: 1, max: 500, step: 1 },
+  gatewayCapacityRps: { min: 100, max: 2000000, step: 100 }
+});
+
+const API_GATEWAY_SANDBOX_DEFAULTS = Object.freeze({
+  requestRate: 2000,
+  upstreamCount: 5,
+  policyOverheadMs: 3,
+  routingOverheadMs: 1,
+  backendLatencyMs: 40,
+  gatewayCapacityRps: 50000
+});
+
+const API_GATEWAY_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'requestRate', label: 'Requests', unit: 'req/s' },
+  { key: 'upstreamCount', label: 'Upstream services', unit: 'services' },
+  { key: 'policyOverheadMs', label: 'Policy overhead', unit: 'ms' },
+  { key: 'routingOverheadMs', label: 'Routing overhead', unit: 'ms', advanced: true },
+  { key: 'backendLatencyMs', label: 'Backend latency', unit: 'ms' },
+  { key: 'gatewayCapacityRps', label: 'Gateway capacity', unit: 'req/s', advanced: true }
+]);
+
+const API_GATEWAY_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'light-policy', label: 'Light policy', level: 1,
+    description: 'Minimal per-request policy keeps the gateway nearly invisible.',
+    objective: 'See routing and policy add only a small overhead.',
+    values: API_GATEWAY_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'heavy-policy', label: 'Heavy policy', level: 2,
+    description: 'Authentication and validation add noticeable latency.',
+    objective: 'Understand the latency tax of centralized policy.',
+    values: { ...API_GATEWAY_SANDBOX_DEFAULTS, policyOverheadMs: 30, routingOverheadMs: 8 }
+  },
+  {
+    id: 'many-upstreams', label: 'Many upstreams', level: 3,
+    description: 'One gateway fronts a large number of services.',
+    objective: 'See fan-out and routing complexity grow.',
+    values: { ...API_GATEWAY_SANDBOX_DEFAULTS, upstreamCount: 40, routingOverheadMs: 6 }
+  },
+  {
+    id: 'gateway-saturation', label: 'Gateway saturation', level: 4,
+    description: 'Request volume approaches the gateway processing ceiling.',
+    objective: 'Compare request throughput with the gateway capacity.',
+    values: { ...API_GATEWAY_SANDBOX_DEFAULTS, requestRate: 120000, gatewayCapacityRps: 80000 }
+  },
+  {
+    id: 'slow-backends', label: 'Slow backends', level: 5,
+    description: 'Upstream latency dominates the end-to-end path.',
+    objective: 'Separate gateway overhead from backend latency.',
+    values: { ...API_GATEWAY_SANDBOX_DEFAULTS, backendLatencyMs: 300, requestRate: 15000, gatewayCapacityRps: 50000 }
+  }
+]);
+
+const API_GATEWAY_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'invisible', label: 'The gateway stays invisible' },
+  { id: 'policy-tax', label: 'Policy adds visible latency' },
+  { id: 'saturated', label: 'The gateway saturates' },
+  { id: 'backend-bound', label: 'Backend latency dominates' }
+]);
+
+function apiGatewayPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, API_GATEWAY_SANDBOX_LIMITS, API_GATEWAY_SANDBOX_DEFAULTS);
+  const utilization = values.requestRate / values.gatewayCapacityRps;
+  const overheadMs = values.policyOverheadMs + values.routingOverheadMs;
+  if (utilization >= 1) return 'saturated';
+  if (values.backendLatencyMs >= 150) return 'backend-bound';
+  if (overheadMs >= 20) return 'policy-tax';
+  return 'invisible';
+}
+
+function simulateApiGateway(input = {}) {
+  const values = normalizeModelInput(input, API_GATEWAY_SANDBOX_LIMITS, API_GATEWAY_SANDBOX_DEFAULTS);
+  const overheadMs = values.policyOverheadMs + values.routingOverheadMs;
+  const totalLatencyMs = overheadMs + values.backendLatencyMs;
+  const utilizationPct = values.requestRate / values.gatewayCapacityRps * 100;
+  const overheadSharePct = totalLatencyMs > 0 ? overheadMs / totalLatencyMs * 100 : 0;
+  const perUpstreamRps = values.requestRate / values.upstreamCount;
+  const saturationRisk = sandboxPressureTone(utilizationPct / 100);
+  const backendRisk = values.backendLatencyMs >= 150 ? 'watch' : 'healthy';
+  const policyRisk = overheadMs >= 20 ? 'watch' : 'healthy';
+  const status = sandboxStatus([saturationRisk, backendRisk, policyRisk]);
+  let primaryRisk = 'none';
+  if (utilizationPct >= 100) primaryRisk = 'saturated';
+  else if (values.backendLatencyMs >= 150) primaryRisk = 'backend-bound';
+  else if (overheadMs >= 20) primaryRisk = 'policy-tax';
+  const teachingConclusion = {
+    none: 'The gateway routes and polices requests with small overhead relative to backend work.',
+    saturated: 'The gateway processing ceiling is the constraint; it cannot evaluate requests faster than its capacity.',
+    'backend-bound': 'Backend latency dominates the path, so gateway tuning will not move the end-to-end number.',
+    'policy-tax': 'Centralized policy is convenient but adds a per-request latency tax that scales with request rate.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Gateway path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.requestRate)} requests/s route through one gateway to ${sandboxFormatNumber(values.upstreamCount, 0)} upstream services.`,
+    stages: [
+      sandboxFlowStage('clients', 'Clients', sandboxFormatNumber(values.requestRate), 'req/s', 'All traffic enters here', 'neutral'),
+      sandboxFlowStage('gateway', 'Gateway', sandboxFormatNumber(values.gatewayCapacityRps), 'req/s capacity', `${sandboxFormatNumber(utilizationPct, 0)}% utilized · ${sandboxFormatNumber(overheadMs)} ms overhead`, saturationRisk),
+      sandboxFlowStage('upstreams', 'Upstreams', sandboxFormatNumber(values.upstreamCount, 0), 'services', `${sandboxFormatNumber(perUpstreamRps)} req/s each`, status)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('latency', 'End-to-end latency', sandboxFormatNumber(totalLatencyMs), 'ms', `${sandboxFormatNumber(overheadMs)} ms gateway + ${sandboxFormatNumber(values.backendLatencyMs)} ms backend`, backendRisk),
+      sandboxFlowOutcome('overhead-share', 'Gateway overhead share', sandboxFormatNumber(overheadSharePct, 0), '%', 'Policy + routing as a share of latency.', policyRisk),
+      sandboxFlowOutcome('utilization', 'Gateway utilization', sandboxFormatNumber(utilizationPct, 0), '%', 'Request rate against gateway capacity.', saturationRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A gateway routes ${sandboxFormatNumber(values.requestRate)} requests per second to ${sandboxFormatNumber(values.upstreamCount, 0)} upstream services. End-to-end latency is ${sandboxFormatNumber(totalLatencyMs)} milliseconds and the gateway is ${sandboxFormatNumber(utilizationPct)} percent utilized.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    totalLatencyMs: sandboxRounded(totalLatencyMs),
+    overheadMs: sandboxRounded(overheadMs),
+    overheadSharePct: sandboxRounded(overheadSharePct),
+    utilizationPct: sandboxRounded(utilizationPct),
+    perUpstreamRps: sandboxRounded(perUpstreamRps),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(overheadMs)} ms of gateway overhead adds to ${sandboxFormatNumber(values.backendLatencyMs)} ms of backend latency.`,
+      `${sandboxFormatNumber(values.requestRate)} requests/s use ${sandboxFormatNumber(values.gatewayCapacityRps)} requests/s of gateway capacity.`,
+      `Each of ${sandboxFormatNumber(values.upstreamCount, 0)} upstream services receives ${sandboxFormatNumber(perUpstreamRps)} requests/s.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Every request passes through the gateway exactly once.',
+      'Gateway overhead is a constant per-request cost.',
+      'Gateway capacity is an instructional, learner-supplied ceiling.',
+      'Backend latency is independent of the gateway.'
+    ]
+  };
+}
+
+/* ——— Reverse proxy model ——— */
+
+const REVERSE_PROXY_SANDBOX_LIMITS = Object.freeze({
+  requestRate: { min: 1, max: 1000000, step: 1 },
+  backendCount: { min: 1, max: 1000, step: 1 },
+  keepAliveReuse: { min: 0, max: 100, step: 1 },
+  tlsHandshakeMs: { min: 0, max: 200, step: 1 },
+  backendConnectMs: { min: 0.5, max: 50, step: 0.5 }
+});
+
+const REVERSE_PROXY_SANDBOX_DEFAULTS = Object.freeze({
+  requestRate: 3000,
+  backendCount: 5,
+  keepAliveReuse: 80,
+  tlsHandshakeMs: 8,
+  backendConnectMs: 5
+});
+
+const REVERSE_PROXY_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'requestRate', label: 'Requests', unit: 'req/s' },
+  { key: 'backendCount', label: 'Backends', unit: 'backends' },
+  { key: 'keepAliveReuse', label: 'Connection reuse', unit: '%' },
+  { key: 'tlsHandshakeMs', label: 'TLS handshake', unit: 'ms' },
+  { key: 'backendConnectMs', label: 'Backend connect', unit: 'ms', advanced: true }
+]);
+
+const REVERSE_PROXY_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'healthy-reuse', label: 'Healthy reuse', level: 1,
+    description: 'Most requests reuse an open backend connection.',
+    objective: 'See connection reuse absorb the handshake cost.',
+    values: REVERSE_PROXY_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'cold-connections', label: 'Cold connections', level: 2,
+    description: 'Few connections are reused, so each request reconnects.',
+    objective: 'Understand the per-request cost of re-establishing connections.',
+    values: { ...REVERSE_PROXY_SANDBOX_DEFAULTS, keepAliveReuse: 5 }
+  },
+  {
+    id: 'heavy-tls', label: 'Heavy TLS', level: 3,
+    description: 'Expensive handshakes make reuse matter more.',
+    objective: 'See TLS termination cost multiply without reuse.',
+    values: { ...REVERSE_PROXY_SANDBOX_DEFAULTS, tlsHandshakeMs: 60, keepAliveReuse: 30 }
+  },
+  {
+    id: 'many-backends', label: 'Many backends', level: 4,
+    description: 'A large backend pool spreads connections thin.',
+    objective: 'Compare connection reuse across a wide backend pool.',
+    values: { ...REVERSE_PROXY_SANDBOX_DEFAULTS, backendCount: 50, keepAliveReuse: 50 }
+  },
+  {
+    id: 'high-throughput', label: 'High throughput', level: 5,
+    description: 'High request volume stresses connection management.',
+    objective: 'See reuse and connect cost matter at scale.',
+    values: { ...REVERSE_PROXY_SANDBOX_DEFAULTS, requestRate: 80000, backendCount: 20, keepAliveReuse: 60 }
+  }
+]);
+
+const REVERSE_PROXY_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'efficient', label: 'Reuse keeps the path cheap' },
+  { id: 'reconnect-cost', label: 'Reconnects dominate cost' },
+  { id: 'tls-bound', label: 'TLS termination is the tax' },
+  { id: 'spread-thin', label: 'Backends spread connections thin' }
+]);
+
+function reverseProxyPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, REVERSE_PROXY_SANDBOX_LIMITS, REVERSE_PROXY_SANDBOX_DEFAULTS);
+  if (values.tlsHandshakeMs >= 50) return 'tls-bound';
+  if (values.backendCount >= 40) return 'spread-thin';
+  if (values.keepAliveReuse <= 10) return 'reconnect-cost';
+  return 'efficient';
+}
+
+function simulateReverseProxy(input = {}) {
+  const values = normalizeModelInput(input, REVERSE_PROXY_SANDBOX_LIMITS, REVERSE_PROXY_SANDBOX_DEFAULTS);
+  const reuseMissPct = 100 - values.keepAliveReuse;
+  const reconnectPerRequestMs = (values.tlsHandshakeMs + values.backendConnectMs) * reuseMissPct / 100;
+  const perBackendRps = values.requestRate / values.backendCount;
+  const connectionChurnRps = values.requestRate * reuseMissPct / 100;
+  const reuseRisk = sandboxPressureTone(100 - values.keepAliveReuse, 60, 90);
+  const tlsRisk = values.tlsHandshakeMs >= 50 ? 'watch' : 'healthy';
+  const spreadRisk = values.backendCount >= 40 ? 'watch' : 'healthy';
+  const status = sandboxStatus([reuseRisk, tlsRisk, spreadRisk]);
+  let primaryRisk = 'none';
+  if (values.tlsHandshakeMs >= 50) primaryRisk = 'tls-bound';
+  else if (values.backendCount >= 40) primaryRisk = 'spread-thin';
+  else if (values.keepAliveReuse < 40) primaryRisk = 'reconnect-cost';
+  const teachingConclusion = {
+    none: 'Connection reuse keeps the per-request handshake and connect cost close to zero.',
+    'reconnect-cost': 'When reuse is low, every request pays to re-establish a backend connection, adding latency and churn.',
+    'tls-bound': 'Terminating TLS at the proxy centralizes the handshake, but expensive handshakes multiply without reuse.',
+    'spread-thin': 'A wide backend pool reduces how often any one connection is reused, so reconnects grow.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Proxy path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.requestRate)} requests/s pass through the proxy to ${sandboxFormatNumber(values.backendCount, 0)} backends.`,
+    stages: [
+      sandboxFlowStage('clients', 'Clients', sandboxFormatNumber(values.requestRate), 'req/s', `${sandboxFormatNumber(values.keepAliveReuse, 0)}% connection reuse`, 'neutral'),
+      sandboxFlowStage('proxy', 'Reverse proxy', sandboxFormatNumber(values.backendCount, 0), 'backends', `${sandboxFormatNumber(reconnectPerRequestMs)} ms reconnect/request`, reuseRisk),
+      sandboxFlowStage('backends', 'Backends', sandboxFormatNumber(perBackendRps), 'req/s each', `${sandboxFormatNumber(values.tlsHandshakeMs)} ms TLS handshake`, status)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('reconnect', 'Reconnect cost', sandboxFormatNumber(reconnectPerRequestMs), 'ms/req', 'Average added latency from missed reuse.', reuseRisk),
+      sandboxFlowOutcome('churn', 'Connection churn', sandboxFormatNumber(connectionChurnRps), 'conn/s', 'New backend connections per second.', reuseRisk),
+      sandboxFlowOutcome('tls', 'TLS handshake', sandboxFormatNumber(values.tlsHandshakeMs), 'ms', 'Terminated at the proxy.', tlsRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A reverse proxy forwards ${sandboxFormatNumber(values.requestRate)} requests per second to ${sandboxFormatNumber(values.backendCount, 0)} backends. Connection reuse is ${sandboxFormatNumber(values.keepAliveReuse)} percent, adding ${sandboxFormatNumber(reconnectPerRequestMs)} milliseconds of reconnect cost per request.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    reconnectPerRequestMs: sandboxRounded(reconnectPerRequestMs),
+    connectionChurnRps: sandboxRounded(connectionChurnRps),
+    perBackendRps: sandboxRounded(perBackendRps),
+    reuseMissPct: sandboxRounded(reuseMissPct),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(values.keepAliveReuse, 0)}% connection reuse means ${sandboxFormatNumber(reuseMissPct, 0)}% of requests reconnect.`,
+      `A missed reuse adds ${sandboxFormatNumber(values.tlsHandshakeMs + values.backendConnectMs)} ms of handshake and connect work.`,
+      `${sandboxFormatNumber(connectionChurnRps)} new backend connections are opened per second.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'TLS terminates at the proxy, not the backend.',
+      'Reused connections skip the handshake and connect cost.',
+      'Backend pool size is treated as a proxy for reuse dilution.',
+      'All costs are per-request, instructional assumptions.'
+    ]
+  };
+}
+
+/* ——— CDN model ——— */
+
+const CDN_SANDBOX_LIMITS = Object.freeze({
+  requestRate: { min: 1, max: 1000000, step: 1 },
+  cacheHitRate: { min: 0, max: 100, step: 1 },
+  ttlSeconds: { min: 1, max: 86400, step: 1 },
+  originCapacityRps: { min: 10, max: 1000000, step: 10 },
+  egressCostPerGb: { min: 0, max: 2, step: 0.01 }
+});
+
+const CDN_SANDBOX_DEFAULTS = Object.freeze({
+  requestRate: 10000,
+  cacheHitRate: 90,
+  ttlSeconds: 3600,
+  originCapacityRps: 5000,
+  egressCostPerGb: 0.08
+});
+
+const CDN_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'requestRate', label: 'Requests', unit: 'req/s' },
+  { key: 'cacheHitRate', label: 'Cache hit rate', unit: '%' },
+  { key: 'ttlSeconds', label: 'Cache TTL', unit: 's' },
+  { key: 'originCapacityRps', label: 'Origin capacity', unit: 'req/s', advanced: true },
+  { key: 'egressCostPerGb', label: 'Egress cost', unit: '$/GB', advanced: true }
+]);
+
+const CDN_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'warm-edge', label: 'Warm edge', level: 1,
+    description: 'A high hit rate keeps most traffic at the edge.',
+    objective: 'See a warm cache absorb almost all requests.',
+    values: CDN_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'cold-edge', label: 'Cold edge', level: 2,
+    description: 'A low hit rate forces most requests to the origin.',
+    objective: 'Understand how misses shift load back to the origin.',
+    values: { ...CDN_SANDBOX_DEFAULTS, cacheHitRate: 30 }
+  },
+  {
+    id: 'short-ttl', label: 'Short TTL', level: 3,
+    description: 'Content expires quickly, so the edge revalidates often.',
+    objective: 'See how short TTL reduces effective cacheability.',
+    values: { ...CDN_SANDBOX_DEFAULTS, ttlSeconds: 30, cacheHitRate: 60 }
+  },
+  {
+    id: 'origin-storm', label: 'Origin storm', level: 4,
+    description: 'A cache miss spike collides with limited origin capacity.',
+    objective: 'Compare miss traffic with the origin ceiling.',
+    values: { ...CDN_SANDBOX_DEFAULTS, cacheHitRate: 20, requestRate: 50000, originCapacityRps: 4000 }
+  },
+  {
+    id: 'high-egress', label: 'High egress', level: 5,
+    description: 'Large payloads make egress cost the dominant concern.',
+    objective: 'Trade cache freshness against egress and origin cost.',
+    values: { ...CDN_SANDBOX_DEFAULTS, cacheHitRate: 70, requestRate: 20000, egressCostPerGb: 0.2 }
+  }
+]);
+
+const CDN_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'absorbed', label: 'The edge absorbs traffic' },
+  { id: 'origin-load', label: 'The origin is overloaded' },
+  { id: 'freshness-cost', label: 'Freshness costs cacheability' },
+  { id: 'egress-cost', label: 'Egress cost dominates' }
+]);
+
+function cdnPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, CDN_SANDBOX_LIMITS, CDN_SANDBOX_DEFAULTS);
+  const missRps = values.requestRate * (100 - values.cacheHitRate) / 100;
+  if (missRps >= values.originCapacityRps) return 'origin-load';
+  if (values.ttlSeconds <= 60) return 'freshness-cost';
+  if (values.egressCostPerGb >= 0.15) return 'egress-cost';
+  return 'absorbed';
+}
+
+function simulateCdn(input = {}) {
+  const values = normalizeModelInput(input, CDN_SANDBOX_LIMITS, CDN_SANDBOX_DEFAULTS);
+  const hitRps = values.requestRate * values.cacheHitRate / 100;
+  const missRps = values.requestRate - hitRps;
+  const originUtilizationPct = missRps / values.originCapacityRps * 100;
+  const originOffloadPct = values.cacheHitRate;
+  const originRisk = sandboxPressureTone(originUtilizationPct / 100);
+  const ttlRisk = values.ttlSeconds <= 60 ? 'watch' : 'healthy';
+  const egressRisk = values.egressCostPerGb >= 0.15 ? 'watch' : 'healthy';
+  const status = sandboxStatus([originRisk, ttlRisk, egressRisk]);
+  let primaryRisk = 'none';
+  if (missRps >= values.originCapacityRps) primaryRisk = 'origin-load';
+  else if (values.ttlSeconds <= 60) primaryRisk = 'freshness-cost';
+  else if (values.egressCostPerGb >= 0.15) primaryRisk = 'egress-cost';
+  const teachingConclusion = {
+    none: 'A warm edge cache absorbs most requests, leaving the origin with a small, manageable miss stream.',
+    'origin-load': 'When the hit rate drops, the miss stream exceeds origin capacity, so the origin becomes the bottleneck.',
+    'freshness-cost': 'A short TTL keeps content fresh but pushes more requests back to the origin, reducing cacheability.',
+    'egress-cost': 'Even with good hit rates, serving large or high-egress content makes delivery cost the concern.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Delivery path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.requestRate)} requests/s split between the edge cache and the origin.`,
+    stages: [
+      sandboxFlowStage('clients', 'Clients', sandboxFormatNumber(values.requestRate), 'req/s', `${sandboxFormatNumber(values.cacheHitRate, 0)}% hit rate`, 'neutral'),
+      sandboxFlowStage('edge', 'Edge cache', sandboxFormatNumber(hitRps), 'hits/s', `${sandboxFormatNumber(values.ttlSeconds, 0)}s TTL`, ttlRisk),
+      sandboxFlowStage('origin', 'Origin', sandboxFormatNumber(missRps), 'misses/s', `${sandboxFormatNumber(values.originCapacityRps)} capacity`, originRisk)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('hits', 'Edge hits', sandboxFormatNumber(hitRps), 'req/s', 'Served without touching the origin.', hitRps > 0 ? 'healthy' : 'neutral'),
+      sandboxFlowOutcome('misses', 'Origin misses', sandboxFormatNumber(missRps), 'req/s', 'Forwarded to the origin.', originRisk),
+      sandboxFlowOutcome('offload', 'Origin offload', sandboxFormatNumber(originOffloadPct, 0), '%', 'Share of traffic absorbed at the edge.', originOffloadPct > 50 ? 'healthy' : 'watch')
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A CDN serves ${sandboxFormatNumber(values.requestRate)} requests per second with a ${sandboxFormatNumber(values.cacheHitRate)} percent hit rate. ${sandboxFormatNumber(hitRps)} requests are edge hits and ${sandboxFormatNumber(missRps)} requests miss to the origin.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    hitRps: sandboxRounded(hitRps),
+    missRps: sandboxRounded(missRps),
+    originUtilizationPct: sandboxRounded(originUtilizationPct),
+    originOffloadPct: sandboxRounded(originOffloadPct),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(hitRps)} requests/s are edge hits and ${sandboxFormatNumber(missRps)} requests/s reach the origin.`,
+      `The origin runs at ${sandboxFormatNumber(originUtilizationPct, 0)}% of its ${sandboxFormatNumber(values.originCapacityRps)} requests/s capacity.`,
+      `A ${sandboxFormatNumber(values.ttlSeconds, 0)} second TTL sets how long content stays cacheable at the edge.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Every miss forwards exactly one request to the origin.',
+      'Cache hits serve from the edge without origin involvement.',
+      'TTL is treated as a proxy for freshness versus cacheability.',
+      'Egress cost is a per-gigabyte instructional assumption.'
+    ]
+  };
+}
+
+/* ——— WebSockets model ——— */
+
+const WEBSOCKETS_SANDBOX_LIMITS = Object.freeze({
+  connections: { min: 1, max: 10000000, step: 1 },
+  messagesPerSecond: { min: 1, max: 10000000, step: 1 },
+  bytesPerMessage: { min: 1, max: 65536, step: 1 },
+  connectionMemoryKb: { min: 1, max: 1024, step: 1 },
+  serverMemoryMb: { min: 16, max: 65536, step: 16 },
+  fanoutTargets: { min: 1, max: 100000, step: 1 }
+});
+
+const WEBSOCKETS_SANDBOX_DEFAULTS = Object.freeze({
+  connections: 100000,
+  messagesPerSecond: 5000,
+  bytesPerMessage: 256,
+  connectionMemoryKb: 32,
+  serverMemoryMb: 8192,
+  fanoutTargets: 10
+});
+
+const WEBSOCKETS_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'connections', label: 'Open connections', unit: 'connections' },
+  { key: 'messagesPerSecond', label: 'Messages', unit: 'msg/s' },
+  { key: 'bytesPerMessage', label: 'Message size', unit: 'B' },
+  { key: 'connectionMemoryKb', label: 'Memory per connection', unit: 'KB' },
+  { key: 'serverMemoryMb', label: 'Server memory', unit: 'MB', advanced: true },
+  { key: 'fanoutTargets', label: 'Fan-out targets', unit: 'recipients' }
+]);
+
+const WEBSOCKETS_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'idle-connections', label: 'Idle connections', level: 1,
+    description: 'Many connections stay open with modest messaging.',
+    objective: 'See connection state dominate memory over message work.',
+    values: WEBSOCKETS_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'memory-pressure', label: 'Memory pressure', level: 2,
+    description: 'Open connections consume more memory than the server has.',
+    objective: 'Understand why connection state limits how many users fit.',
+    values: { ...WEBSOCKETS_SANDBOX_DEFAULTS, connections: 1000000, connectionMemoryKb: 64, serverMemoryMb: 4096 }
+  },
+  {
+    id: 'high-message-rate', label: 'High message rate', level: 3,
+    description: 'A small number of connections sends a flood of messages.',
+    objective: 'Separate message throughput from connection count.',
+    values: { ...WEBSOCKETS_SANDBOX_DEFAULTS, connections: 10000, messagesPerSecond: 500000 }
+  },
+  {
+    id: 'large-fanout', label: 'Large fan-out', level: 4,
+    description: 'Each message is delivered to many recipients.',
+    objective: 'See delivery work multiply with fan-out size.',
+    values: { ...WEBSOCKETS_SANDBOX_DEFAULTS, fanoutTargets: 5000, messagesPerSecond: 500 }
+  },
+  {
+    id: 'large-messages', label: 'Large messages', level: 5,
+    description: 'Messages are big, pushing bandwidth higher.',
+    objective: 'Compare bandwidth cost against connection and memory pressure.',
+    values: { ...WEBSOCKETS_SANDBOX_DEFAULTS, bytesPerMessage: 8192, messagesPerSecond: 10000 }
+  }
+]);
+
+const WEBSOCKETS_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'healthy', label: 'Connections and messages stay cheap' },
+  { id: 'memory-bound', label: 'Connection memory is the limit' },
+  { id: 'throughput-bound', label: 'Message throughput is the limit' },
+  { id: 'fanout-amplified', label: 'Fan-out amplifies delivery work' }
+]);
+
+function websocketsPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, WEBSOCKETS_SANDBOX_LIMITS, WEBSOCKETS_SANDBOX_DEFAULTS);
+  const memoryMb = values.connections * values.connectionMemoryKb / 1024;
+  const deliveriesRps = values.messagesPerSecond * values.fanoutTargets;
+  if (memoryMb >= values.serverMemoryMb) return 'memory-bound';
+  if (values.fanoutTargets >= 1000) return 'fanout-amplified';
+  if (values.messagesPerSecond >= 100000) return 'throughput-bound';
+  return 'healthy';
+}
+
+function simulateWebsockets(input = {}) {
+  const values = normalizeModelInput(input, WEBSOCKETS_SANDBOX_LIMITS, WEBSOCKETS_SANDBOX_DEFAULTS);
+  const connectionMemoryMb = values.connections * values.connectionMemoryKb / 1024;
+  const memoryUtilizationPct = connectionMemoryMb / values.serverMemoryMb * 100;
+  const deliveriesRps = values.messagesPerSecond * values.fanoutTargets;
+  const bandwidthMbps = values.messagesPerSecond * values.bytesPerMessage * 8 / 1000000;
+  const memoryRisk = sandboxPressureTone(memoryUtilizationPct / 100);
+  const fanoutRisk = values.fanoutTargets >= 1000 ? 'watch' : 'healthy';
+  const throughputRisk = values.messagesPerSecond >= 100000 ? 'watch' : 'healthy';
+  const status = sandboxStatus([memoryRisk, fanoutRisk, throughputRisk]);
+  let primaryRisk = 'none';
+  if (memoryUtilizationPct >= 100) primaryRisk = 'memory-bound';
+  else if (values.fanoutTargets >= 1000) primaryRisk = 'fanout-amplified';
+  else if (values.messagesPerSecond >= 100000) primaryRisk = 'throughput-bound';
+  const teachingConclusion = {
+    none: 'Open connections and message work both fit comfortably within the modeled server.',
+    'memory-bound': 'Each open connection holds state, so connection count times per-connection memory is the hard ceiling.',
+    'throughput-bound': 'Even few connections can saturate message processing when the message rate is high.',
+    'fanout-amplified': 'Fan-out multiplies one message into many deliveries, amplifying bandwidth and processing work.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Realtime path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.connections, 0)} open connections carry ${sandboxFormatNumber(values.messagesPerSecond)} messages/s.`,
+    stages: [
+      sandboxFlowStage('connections', 'Open connections', sandboxFormatNumber(values.connections, 0), 'connections', `${sandboxFormatNumber(connectionMemoryMb, 0)} MB state`, memoryRisk),
+      sandboxFlowStage('router', 'Connection router', sandboxFormatNumber(values.messagesPerSecond), 'msg/s', `${sandboxFormatNumber(values.fanoutTargets, 0)} fan-out targets`, status),
+      sandboxFlowStage('delivery', 'Deliveries', sandboxFormatNumber(deliveriesRps), 'deliveries/s', `${sandboxFormatNumber(bandwidthMbps)} Mbps`, fanoutRisk)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('memory', 'Connection memory', sandboxFormatNumber(connectionMemoryMb, 0), 'MB', `${sandboxFormatNumber(memoryUtilizationPct, 0)}% of ${sandboxFormatNumber(values.serverMemoryMb, 0)} MB`, memoryRisk),
+      sandboxFlowOutcome('deliveries', 'Delivery work', sandboxFormatNumber(deliveriesRps), 'deliveries/s', 'Fan-out multiplies each message.', fanoutRisk),
+      sandboxFlowOutcome('bandwidth', 'Bandwidth', sandboxFormatNumber(bandwidthMbps), 'Mbps', 'Message size times message rate.', throughputRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A WebSocket server holds ${sandboxFormatNumber(values.connections, 0)} connections using ${sandboxFormatNumber(connectionMemoryMb)} megabytes, and processes ${sandboxFormatNumber(values.messagesPerSecond)} messages per second into ${sandboxFormatNumber(deliveriesRps)} deliveries per second.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    connectionMemoryMb: sandboxRounded(connectionMemoryMb),
+    memoryUtilizationPct: sandboxRounded(memoryUtilizationPct),
+    deliveriesRps: sandboxRounded(deliveriesRps),
+    bandwidthMbps: sandboxRounded(bandwidthMbps),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(values.connections, 0)} connections hold ${sandboxFormatNumber(connectionMemoryMb, 0)} MB of state.`,
+      `${sandboxFormatNumber(values.messagesPerSecond)} messages/s fan out to ${sandboxFormatNumber(deliveriesRps)} deliveries/s.`,
+      `Message size of ${sandboxFormatNumber(values.bytesPerMessage, 0)} B produces ${sandboxFormatNumber(bandwidthMbps)} Mbps of traffic.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Every open connection holds a fixed per-connection state cost.',
+      'Fan-out delivers every message to all target recipients.',
+      'Bandwidth is computed from message size and rate.',
+      'Server memory is an instructional, learner-supplied limit.'
+    ]
+  };
+}
+
+/* ——— Database sharding model ——— */
+
+const DATABASE_SHARDING_SANDBOX_LIMITS = Object.freeze({
+  shardCount: { min: 1, max: 1000, step: 1 },
+  queryRate: { min: 1, max: 1000000, step: 1 },
+  hotShardShare: { min: 0, max: 100, step: 1 },
+  crossShardQueryPct: { min: 0, max: 100, step: 1 },
+  shardCapacityRps: { min: 10, max: 1000000, step: 10 }
+});
+
+const DATABASE_SHARDING_SANDBOX_DEFAULTS = Object.freeze({
+  shardCount: 16,
+  queryRate: 20000,
+  hotShardShare: 15,
+  crossShardQueryPct: 5,
+  shardCapacityRps: 5000
+});
+
+const DATABASE_SHARDING_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'shardCount', label: 'Shards', unit: 'shards' },
+  { key: 'queryRate', label: 'Queries', unit: 'queries/s' },
+  { key: 'hotShardShare', label: 'Hottest-shard share', unit: '%' },
+  { key: 'crossShardQueryPct', label: 'Cross-shard queries', unit: '%' },
+  { key: 'shardCapacityRps', label: 'Shard capacity', unit: 'queries/s', advanced: true }
+]);
+
+const DATABASE_SHARDING_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'even-shards', label: 'Even shards', level: 1,
+    description: 'Queries spread evenly and stay within one shard.',
+    objective: 'See a balanced sharded store serve queries locally.',
+    values: DATABASE_SHARDING_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'hot-shard', label: 'Hot shard', level: 2,
+    description: 'One shard receives a large share of queries.',
+    objective: 'Spot the hottest shard hitting its ceiling first.',
+    values: { ...DATABASE_SHARDING_SANDBOX_DEFAULTS, hotShardShare: 70 }
+  },
+  {
+    id: 'cross-shard', label: 'Cross-shard queries', level: 3,
+    description: 'Many queries need data from several shards.',
+    objective: 'Understand how cross-shard work adds coordination cost.',
+    values: { ...DATABASE_SHARDING_SANDBOX_DEFAULTS, crossShardQueryPct: 40 }
+  },
+  {
+    id: 'few-shards', label: 'Few shards', level: 4,
+    description: 'A small shard count concentrates load on each node.',
+    objective: 'See per-shard load rise as the shard count drops.',
+    values: { ...DATABASE_SHARDING_SANDBOX_DEFAULTS, shardCount: 2, hotShardShare: 20 }
+  },
+  {
+    id: 'oversharded', label: 'Over-sharded', level: 5,
+    description: 'Too many shards spread data thin and complicate routing.',
+    objective: 'Balance shard count against cross-shard and routing overhead.',
+    values: { ...DATABASE_SHARDING_SANDBOX_DEFAULTS, shardCount: 500, crossShardQueryPct: 25 }
+  }
+]);
+
+const DATABASE_SHARDING_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'balanced', label: 'Shards stay balanced' },
+  { id: 'hot-shard', label: 'One shard overheats' },
+  { id: 'cross-shard', label: 'Cross-shard work is the tax' },
+  { id: 'oversharded', label: 'Too many shards add overhead' }
+]);
+
+function databaseShardingPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, DATABASE_SHARDING_SANDBOX_LIMITS, DATABASE_SHARDING_SANDBOX_DEFAULTS);
+  const perShardRps = values.queryRate / values.shardCount;
+  const hotShardRps = values.queryRate * values.hotShardShare / 100;
+  if (hotShardRps >= values.shardCapacityRps) return 'hot-shard';
+  if (values.crossShardQueryPct >= 30) return 'cross-shard';
+  if (values.shardCount >= 300) return 'oversharded';
+  return 'balanced';
+}
+
+function simulateDatabaseSharding(input = {}) {
+  const values = normalizeModelInput(input, DATABASE_SHARDING_SANDBOX_LIMITS, DATABASE_SHARDING_SANDBOX_DEFAULTS);
+  const perShardRps = values.queryRate / values.shardCount;
+  const hotShardRps = values.queryRate * values.hotShardShare / 100;
+  const hotShardUtilizationPct = hotShardRps / values.shardCapacityRps * 100;
+  const perShardUtilizationPct = perShardRps / values.shardCapacityRps * 100;
+  const crossShardRps = values.queryRate * values.crossShardQueryPct / 100;
+  const hotRisk = sandboxPressureTone(hotShardUtilizationPct / 100);
+  const crossShardRisk = values.crossShardQueryPct >= 30 ? 'watch' : 'healthy';
+  const overshardRisk = values.shardCount >= 300 ? 'watch' : 'healthy';
+  const status = sandboxStatus([hotRisk, crossShardRisk, overshardRisk]);
+  let primaryRisk = 'none';
+  if (hotShardUtilizationPct >= 100) primaryRisk = 'hot-shard';
+  else if (values.crossShardQueryPct >= 30) primaryRisk = 'cross-shard';
+  else if (values.shardCount >= 300) primaryRisk = 'oversharded';
+  const teachingConclusion = {
+    none: 'Shards are balanced and most queries resolve within a single shard.',
+    'hot-shard': 'A hot shard receives a disproportionate share and hits its ceiling while other shards idle.',
+    'cross-shard': 'Queries that span shards add fan-out and coordination cost that single-shard queries avoid.',
+    oversharded: 'More shards add routing and coordination overhead without enough data to justify each one.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Shard path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.queryRate)} queries/s spread across ${sandboxFormatNumber(values.shardCount, 0)} shards.`,
+    stages: [
+      sandboxFlowStage('queries', 'Queries', sandboxFormatNumber(values.queryRate), 'queries/s', `${sandboxFormatNumber(values.crossShardQueryPct, 0)}% cross-shard`, 'neutral'),
+      sandboxFlowStage('routing', 'Shard routing', sandboxFormatNumber(values.shardCount, 0), 'shards', `${sandboxFormatNumber(perShardRps)} queries/s each`, status),
+      sandboxFlowStage('shards', 'Shard nodes', sandboxFormatNumber(perShardRps), 'queries/s avg', `${sandboxFormatNumber(values.shardCapacityRps)} capacity`, perShardUtilizationPct >= 100 ? 'stress' : perShardUtilizationPct >= 75 ? 'watch' : 'healthy')
+    ],
+    outcomes: [
+      sandboxFlowOutcome('per-shard', 'Per-shard load', sandboxFormatNumber(perShardRps), 'queries/s', `${sandboxFormatNumber(perShardUtilizationPct, 0)}% of capacity`, perShardUtilizationPct >= 100 ? 'stress' : perShardUtilizationPct >= 75 ? 'watch' : 'healthy'),
+      sandboxFlowOutcome('hot-shard', 'Hottest shard', sandboxFormatNumber(hotShardRps), 'queries/s', `${sandboxFormatNumber(hotShardUtilizationPct, 0)}% of capacity`, hotRisk),
+      sandboxFlowOutcome('cross-shard', 'Cross-shard work', sandboxFormatNumber(crossShardRps), 'queries/s', `${sandboxFormatNumber(values.crossShardQueryPct, 0)}% of queries span shards`, crossShardRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A sharded database splits ${sandboxFormatNumber(values.queryRate)} queries per second across ${sandboxFormatNumber(values.shardCount, 0)} shards. The average shard handles ${sandboxFormatNumber(perShardRps)} queries per second, and the hottest shard handles ${sandboxFormatNumber(hotShardRps)} queries per second.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    perShardRps: sandboxRounded(perShardRps),
+    hotShardRps: sandboxRounded(hotShardRps),
+    hotShardUtilizationPct: sandboxRounded(hotShardUtilizationPct),
+    perShardUtilizationPct: sandboxRounded(perShardUtilizationPct),
+    crossShardRps: sandboxRounded(crossShardRps),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(values.queryRate)} queries/s split into ${sandboxFormatNumber(perShardRps)} queries/s per shard on average.`,
+      `The hottest shard receives ${sandboxFormatNumber(hotShardRps)} queries/s, ${sandboxFormatNumber(hotShardUtilizationPct, 0)}% of its capacity.`,
+      `${sandboxFormatNumber(crossShardRps)} queries/s span multiple shards.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Queries are shard-local unless marked cross-shard.',
+      'The hottest shard receives the configured share of all queries.',
+      'Each shard has the same capacity ceiling.',
+      'Cross-shard work is counted as an additional coordination cost.'
+    ]
+  };
+}
+
+/* ——— Replication model ——— */
+
+const REPLICATION_SANDBOX_LIMITS = Object.freeze({
+  writeRate: { min: 1, max: 1000000, step: 1 },
+  replicaCount: { min: 0, max: 100, step: 1 },
+  syncMode: { min: 0, max: 1, step: 1 },
+  replicationLagMs: { min: 0, max: 5000, step: 1 },
+  readRate: { min: 1, max: 1000000, step: 1 },
+  readFromReplicasPct: { min: 0, max: 100, step: 1 }
+});
+
+const REPLICATION_SANDBOX_DEFAULTS = Object.freeze({
+  writeRate: 200,
+  replicaCount: 3,
+  syncMode: 0,
+  replicationLagMs: 500,
+  readRate: 8000,
+  readFromReplicasPct: 80
+});
+
+const REPLICATION_SANDBOX_CONTROLS = Object.freeze([
+  { key: 'writeRate', label: 'Writes', unit: 'writes/s' },
+  { key: 'replicaCount', label: 'Replicas', unit: 'replicas' },
+  { key: 'syncMode', label: 'Synchronous', unit: 'on/off' },
+  { key: 'replicationLagMs', label: 'Replication lag', unit: 'ms' },
+  { key: 'readRate', label: 'Reads', unit: 'reads/s' },
+  { key: 'readFromReplicasPct', label: 'Reads from replicas', unit: '%' }
+]);
+
+const REPLICATION_SANDBOX_SITUATIONS = Object.freeze([
+  {
+    id: 'async-replicas', label: 'Async replicas', level: 1,
+    description: 'Writes replicate in the background with modest lag.',
+    objective: 'See replicas absorb reads while accepting a lag window.',
+    values: REPLICATION_SANDBOX_DEFAULTS
+  },
+  {
+    id: 'sync-replicas', label: 'Sync replicas', level: 2,
+    description: 'Writes wait for replicas before committing.',
+    objective: 'Understand the write-latency cost of synchronous replication.',
+    values: { ...REPLICATION_SANDBOX_DEFAULTS, syncMode: 1, replicationLagMs: 5 }
+  },
+  {
+    id: 'high-lag', label: 'High lag', level: 3,
+    description: 'Replication falls far behind the primary.',
+    objective: 'See stale reads grow as lag increases.',
+    values: { ...REPLICATION_SANDBOX_DEFAULTS, replicationLagMs: 5000, readFromReplicasPct: 90 }
+  },
+  {
+    id: 'many-replicas', label: 'Many replicas', level: 4,
+    description: 'A large replica fleet fans out read traffic.',
+    objective: 'Compare read fan-out against the write amplification of many replicas.',
+    values: { ...REPLICATION_SANDBOX_DEFAULTS, replicaCount: 20, readFromReplicasPct: 95 }
+  },
+  {
+    id: 'write-heavy', label: 'Write-heavy', level: 5,
+    description: 'Writes dominate, so replicas add work without helping writes.',
+    objective: 'Understand why replication does not scale writes.',
+    values: { ...REPLICATION_SANDBOX_DEFAULTS, writeRate: 8000, readRate: 4000, syncMode: 1 }
+  }
+]);
+
+const REPLICATION_PREDICTION_OPTIONS = Object.freeze([
+  { id: 'balanced', label: 'Replicas scale reads cleanly' },
+  { id: 'stale-reads', label: 'Lag serves stale reads' },
+  { id: 'write-latency', label: 'Sync writes add latency' },
+  { id: 'write-bound', label: 'Writes stay on the primary' }
+]);
+
+function replicationPredictionBucket(input = {}) {
+  const values = normalizeModelInput(input, REPLICATION_SANDBOX_LIMITS, REPLICATION_SANDBOX_DEFAULTS);
+  if (values.syncMode === 1 && values.writeRate >= 2000) return 'write-latency';
+  if (values.replicationLagMs >= 2000 && values.readFromReplicasPct >= 80) return 'stale-reads';
+  if (values.writeRate >= 5000) return 'write-bound';
+  return 'balanced';
+}
+
+function simulateReplication(input = {}) {
+  const values = normalizeModelInput(input, REPLICATION_SANDBOX_LIMITS, REPLICATION_SANDBOX_DEFAULTS);
+  const readFromReplicasRps = values.readRate * values.readFromReplicasPct / 100;
+  const writeAmplification = values.syncMode === 1 ? values.replicaCount + 1 : 1;
+  const writeWorkRps = values.writeRate * writeAmplification;
+  const staleReadRps = values.replicationLagMs >= 2000 ? readFromReplicasRps : 0;
+  const perReplicaReadRps = values.replicaCount > 0 ? readFromReplicasRps / values.replicaCount : 0;
+  const lagRisk = sandboxPressureTone(values.replicationLagMs, 2000, 5000);
+  const syncRisk = values.syncMode === 1 ? 'watch' : 'healthy';
+  const writeRisk = values.writeRate >= 5000 ? 'watch' : 'healthy';
+  const status = sandboxStatus([lagRisk, syncRisk, writeRisk]);
+  let primaryRisk = 'none';
+  if (values.syncMode === 1 && values.writeRate >= 2000) primaryRisk = 'write-latency';
+  else if (values.replicationLagMs >= 2000 && values.readFromReplicasPct >= 80) primaryRisk = 'stale-reads';
+  else if (values.writeRate >= 5000) primaryRisk = 'write-bound';
+  const teachingConclusion = {
+    none: 'Replicas absorb most reads while writes stay light and lag is small.',
+    'stale-reads': 'High lag plus heavy replica reads means users see stale data after a write.',
+    'write-latency': 'Synchronous replication makes every write wait for replicas, adding latency that scales with the fleet.',
+    'write-bound': 'Replication spreads reads, not writes; a write-heavy workload still converges on the primary.'
+  }[primaryRisk];
+  const trace = sandboxInterviewTrace({
+    title: 'Replication path',
+    windowLabel: 'Per-second flow',
+    caption: `${sandboxFormatNumber(values.writeRate)} writes/s replicate to ${sandboxFormatNumber(values.replicaCount, 0)} replicas while ${sandboxFormatNumber(values.readRate)} reads/s are served.`,
+    stages: [
+      sandboxFlowStage('writes', 'Writes', sandboxFormatNumber(values.writeRate), 'writes/s', `${values.syncMode === 1 ? 'synchronous' : 'asynchronous'}`, syncRisk),
+      sandboxFlowStage('primary', 'Primary', sandboxFormatNumber(values.writeRate), 'writes/s', `${sandboxFormatNumber(writeAmplification)}x write work`, writeRisk),
+      sandboxFlowStage('replicas', 'Replicas', sandboxFormatNumber(readFromReplicasRps), 'reads/s', `${sandboxFormatNumber(values.replicationLagMs, 0)} ms lag`, lagRisk)
+    ],
+    outcomes: [
+      sandboxFlowOutcome('replica-reads', 'Replica reads', sandboxFormatNumber(readFromReplicasRps), 'reads/s', `${sandboxFormatNumber(perReplicaReadRps)} per replica`, readFromReplicasRps > 0 ? 'healthy' : 'neutral'),
+      sandboxFlowOutcome('write-work', 'Write work', sandboxFormatNumber(writeWorkRps), 'writes/s', `${sandboxFormatNumber(writeAmplification)}x amplification`, writeRisk),
+      sandboxFlowOutcome('stale', 'Stale-read window', sandboxFormatNumber(staleReadRps), 'reads/s', 'Reads at risk from replication lag.', lagRisk)
+    ],
+    callout: teachingConclusion,
+    ariaLabel: `A primary handles ${sandboxFormatNumber(values.writeRate)} writes per second and replicates to ${sandboxFormatNumber(values.replicaCount, 0)} replicas. ${sandboxFormatNumber(readFromReplicasRps)} reads per second are served from replicas with ${sandboxFormatNumber(values.replicationLagMs)} milliseconds of lag.`
+  });
+  return {
+    modelVersion: SANDBOX_MODEL_VERSION,
+    input: values,
+    readFromReplicasRps: sandboxRounded(readFromReplicasRps),
+    writeAmplification: sandboxRounded(writeAmplification),
+    writeWorkRps: sandboxRounded(writeWorkRps),
+    staleReadRps: sandboxRounded(staleReadRps),
+    perReplicaReadRps: sandboxRounded(perReplicaReadRps),
+    status,
+    statusLabel: { healthy: 'Healthy model', watch: 'Watch the bottleneck', stress: 'Stress state' }[status],
+    primaryRisk,
+    observations: [
+      `${sandboxFormatNumber(readFromReplicasRps)} reads/s are served from ${sandboxFormatNumber(values.replicaCount, 0)} replicas.`,
+      `Synchronous mode ${values.syncMode === 1 ? 'amplifies' : 'does not amplify'} each write across ${sandboxFormatNumber(values.replicaCount, 0)} replicas.`,
+      `${sandboxFormatNumber(values.replicationLagMs, 0)} ms of lag is the stale-read window for replica reads.`
+    ],
+    teachingConclusion,
+    trace,
+    assumptions: [
+      'Synchronous mode waits for all replicas before a commit.',
+      'Asynchronous mode applies changes in the background.',
+      'Replica reads may be stale within the replication lag window.',
+      'Writes still converge on the primary.'
+    ]
+  };
+}
+
 const SANDBOX_WIKI_TOPIC_MAP = Object.freeze({
   'redis-cache': Object.freeze(['caching', 'cache-aside', 'cache-eviction', 'cache-invalidation']),
   'queue-worker': Object.freeze(['queues', 'backpressure', 'asynchronous-processing', 'durable-queues']),
@@ -2644,7 +3770,15 @@ const SANDBOX_WIKI_TOPIC_MAP = Object.freeze({
   'object-storage': Object.freeze(['storage', 'data-partitioning', 'conditional-writes', 'optimistic-concurrency', 'eventual-consistency']),
   'notification-fanout': Object.freeze(['asynchronous-processing', 'durable-queues', 'backpressure', 'idempotency', 'rate-limiting']),
   'search-autocomplete': Object.freeze(['database-indexing', 'caching', 'read-models', 'data-partitioning', 'content-freshness']),
-  'distributed-kv': Object.freeze(['data-partitioning', 'distributed-databases', 'quorum-commit', 'eventual-consistency', 'workload-skew'])
+  'distributed-kv': Object.freeze(['data-partitioning', 'distributed-databases', 'quorum-commit', 'eventual-consistency', 'workload-skew']),
+  'consistent-hashing': Object.freeze(['consistent-hashing', 'sharding', 'caching', 'loadbalancing', 'data-partitioning']),
+  'load-balancer': Object.freeze(['loadbalancing', 'consistent-hashing', 'reverse-proxy', 'latency-budgets']),
+  'api-gateway': Object.freeze(['api-gateway', 'rate-limiting', 'reverse-proxy', 'api-design']),
+  'reverse-proxy': Object.freeze(['reverse-proxy', 'loadbalancing', 'http-https', 'connection-lifecycle']),
+  'cdn': Object.freeze(['cdn', 'caching', 'cdn-caching', 'content-freshness']),
+  'websockets': Object.freeze(['websockets', 'connection-lifecycle', 'real-time', 'http-https']),
+  'database-sharding': Object.freeze(['sharding', 'data-partitioning', 'databases', 'workload-skew']),
+  'replication': Object.freeze(['replication', 'read-replication', 'replication-lag', 'databases'])
 });
 
 /* Generated sandboxes use a deliberately small, application-owned parameter
@@ -3281,6 +4415,193 @@ const POPULAR_SANDBOX_MODELS = Object.freeze([
     defaults: DISTRIBUTED_KV_SANDBOX_DEFAULTS,
     simulate: simulateDistributedKv,
     predictionBucket: distributedKvPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'consistent-hashing',
+    label: 'Consistent hashing',
+    description: 'Explore ring balance, virtual nodes, scale-out churn, and hot keys.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['consistent-hashing'],
+    interviewExamples: ['Distributed cache', 'Sharded store rebalancing'],
+    popularityRank: 11,
+    predictionQuestion: 'Will growth relocate many keys, or will balance or hot keys dominate?',
+    metrics: [
+      { label: 'Keys relocated', key: 'keysMovedPct', unit: '%' },
+      { label: 'Balance quality', key: 'balanceQualityPct', unit: '%' },
+      { label: 'Ring positions', key: 'ringPositions', unit: 'positions' },
+      { label: 'Hot keys', key: 'hotKeys', unit: 'keys' },
+      { label: 'Keys per node', key: 'keysPerNode', unit: 'keys' }
+    ],
+    limits: CONSISTENT_HASHING_SANDBOX_LIMITS,
+    controls: CONSISTENT_HASHING_SANDBOX_CONTROLS,
+    situations: CONSISTENT_HASHING_SANDBOX_SITUATIONS,
+    flowPreview: ['Keys', 'Hash ring', 'Nodes'],
+    predictionOptions: CONSISTENT_HASHING_PREDICTION_OPTIONS,
+    defaults: CONSISTENT_HASHING_SANDBOX_DEFAULTS,
+    simulate: simulateConsistentHashing,
+    predictionBucket: consistentHashingPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'load-balancer',
+    label: 'Load balancer',
+    description: 'Explore request cost, variance, hot clients, and fleet saturation.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['load-balancer'],
+    interviewExamples: ['Web fleet', 'API gateway front-end'],
+    popularityRank: 12,
+    predictionQuestion: 'Will routing stay balanced, or will skew or saturation win?',
+    metrics: [
+      { label: 'Fleet utilization', key: 'utilizationPct', unit: '%' },
+      { label: 'Hot server', key: 'hotServerUtilizationPct', unit: '%' },
+      { label: 'Hot client', key: 'hotClientRps', unit: '/s' },
+      { label: 'Per-server load', key: 'perServerRps', unit: '/s' },
+      { label: 'Per-server capacity', key: 'capacityPerServerRps', unit: '/s' }
+    ],
+    limits: LOAD_BALANCER_SANDBOX_LIMITS,
+    controls: LOAD_BALANCER_SANDBOX_CONTROLS,
+    situations: LOAD_BALANCER_SANDBOX_SITUATIONS,
+    flowPreview: ['Client requests', 'Load balancer', 'Server fleet'],
+    predictionOptions: LOAD_BALANCER_PREDICTION_OPTIONS,
+    defaults: LOAD_BALANCER_SANDBOX_DEFAULTS,
+    simulate: simulateLoadBalancer,
+    predictionBucket: loadBalancerPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'api-gateway',
+    label: 'API gateway',
+    description: 'Explore routing overhead, policy latency, fan-out, and gateway capacity.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['api-gateway'],
+    interviewExamples: ['Microservices gateway', 'Public API front door'],
+    popularityRank: 13,
+    predictionQuestion: 'Will the gateway stay invisible, or will policy, capacity, or backends dominate?',
+    metrics: [
+      { label: 'End-to-end latency', key: 'totalLatencyMs', unit: 'ms' },
+      { label: 'Gateway overhead', key: 'overheadMs', unit: 'ms' },
+      { label: 'Overhead share', key: 'overheadSharePct', unit: '%' },
+      { label: 'Gateway utilization', key: 'utilizationPct', unit: '%' },
+      { label: 'Per-upstream load', key: 'perUpstreamRps', unit: '/s' }
+    ],
+    limits: API_GATEWAY_SANDBOX_LIMITS,
+    controls: API_GATEWAY_SANDBOX_CONTROLS,
+    situations: API_GATEWAY_SANDBOX_SITUATIONS,
+    flowPreview: ['Clients', 'Gateway', 'Upstreams'],
+    predictionOptions: API_GATEWAY_PREDICTION_OPTIONS,
+    defaults: API_GATEWAY_SANDBOX_DEFAULTS,
+    simulate: simulateApiGateway,
+    predictionBucket: apiGatewayPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'reverse-proxy',
+    label: 'Reverse proxy',
+    description: 'Explore connection reuse, TLS termination, and backend pool dilution.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['reverse-proxy'],
+    interviewExamples: ['NGINX front-end', 'TLS terminator'],
+    popularityRank: 14,
+    predictionQuestion: 'Will connection reuse keep the path cheap, or will reconnects and TLS dominate?',
+    metrics: [
+      { label: 'Reconnect cost', key: 'reconnectPerRequestMs', unit: 'ms/req' },
+      { label: 'Connection churn', key: 'connectionChurnRps', unit: 'conn/s' },
+      { label: 'Per-backend load', key: 'perBackendRps', unit: '/s' },
+      { label: 'Reuse miss', key: 'reuseMissPct', unit: '%' }
+    ],
+    limits: REVERSE_PROXY_SANDBOX_LIMITS,
+    controls: REVERSE_PROXY_SANDBOX_CONTROLS,
+    situations: REVERSE_PROXY_SANDBOX_SITUATIONS,
+    flowPreview: ['Clients', 'Reverse proxy', 'Backends'],
+    predictionOptions: REVERSE_PROXY_PREDICTION_OPTIONS,
+    defaults: REVERSE_PROXY_SANDBOX_DEFAULTS,
+    simulate: simulateReverseProxy,
+    predictionBucket: reverseProxyPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'cdn',
+    label: 'CDN',
+    description: 'Explore edge hit rate, TTL freshness, origin offload, and egress cost.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['cdn'],
+    interviewExamples: ['Static asset delivery', 'Video streaming'],
+    popularityRank: 15,
+    predictionQuestion: 'Will the edge absorb traffic, or will misses, freshness, or egress dominate?',
+    metrics: [
+      { label: 'Edge hits', key: 'hitRps', unit: '/s' },
+      { label: 'Origin misses', key: 'missRps', unit: '/s' },
+      { label: 'Origin utilization', key: 'originUtilizationPct', unit: '%' },
+      { label: 'Origin offload', key: 'originOffloadPct', unit: '%' }
+    ],
+    limits: CDN_SANDBOX_LIMITS,
+    controls: CDN_SANDBOX_CONTROLS,
+    situations: CDN_SANDBOX_SITUATIONS,
+    flowPreview: ['Clients', 'Edge cache', 'Origin'],
+    predictionOptions: CDN_PREDICTION_OPTIONS,
+    defaults: CDN_SANDBOX_DEFAULTS,
+    simulate: simulateCdn,
+    predictionBucket: cdnPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'websockets',
+    label: 'WebSockets',
+    description: 'Explore connection memory, message rate, fan-out, and bandwidth.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['websockets'],
+    interviewExamples: ['Chat', 'Live collaboration'],
+    popularityRank: 16,
+    predictionQuestion: 'Will connection memory, message throughput, or fan-out become the constraint?',
+    metrics: [
+      { label: 'Connection memory', key: 'connectionMemoryMb', unit: 'MB' },
+      { label: 'Memory utilization', key: 'memoryUtilizationPct', unit: '%' },
+      { label: 'Delivery work', key: 'deliveriesRps', unit: '/s' },
+      { label: 'Bandwidth', key: 'bandwidthMbps', unit: 'Mbps' }
+    ],
+    limits: WEBSOCKETS_SANDBOX_LIMITS,
+    controls: WEBSOCKETS_SANDBOX_CONTROLS,
+    situations: WEBSOCKETS_SANDBOX_SITUATIONS,
+    flowPreview: ['Open connections', 'Connection router', 'Deliveries'],
+    predictionOptions: WEBSOCKETS_PREDICTION_OPTIONS,
+    defaults: WEBSOCKETS_SANDBOX_DEFAULTS,
+    simulate: simulateWebsockets,
+    predictionBucket: websocketsPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'database-sharding',
+    label: 'Database sharding',
+    description: 'Explore shard count, hot shards, cross-shard queries, and capacity.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['database-sharding'],
+    interviewExamples: ['Sharded relational store', 'Multi-tenant database'],
+    popularityRank: 17,
+    predictionQuestion: 'Will shards stay balanced, or will a hot shard or cross-shard work dominate?',
+    metrics: [
+      { label: 'Per-shard load', key: 'perShardRps', unit: '/s' },
+      { label: 'Hottest shard', key: 'hotShardRps', unit: '/s' },
+      { label: 'Hot-shard utilization', key: 'hotShardUtilizationPct', unit: '%' },
+      { label: 'Cross-shard work', key: 'crossShardRps', unit: '/s' }
+    ],
+    limits: DATABASE_SHARDING_SANDBOX_LIMITS,
+    controls: DATABASE_SHARDING_SANDBOX_CONTROLS,
+    situations: DATABASE_SHARDING_SANDBOX_SITUATIONS,
+    flowPreview: ['Queries', 'Shard routing', 'Shard nodes'],
+    predictionOptions: DATABASE_SHARDING_PREDICTION_OPTIONS,
+    defaults: DATABASE_SHARDING_SANDBOX_DEFAULTS,
+    simulate: simulateDatabaseSharding,
+    predictionBucket: databaseShardingPredictionBucket
+  }),
+  createInterviewSandboxModel({
+    id: 'replication',
+    label: 'Replication',
+    description: 'Explore sync/async writes, replica lag, stale reads, and write amplification.',
+    wikiTopics: SANDBOX_WIKI_TOPIC_MAP['replication'],
+    interviewExamples: ['Read replicas', 'Primary-replica database'],
+    popularityRank: 18,
+    predictionQuestion: 'Will replicas scale reads, or will lag, sync latency, or writes dominate?',
+    metrics: [
+      { label: 'Replica reads', key: 'readFromReplicasRps', unit: '/s' },
+      { label: 'Write amplification', key: 'writeAmplification', unit: 'x' },
+      { label: 'Write work', key: 'writeWorkRps', unit: '/s' },
+      { label: 'Stale-read window', key: 'staleReadRps', unit: '/s' }
+    ],
+    limits: REPLICATION_SANDBOX_LIMITS,
+    controls: REPLICATION_SANDBOX_CONTROLS,
+    situations: REPLICATION_SANDBOX_SITUATIONS,
+    flowPreview: ['Writes', 'Primary', 'Replicas'],
+    predictionOptions: REPLICATION_PREDICTION_OPTIONS,
+    defaults: REPLICATION_SANDBOX_DEFAULTS,
+    simulate: simulateReplication,
+    predictionBucket: replicationPredictionBucket
   })
 ]);
 

@@ -232,5 +232,341 @@ const DESIGN_DECISIONS = [
     ],
     decision: 'Monorepo — this project is one top-level subdirectory of mamaLab until a promotion trigger (launch, independent versioning, ownership, or bloat) fires, at which point it moves to its own repository.',
     rationale: 'Extra repositories fragment portfolio context and cost agent runs without a launch-level benefit. The project stays here until a concrete trigger justifies a split.'
+  },
+  {
+    id: 'client-server-topology',
+    title: 'Topology — client-server vs peer-to-peer vs serverless',
+    question: 'How should the system nodes be arranged, and who holds authoritative state?',
+    context: 'The workload determines whether a central server, direct peer links, or managed functions fit best.',
+    criteria: ['State authority', 'Operational control', 'Scale model', 'Peer latency'],
+    options: ['Client-server', 'Peer-to-peer', 'Serverless functions'],
+    cells: [
+      ['Central server', 'Replicated across peers', 'External managed store'],
+      ['Full control', 'Full control, complex', 'Least control'],
+      ['Scale servers', 'Scale with peers', 'Auto-scale per request'],
+      ['Via server', 'Direct (low)', 'Via platform']
+    ],
+    decision: 'Client-server for most products because it centralizes shared state and security; peer-to-peer only when direct peer exchange or censorship resistance is the point; serverless when the logic is small and event-driven.',
+    rationale: 'A central server is the simplest place to enforce consistency and access control. Peer-to-peer pays a coordination and trust cost that few products need, and serverless trades control for operational simplicity.'
+  },
+  {
+    id: 'consistent-hashing',
+    title: 'Hashing — consistent hashing vs modulo vs rendezvous',
+    question: 'How should keys be assigned to a changing set of nodes so rebalancing stays cheap?',
+    context: 'A cache or sharded store must remap keys when nodes join or leave.',
+    criteria: ['Rebalancing cost', 'Load balance', 'Hot-key handling', 'Complexity'],
+    options: ['Modulo hashing', 'Consistent hashing', 'Rendezvous (HRW)'],
+    cells: [
+      ['Nearly all keys remap', 'Only affected range moves', 'Only affected range moves'],
+      ['Even when stable', 'Needs virtual nodes', 'Good with weights'],
+      ['None', 'None', 'None'],
+      ['Trivial', 'Moderate', 'Moderate']
+    ],
+    decision: 'Consistent hashing (with virtual nodes) for caches and sharded stores; rendezvous hashing when weighted, minimal-movement placement matters; never naive modulo for a resizable cluster.',
+    rationale: 'Modulo is simplest but remaps almost everything on any node change. Consistent hashing bounds the disruption to a small key range, and rendezvous hashing generalizes it with per-key node ordering at a small lookup cost.'
+  },
+  {
+    id: 'websockets',
+    title: 'Real-time channel — WebSockets vs SSE vs long polling',
+    question: 'How should the server push live updates to clients?',
+    context: 'The feature needs low-latency, possibly bidirectional, updates.',
+    criteria: ['Direction', 'Latency', 'Proxy support', 'Connection overhead'],
+    options: ['Long polling', 'Server-Sent Events', 'WebSockets'],
+    cells: [
+      ['Client pulls', 'Server pushes (one-way)', 'Full duplex'],
+      ['Higher (poll gap)', 'Low', 'Lowest'],
+      ['Broad', 'Broad (plain HTTP)', 'Needs upgrade support'],
+      ['Repeated requests', 'One long connection', 'One long connection']
+    ],
+    decision: 'WebSockets when true two-way messaging is needed; Server-Sent Events for one-way server pushes over plain HTTP; long polling only as a fallback where neither is available.',
+    rationale: 'WebSockets give the lowest latency and bidirectional traffic but need proxy support. SSE is simpler and firewall-friendly for one-way streams. Long polling is a lowest-common-denominator fallback at the cost of latency and overhead.'
+  },
+  {
+    id: 'webhooks',
+    title: 'Event delivery — webhooks vs polling',
+    question: 'How should a consumer learn about events from a provider?',
+    context: 'A provider emits events; a consumer needs timely, reliable updates.',
+    criteria: ['Timeliness', 'Reachability requirement', 'Delivery guarantees', 'Consumer load'],
+    options: ['Polling', 'Webhooks'],
+    cells: [
+      ['Bounded by poll interval', 'Immediate'],
+      ['Consumer-only', 'Provider must reach consumer'],
+      ['Consumer controls', 'At-least-once + retries'],
+      ['Steady poll traffic', 'Bursty on events']
+    ],
+    decision: 'Webhooks for timely, event-driven delivery when the consumer is reachable; polling when the consumer cannot accept inbound calls or wants pull-based control.',
+    rationale: 'Webhooks deliver events immediately but require a public endpoint and idempotent handling for retries. Polling is simpler and works behind firewalls but pays constant request overhead and poll latency.'
+  },
+  {
+    id: 'messaging',
+    title: 'Decoupling — synchronous call vs message queue',
+    question: 'Should the caller wait for the work, or hand it off to a queue?',
+    context: 'A slow or bursty operation does not need to block the caller.',
+    criteria: ['Caller latency', 'Backpressure', 'Ordering guarantees', 'Complexity'],
+    options: ['Synchronous call', 'Message queue'],
+    cells: [
+      ['Waits for completion', 'Immediate acknowledgment'],
+      ['Rejects under load', 'Buffers in queue'],
+      ['Inherent', 'Needs partitions/keys'],
+      ['Low', 'Higher']
+    ],
+    decision: 'A message queue when the caller must not wait or the producer outpaces the consumer; a synchronous call when the result is needed inline and load is bounded.',
+    rationale: 'Queues decouple producer and consumer, smooth spikes, and enable retries, but add ordering and visibility complexity. Synchronous calls are simpler but couple the caller to the callee latency and availability.'
+  },
+  {
+    id: 'api-gateway',
+    title: 'API entry — gateway vs direct client-to-service',
+    question: 'Should clients call services directly or through a single gateway?',
+    context: 'Many services expose APIs to several client types.',
+    criteria: ['Cross-cutting policy', 'Coupling', 'Failure point', 'Latency'],
+    options: ['Direct to services', 'API gateway'],
+    cells: [
+      ['Replicated per service', 'Centralized'],
+      ['Client coupled to many endpoints', 'Client sees one surface'],
+      ['None', 'Gateway is one'],
+      ['Fewer hops', 'One extra hop']
+    ],
+    decision: 'An API gateway when clients need one consistent surface and shared auth/rate-limiting; direct calls for internal, low-latency service-to-service traffic.',
+    rationale: 'A gateway centralizes auth, rate limiting, and routing at the cost of an extra hop and a shared failure point. Direct calls are lower latency but spread policy and coupling across every service.'
+  },
+  {
+    id: 'rate-limiting',
+    title: 'Rate limiting — fixed window vs sliding window vs token bucket',
+    question: 'Which algorithm should enforce per-client rate limits?',
+    context: 'An API must bound request rate while tolerating bursts.',
+    criteria: ['Burst behavior', 'Boundary fairness', 'Memory cost', 'Implementation'],
+    options: ['Fixed window', 'Sliding window', 'Token bucket'],
+    cells: [
+      ['Allows double at boundary', 'Smooths', 'Allows configured burst'],
+      ['Poor', 'Good', 'Good'],
+      ['Low', 'Higher', 'Low'],
+      ['Trivial', 'Moderate', 'Simple']
+    ],
+    decision: 'Token bucket for most APIs because it admits bursts cleanly and is cheap; sliding window where strict rate smoothness matters; avoid fixed window boundary doubling.',
+    rationale: 'Fixed window is trivial but lets a client send two windows worth of traffic at a boundary. Sliding window is fair but costlier. Token bucket gives smooth, burst-tolerant behavior at low cost.'
+  },
+  {
+    id: 'idempotency',
+    title: 'Idempotency — client key vs server dedupe',
+    question: 'Where should duplicate requests be made safe under retries?',
+    context: 'Retries and at-least-once delivery can execute an operation twice.',
+    criteria: ['Guarantee scope', 'Client burden', 'Storage cost', 'Failure handling'],
+    options: ['Client idempotency key', 'Server-side dedupe', 'Idempotent operations'],
+    cells: [
+      ['Per operation', 'Per operation', 'Only naturally idempotent ops'],
+      ['Generate + retry same key', 'None', 'Design ops to be safe'],
+      ['Key ledger', 'Key ledger', 'None'],
+      ['Explicit', 'Explicit', 'Implicit']
+    ],
+    decision: 'A client-supplied idempotency key for non-idempotent mutations such as payments and order creation; design reads and naturally idempotent operations so they are safe to retry without a ledger.',
+    rationale: 'An idempotency key lets the server deduplicate repeated attempts for the same logical operation, but it needs a key ledger and a client that reuses the key on retry. Where possible, make the operation itself idempotent.'
+  },
+  {
+    id: 'caching-strategy',
+    title: 'Cache policy — cache-aside vs write-through vs write-back',
+    question: 'How should the cache stay consistent with the source of truth?',
+    context: 'A cache speeds reads but must not serve stale or lost data.',
+    criteria: ['Write latency', 'Consistency', 'Data-loss risk', 'Complexity'],
+    options: ['Cache-aside', 'Write-through', 'Write-back'],
+    cells: [
+      ['Low (lazy update)', 'Higher (DB every write)', 'Lowest (defer DB)'],
+      ['Can be stale', 'Strong', 'Risk of loss'],
+      ['None (DB is source)', 'None', 'Lost writes on crash'],
+      ['Simple', 'Simple', 'Complex']
+    ],
+    decision: 'Cache-aside for read-heavy data where a brief stale window is fine; write-through where strong consistency matters; write-back only for bursty writes that tolerate losing recent writes.',
+    rationale: 'Cache-aside leaves the database authoritative and invalidates lazily. Write-through keeps cache and store in lockstep at higher write latency. Write-back is fastest but risks losing buffered writes on failure.'
+  },
+  {
+    id: 'denormalization',
+    title: 'Data shape — normalize vs denormalize',
+    question: 'Should data be normalized to remove redundancy or denormalized for fast reads?',
+    context: 'Read patterns and write frequency determine the right redundancy level.',
+    criteria: ['Read latency', 'Write cost', 'Storage', 'Consistency effort'],
+    options: ['Normalized', 'Denormalized'],
+    cells: [
+      ['Joins / multiple lookups', 'Single read'],
+      ['Single place', 'Many copies'],
+      ['Less', 'More'],
+      ['None', 'Keep copies in sync']
+    ],
+    decision: 'Denormalize read-heavy paths where latency matters and writes are rare; normalize write-heavy or strongly-consistent data where redundancy becomes a liability.',
+    rationale: 'Normalization removes redundancy and keeps writes cheap but forces joins. Denormalization precomputes derived data for fast reads at the cost of duplicated storage and eventual-consistency work.'
+  },
+  {
+    id: 'sharding',
+    title: 'Sharding — range vs hash vs directory',
+    question: 'Which shard key strategy best distributes data and queries?',
+    context: 'A dataset outgrows one node and must be partitioned.',
+    criteria: ['Hotspot risk', 'Range queries', 'Rebalancing', 'Complexity'],
+    options: ['Range sharding', 'Hash sharding', 'Directory sharding'],
+    cells: [
+      ['High on popular ranges', 'Low (even spread)', 'Depends on mapping'],
+      ['Efficient', 'Cross-shard', 'Depends'],
+      ['Splits ranges', 'Reshuffle', 'Update directory'],
+      ['Low', 'Low', 'Higher']
+    ],
+    decision: 'Hash sharding for even, hotspot-resistant distribution; range sharding when range scans are common; a directory service when flexible, explicit placement is needed.',
+    rationale: 'Hash sharding spreads load evenly but breaks range locality. Range sharding keeps ranges contiguous but risks hot ranges. Directory sharding adds an indirection layer for fine control at extra complexity.'
+  },
+  {
+    id: 'replication',
+    title: 'Replication — synchronous vs asynchronous',
+    question: 'Should writes wait for replicas to acknowledge before committing?',
+    context: 'Copies of data on multiple nodes serve reads and survive failure.',
+    criteria: ['Consistency', 'Write latency', 'Availability', 'Data-loss window'],
+    options: ['Synchronous', 'Asynchronous'],
+    cells: [
+      ['Strong', 'Eventually consistent'],
+      ['Higher (wait for ack)', 'Lower (fire-and-forget)'],
+      ['Reduced if replica down', 'Higher'],
+      ['None on commit', 'Possible recent writes']
+    ],
+    decision: 'Synchronous replication for data that must not be lost or read inconsistently; asynchronous where latency and availability outweigh a small loss window.',
+    rationale: 'Synchronous replication makes a commit durable on replicas but stalls if a replica is unavailable. Asynchronous is fast and available but can lose recent writes and serve stale reads.'
+  },
+  {
+    id: 'load-balancer',
+    title: 'Load balancing — round-robin vs least-connections vs consistent hashing',
+    question: 'Which algorithm distributes traffic across backend servers?',
+    context: 'Many servers serve requests with varying cost and stickiness needs.',
+    criteria: ['Cost awareness', 'Session stickiness', 'Skew', 'Complexity'],
+    options: ['Round-robin', 'Least-connections', 'Consistent hashing'],
+    cells: [
+      ['None (uniform)', 'Routes to least busy', 'None'],
+      ['No', 'No', 'Yes (stable mapping)'],
+      ['Can skew', 'Low', 'Low'],
+      ['Trivial', 'Simple', 'Moderate']
+    ],
+    decision: 'Least-connections when requests vary in cost; consistent hashing when a client or key must land on the same backend; round-robin as a simple default for uniform work.',
+    rationale: 'Round-robin ignores per-request cost and can overload slow backends. Least-connections tracks in-flight load. Consistent hashing keeps a key on the same node, useful for caches and sticky sessions.'
+  },
+  {
+    id: 'graphql-api',
+    title: 'API style — GraphQL vs REST',
+    question: 'Should clients shape their own queries or use fixed REST endpoints?',
+    context: 'Client flexibility and server cost must be balanced.',
+    criteria: ['Over/under-fetching', 'Caching', 'Server complexity', 'Tooling'],
+    options: ['REST', 'GraphQL'],
+    cells: [
+      ['Possible', 'Minimal'],
+      ['Simple (URL-keyed)', 'Harder'],
+      ['Low', 'Higher (resolvers)'],
+      ['Mature', 'Strong introspection']
+    ],
+    decision: 'REST for simple, cacheable, resource-oriented APIs; GraphQL when clients need flexible, batched field selection and can pay the resolver and caching cost.',
+    rationale: 'REST maps cleanly to HTTP caching and is easy to reason about. GraphQL eliminates over-fetching and round trips but concentrates complexity on the server and complicates caching.'
+  },
+  {
+    id: 'rest-api',
+    title: 'API contract — REST resources vs RPC actions',
+    question: 'Should the API model resources or expose procedural actions?',
+    context: 'Some operations are CRUD-like, others are imperative commands.',
+    criteria: ['Modeling fit', 'Idempotency', 'Discoverability', 'Versioning'],
+    options: ['REST (resources)', 'RPC (actions)'],
+    cells: [
+      ['CRUD, entities', 'Commands, procedures'],
+      ['Natural via methods', 'Needs design'],
+      ['URLs + methods', 'Schema only'],
+      ['Path/version', 'Per-endpoint']
+    ],
+    decision: 'REST resources for entity/CRUD surfaces; RPC-style actions for imperative operations that do not map to resources, keeping both idiomatic where they fit.',
+    rationale: 'REST uses standard methods and status codes that make CRUD predictable and idempotent. RPC models verbs directly, which suits commands but loses REST uniform semantics and caching.'
+  },
+  {
+    id: 'http-version',
+    title: 'HTTP — 1.1 vs 2 vs 3',
+    question: 'Which HTTP version should the service and clients negotiate?',
+    context: 'Connection multiplexing and transport characteristics affect latency and throughput.',
+    criteria: ['Multiplexing', 'Header overhead', 'Transport', 'Adoption'],
+    options: ['HTTP/1.1', 'HTTP/2', 'HTTP/3'],
+    cells: [
+      ['One request per connection', 'Streams over one connection', 'Streams over QUIC'],
+      ['High (no compression)', 'Compressed (HPACK)', 'Compressed (QPACK)'],
+      ['TCP', 'TCP', 'UDP (QUIC)'],
+      ['Universal', 'Broad', 'Growing']
+    ],
+    decision: 'HTTP/2 as the baseline for modern APIs; HTTP/3 where head-of-line blocking and handshake latency on lossy networks matter; HTTP/1.1 only for legacy clients.',
+    rationale: 'HTTP/1.1 suffers connection-per-request overhead. HTTP/2 multiplexes over TCP but still hits head-of-line blocking. HTTP/3 moves to QUIC over UDP, removing that blocking and speeding handshakes.'
+  },
+  {
+    id: 'reverse-proxy',
+    title: 'Exposure — reverse proxy vs direct backend',
+    question: 'Should clients reach application servers directly or through a reverse proxy?',
+    context: 'TLS, routing, and resilience are needed at the edge.',
+    criteria: ['TLS termination', 'Routing', 'Attack surface', 'Ops'],
+    options: ['Direct backend', 'Reverse proxy'],
+    cells: [
+      ['Per server', 'Centralized'],
+      ['Client knows backends', 'Proxy routes'],
+      ['Backends exposed', 'Backends hidden'],
+      ['Simple', 'One more hop/component']
+    ],
+    decision: 'A reverse proxy as the front door for TLS, routing, and shielding backends; direct exposure only in constrained internal setups.',
+    rationale: 'A reverse proxy centralizes TLS and routing and hides backend topology, at the cost of an added hop and a component to operate. Direct exposure pushes those concerns onto every server.'
+  },
+  {
+    id: 'dns',
+    title: 'DNS — self-hosted vs managed',
+    question: 'How should the system resolve names and route traffic?',
+    context: 'Names, records, and traffic steering need availability and low latency.',
+    criteria: ['Ops burden', 'Latency', 'Traffic steering', 'Resilience'],
+    options: ['Self-hosted DNS', 'Managed DNS'],
+    cells: [
+      ['High', 'None (managed)'],
+      ['Depends on placement', 'Global anycast'],
+      ['Custom', 'Built-in (geo, failover)'],
+      ['Your problem', 'Provider SLA']
+    ],
+    decision: 'Managed DNS for most products to get global anycast and traffic steering without operating name servers; self-hosted only for unusual control or compliance needs.',
+    rationale: 'DNS is critical infrastructure where managed providers give anycast latency, geo routing, and failover out of the box. Self-hosting buys control at a steep operational cost.'
+  },
+  {
+    id: 'ip-addressing',
+    title: 'Addressing — IPv4 vs IPv6',
+    question: 'Which IP version should the service support?',
+    context: 'Address space and modern-network compatibility affect reachability.',
+    criteria: ['Address space', 'NAT requirement', 'Client compatibility', 'Transition cost'],
+    options: ['IPv4-only', 'Dual-stack', 'IPv6-only'],
+    cells: [
+      ['Exhausted', 'Both', 'Abundant'],
+      ['Yes', 'For IPv4', 'None'],
+      ['Universal', 'Universal', 'Modern only'],
+      ['None', 'Moderate', 'Higher']
+    ],
+    decision: 'Dual-stack (IPv4 + IPv6) to reach all clients while the world transitions; IPv6-only only for greenfield networks where legacy IPv4 clients are irrelevant.',
+    rationale: 'IPv4 is exhausted and forces NAT, but most clients still use it. Dual-stack reaches everyone. IPv6-only is cleanest long-term but breaks legacy-only clients.'
+  },
+  {
+    id: 'cdn',
+    title: 'Delivery — CDN vs origin-only',
+    question: 'Should static content be served from a CDN or directly from the origin?',
+    context: 'Global users and traffic spikes shape the delivery decision.',
+    criteria: ['Latency', 'Origin load', 'Cost', 'Cache control'],
+    options: ['Origin-only', 'CDN'],
+    cells: [
+      ['Depends on origin location', 'Low (edge)'],
+      ['Full', 'Offloaded'],
+      ['No CDN fee', 'CDN + egress'],
+      ['Direct', 'Via headers']
+    ],
+    decision: 'A CDN for static, cacheable, globally-read content to cut latency and origin load; origin-only serving only when content is dynamic, private, or single-region.',
+    rationale: 'A CDN collapses round-trip time for global users and absorbs spikes at the edge. It adds cost and requires correct cache headers, which uncacheable content cannot benefit from.'
+  },
+  {
+    id: 'blob-storage',
+    title: 'Storage — object vs block vs file',
+    question: 'Which storage model fits the data being stored?',
+    context: 'Large binaries, random-access volumes, and shared trees have different needs.',
+    criteria: ['Access model', 'Scalability', 'Metadata/search', 'Latency'],
+    options: ['Object storage', 'Block storage', 'File storage'],
+    cells: [
+      ['Get/put by key (HTTP)', 'Raw blocks (attached disk)', 'Shared filesystem'],
+      ['Very high', 'Bounded per volume', 'Moderate'],
+      ['Rich object metadata', 'None', 'File names/paths'],
+      ['Higher', 'Lowest', 'Low']
+    ],
+    decision: 'Object storage for large, immutable, keyed blobs such as images, video, and backups; block storage for databases and low-latency random access; file storage for shared, human-navigable trees.',
+    rationale: 'Object stores trade low-latency random access for massive scale and rich metadata. Block storage gives the lowest latency to a single host. File systems fit shared, path-based access.'
   }
 ];

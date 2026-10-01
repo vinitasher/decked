@@ -7,7 +7,9 @@
 const CONCEPT_CATEGORIES = {
   /* API Basics */
   "api-design": "API Basics",
+  "api-gateway": "API Basics",
   "client-compatibility": "API Basics",
+  "graphql": "API Basics",
   "graphql-schemas": "API Basics",
   "grpc-streaming": "API Basics",
   "http-method-semantics": "API Basics",
@@ -17,14 +19,22 @@ const CONCEPT_CATEGORIES = {
   "query-cost-control": "API Basics",
   "rate-limiting": "API Basics",
   "resource-modeling": "API Basics",
+  "rest-api": "API Basics",
   "rest-resources": "API Basics",
   "webhook-callbacks": "API Basics",
+  "webhooks": "API Basics",
 
   /* Networking */
   "async-io": "Networking",
   "blocking-io": "Networking",
+  "cdn": "Networking",
+  "client-server": "Networking",
   "connection-lifecycle": "Networking",
   "dns": "Networking",
+  "http-https": "Networking",
+  "ip-address": "Networking",
+  "reverse-proxy": "Networking",
+  "websockets": "Networking",
 
   /* Databases */
   "asynchronous-replication": "Databases",
@@ -36,15 +46,19 @@ const CONCEPT_CATEGORIES = {
   "database-polling": "Databases",
   "databases": "Databases",
   "deadlocks": "Databases",
+  "denormalization": "Databases",
   "distributed-databases": "Databases",
   "optimistic-concurrency": "Databases",
   "read-after-write-consistency": "Databases",
   "read-models": "Databases",
   "read-modify-write-races": "Databases",
   "read-replication": "Databases",
+  "replication": "Databases",
   "replication-cost": "Databases",
   "replication-lag": "Databases",
   "row-locking": "Databases",
+  "sharding": "Databases",
+  "sql-vs-nosql": "Databases",
   "transaction-isolation": "Databases",
   "write-ordering": "Databases",
 
@@ -78,6 +92,7 @@ const CONCEPT_CATEGORIES = {
 
   /* Distributed Systems */
   "consensus": "Distributed Systems",
+  "consistent-hashing": "Distributed Systems",
   "eventual-consistency": "Distributed Systems",
   "gossip-protocols": "Distributed Systems",
   "leader-election": "Distributed Systems",
@@ -98,6 +113,7 @@ const CONCEPT_CATEGORIES = {
   "workload-skew": "Reliability & Scaling",
 
   /* Storage */
+  "blob-storage": "Storage",
   "shared-filesystems": "Storage",
   "storage": "Storage",
 

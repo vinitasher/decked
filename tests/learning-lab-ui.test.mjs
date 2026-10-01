@@ -319,8 +319,8 @@ test('Concept Lab groups concepts under authored category headings', () => {
 
   assert.match(cloud, /class="concept-group"/);
   assert.match(cloud, /class="concept-group-items"/);
-  assert.match(cloud, />API Basics <span class="concept-group-count">13<\/span>/);
-  assert.match(cloud, />Databases <span class="concept-group-count">20<\/span>/);
+  assert.match(cloud, />API Basics <span class="concept-group-count">17<\/span>/);
+  assert.match(cloud, />Databases <span class="concept-group-count">24<\/span>/);
   assert.match(cloud, /Messaging &amp; Queues/);
 
   const buttons = cloud.match(/<button class="concept-cloud-item/g) || [];
@@ -335,7 +335,7 @@ test('Concept Lab sidebar groups concepts by category and marks the active topic
 
   assert.match(sidebar, /class="wiki-group"/);
   assert.match(sidebar, /class="wiki-group-heading"/);
-  assert.match(sidebar, />API Basics <span class="wiki-group-count">13<\/span>/);
+  assert.match(sidebar, />API Basics <span class="wiki-group-count">17<\/span>/);
   assert.match(sidebar, /class="wiki-topic active" data-topic="rate-limiting"/);
 
   const buttons = sidebar.match(/<button class="wiki-topic/g) || [];
@@ -369,7 +369,7 @@ test('sandbox selector exposes the full reviewed node catalog', () => {
   const app = freshApp();
   app.showSandbox('redis-cache');
   const options = context.document.getElementById('sandbox-node').innerHTML.match(/<option/g) || [];
-  assert.equal(options.length, 13);
+  assert.equal(options.length, 21);
   assert.match(context.document.getElementById('sandbox-node').innerHTML, /Social feed/);
   assert.match(context.document.getElementById('sandbox-node').innerHTML, /Distributed key-value store/);
 });

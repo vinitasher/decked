@@ -1383,7 +1383,7 @@
           "trace-id-indexing",
           "metric-cardinality",
           "tail-based-sampling",
-          "consistent-hashing",
+          "data-partitioning",
           "probabilistic-sampling",
           "latency-filtering",
           "query-latency",
@@ -1512,7 +1512,7 @@
             "label": "Tail-based sampling at OpenTelemetry Collector with consistent hash by trace ID, error-aware dynamic rate, 7-day hot storage plus derived metrics.",
             "prerequisiteTopics": [
               "tail-based-sampling",
-              "consistent-hashing",
+              "data-partitioning",
               "trace-id-indexing",
               "metric-cardinality"
             ],

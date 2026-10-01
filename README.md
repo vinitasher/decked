@@ -49,8 +49,12 @@ decision-based practice with adaptive difficulty.
   Lab aliases.
 
 **User profile:**
-- Tracked per topic: load balancers, caching, databases, queues, consensus,
-  API design, storage, observability, security
+- Tracked per topic across a 29-topic catalog: API design, DNS, caching,
+  queues, databases, security, load balancing, storage, messaging, rate
+  limiting, observability, real-time, consensus, client-server, IP address,
+  HTTP & HTTPS, reverse proxy, CDN, REST API, GraphQL, WebSockets, webhooks,
+  API gateway, SQL vs NoSQL, sharding, replication, denormalization,
+  consistent hashing, and blob storage
 - Strength per topic: accuracy × recency-weighted
 - Systematic coverage: the app knows which topics you haven't seen enough of
   and surfaces cards from those areas
@@ -58,7 +62,7 @@ decision-based practice with adaptive difficulty.
 **Adaptive deck:**
 - Cards due for review on a spaced repetition schedule (1d, 3d, 7d, 14d)
 - When picking a new card: weight by (1 - topic strength) × (coverage gap)
-- Standard session: exactly 8 distinct cards drawn from the full 13-topic
+- Standard session: exactly 8 distinct cards drawn from the full 29-topic
   catalog; Quick Review requests 15
 - Progressive difficulty ramp: never-studied topics start at difficulty 1, and
   within each session fresh cards play easy → hard (due reviews keep their
@@ -144,11 +148,13 @@ decision-based practice with adaptive difficulty.
   learners predict, run, and explain a node while its Wiki context stays
   visible alongside it.
 - The reviewed node-model catalog includes the original Redis-like cache,
-  queue + worker, and relational database, plus ten common-interview patterns:
+  queue + worker, and relational database, plus eighteen interview patterns:
   social feed, realtime messaging, video pipeline, geospatial dispatch, URL
   shortener, rate limiter, object storage/sync, notification fanout, search
-  autocomplete, and distributed key-value storage. Each model declares its
-  own controls, situations, outputs, and teaching assumptions in `js/sandbox.js`.
+  autocomplete, distributed key-value storage, consistent hashing, load
+  balancer, API gateway, reverse proxy, CDN, WebSockets, database sharding,
+  and replication. Each model declares its own controls, situations, outputs,
+  and teaching assumptions in `js/sandbox.js`.
 - The ten additions were prioritized by recurrence across [Hello Interview's
   guided-practice catalog](https://www.hellointerview.com/practice/system-design),
   [SWE Helper's common-question list](https://swehelper.com/blog/common-questions/),
@@ -196,7 +202,7 @@ aggregates them. Each concept name is a clickable wiki link that opens a wiki
 side panel/modal with a concise system-design explainer (title, summary, key
 points, common pitfalls, and related topics) for that concept.
 
-- A committed snapshot of **80 wiki entries** ships in `js/wiki.js` and loads
+- A committed snapshot of **96 wiki entries** ships in `js/wiki.js` and loads
   with the app like the card data, so the most common concepts work instantly
   and offline.
 - Concepts missing from the snapshot are **lazily generated on demand** by
@@ -271,7 +277,7 @@ records.
 
 **Decision:** NoSQL key-value (Cloudflare KV) for generated cards (`CARD_CACHE`),
 learner profiles (`profile:v1:`), wiki entries (`WIKI_CACHE`), and sandbox
-recipes (`sandbox:v1:`); the seed card catalog and the 80-entry wiki snapshot
+recipes (`sandbox:v1:`); the seed card catalog and the 96-entry wiki snapshot
 ship as static JSON inside the PWA bundle.
 
 **Rationale.** The access pattern is keyed reads of self-contained JSON blobs
@@ -383,7 +389,7 @@ demand, or both?
 | Latency for new content | Instant | Depends on generation | Instant (cached) |
 | Content breadth | Weak | Strong | Strong |
 
-**Decision:** Hybrid — a committed snapshot (seed cards and 80 wiki entries)
+**Decision:** Hybrid — a committed snapshot (seed cards and 96 wiki entries)
 ships in the bundle, while unseen concepts and fresh cards are lazily generated
 at runtime and cached in KV (30-day TTL for wiki, permanent pools for cards).
 
