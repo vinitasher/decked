@@ -235,6 +235,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'client-server-topology',
+    relatedConcepts: ["client-server","single-point-of-failure","serverless-cold-starts","loadbalancing","failure-domains"],
+    practiceTopics: ["client-server","loadbalancing"],
     title: 'Topology — client-server vs peer-to-peer vs serverless',
     question: 'How should the system nodes be arranged, and who holds authoritative state?',
     context: 'The workload determines whether a central server, direct peer links, or managed functions fit best.',
@@ -251,6 +253,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'consistent-hashing',
+    relatedConcepts: ["consistent-hashing","data-partitioning","sharding","loadbalancing","replication"],
+    practiceTopics: ["consistent-hashing","sharding","loadbalancing"],
     title: 'Hashing — consistent hashing vs modulo vs rendezvous',
     question: 'How should keys be assigned to a changing set of nodes so rebalancing stays cheap?',
     context: 'A cache or sharded store must remap keys when nodes join or leave.',
@@ -267,6 +271,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'websockets',
+    relatedConcepts: ["websockets","real-time","connection-lifecycle","backpressure","connection-pooling"],
+    practiceTopics: ["websockets","real-time"],
     title: 'Real-time channel — WebSockets vs SSE vs long polling',
     question: 'How should the server push live updates to clients?',
     context: 'The feature needs low-latency, possibly bidirectional, updates.',
@@ -283,6 +289,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'webhooks',
+    relatedConcepts: ["webhook-callbacks","webhooks","idempotency","failure-detection","durable-queues"],
+    practiceTopics: ["webhooks","messaging"],
     title: 'Event delivery — webhooks vs polling',
     question: 'How should a consumer learn about events from a provider?',
     context: 'A provider emits events; a consumer needs timely, reliable updates.',
@@ -299,6 +307,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'messaging',
+    relatedConcepts: ["messaging","queues","asynchronous-processing","backpressure","message-ordering"],
+    practiceTopics: ["messaging","queues"],
     title: 'Decoupling — synchronous call vs message queue',
     question: 'Should the caller wait for the work, or hand it off to a queue?',
     context: 'A slow or bursty operation does not need to block the caller.',
@@ -315,6 +325,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'api-gateway',
+    relatedConcepts: ["api-gateway","reverse-proxy","rate-limiting","observability","security"],
+    practiceTopics: ["api-gateway","rate-limiting","security"],
     title: 'API entry — gateway vs direct client-to-service',
     question: 'Should clients call services directly or through a single gateway?',
     context: 'Many services expose APIs to several client types.',
@@ -331,6 +343,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'rate-limiting',
+    relatedConcepts: ["rate-limiting","query-cost-control","backpressure","caching","security"],
+    practiceTopics: ["rate-limiting","api-design","security"],
     title: 'Rate limiting — fixed window vs sliding window vs token bucket',
     question: 'Which algorithm should enforce per-client rate limits?',
     context: 'An API must bound request rate while tolerating bursts.',
@@ -347,6 +361,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'idempotency',
+    relatedConcepts: ["idempotency","http-method-semantics","conditional-writes","optimistic-concurrency","read-modify-write-races"],
+    practiceTopics: ["rest-api","api-design"],
     title: 'Idempotency — client key vs server dedupe',
     question: 'Where should duplicate requests be made safe under retries?',
     context: 'Retries and at-least-once delivery can execute an operation twice.',
@@ -363,6 +379,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'caching-strategy',
+    relatedConcepts: ["caching","cache-aside","cache-invalidation","write-through-caching","cache-eviction"],
+    practiceTopics: ["caching"],
     title: 'Cache policy — cache-aside vs write-through vs write-back',
     question: 'How should the cache stay consistent with the source of truth?',
     context: 'A cache speeds reads but must not serve stale or lost data.',
@@ -379,6 +397,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'denormalization',
+    relatedConcepts: ["denormalization","read-models","eventual-consistency","databases","query-cost-control"],
+    practiceTopics: ["denormalization","databases"],
     title: 'Data shape — normalize vs denormalize',
     question: 'Should data be normalized to remove redundancy or denormalized for fast reads?',
     context: 'Read patterns and write frequency determine the right redundancy level.',
@@ -395,6 +415,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'sharding',
+    relatedConcepts: ["sharding","data-partitioning","distributed-databases","workload-skew","consistent-hashing"],
+    practiceTopics: ["sharding","databases"],
     title: 'Sharding — range vs hash vs directory',
     question: 'Which shard key strategy best distributes data and queries?',
     context: 'A dataset outgrows one node and must be partitioned.',
@@ -411,6 +433,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'replication',
+    relatedConcepts: ["replication","read-replication","replication-lag","asynchronous-replication","eventual-consistency"],
+    practiceTopics: ["replication","databases"],
     title: 'Replication — synchronous vs asynchronous',
     question: 'Should writes wait for replicas to acknowledge before committing?',
     context: 'Copies of data on multiple nodes serve reads and survive failure.',
@@ -427,6 +451,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'load-balancer',
+    relatedConcepts: ["loadbalancing","reverse-proxy","failure-domains","single-point-of-failure","leader-failover"],
+    practiceTopics: ["loadbalancing","reverse-proxy"],
     title: 'Load balancing — round-robin vs least-connections vs consistent hashing',
     question: 'Which algorithm distributes traffic across backend servers?',
     context: 'Many servers serve requests with varying cost and stickiness needs.',
@@ -443,6 +469,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'graphql-api',
+    relatedConcepts: ["graphql","graphql-schemas","query-cost-control","mutation-semantics","resource-modeling"],
+    practiceTopics: ["graphql","api-design"],
     title: 'API style — GraphQL vs REST',
     question: 'Should clients shape their own queries or use fixed REST endpoints?',
     context: 'Client flexibility and server cost must be balanced.',
@@ -459,6 +487,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'rest-api',
+    relatedConcepts: ["rest-api","rest-resources","http-method-semantics","idempotency","resource-modeling"],
+    practiceTopics: ["rest-api","api-design"],
     title: 'API contract — REST resources vs RPC actions',
     question: 'Should the API model resources or expose procedural actions?',
     context: 'Some operations are CRUD-like, others are imperative commands.',
@@ -475,6 +505,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'http-version',
+    relatedConcepts: ["http-https","http-method-semantics","http-cacheability","connection-lifecycle","latency-budgets"],
+    practiceTopics: ["http-https","rest-api"],
     title: 'HTTP — 1.1 vs 2 vs 3',
     question: 'Which HTTP version should the service and clients negotiate?',
     context: 'Connection multiplexing and transport characteristics affect latency and throughput.',
@@ -491,6 +523,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'reverse-proxy',
+    relatedConcepts: ["reverse-proxy","loadbalancing","cdn-caching","http-cacheability","security"],
+    practiceTopics: ["reverse-proxy","loadbalancing"],
     title: 'Exposure — reverse proxy vs direct backend',
     question: 'Should clients reach application servers directly or through a reverse proxy?',
     context: 'TLS, routing, and resilience are needed at the edge.',
@@ -507,6 +541,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'dns',
+    relatedConcepts: ["dns","failure-domains","latency-budgets","cdn","ip-address"],
+    practiceTopics: ["dns","cdn"],
     title: 'DNS — self-hosted vs managed',
     question: 'How should the system resolve names and route traffic?',
     context: 'Names, records, and traffic steering need availability and low latency.',
@@ -523,6 +559,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'ip-addressing',
+    relatedConcepts: ["ip-address","dns","failure-domains","security","client-compatibility"],
+    practiceTopics: ["ip-address","dns"],
     title: 'Addressing — IPv4 vs IPv6',
     question: 'Which IP version should the service support?',
     context: 'Address space and modern-network compatibility affect reachability.',
@@ -539,6 +577,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'cdn',
+    relatedConcepts: ["cdn","cdn-caching","cache-invalidation","content-freshness","static-site-generation"],
+    practiceTopics: ["cdn","caching"],
     title: 'Delivery — CDN vs origin-only',
     question: 'Should static content be served from a CDN or directly from the origin?',
     context: 'Global users and traffic spikes shape the delivery decision.',
@@ -555,6 +595,8 @@ const DESIGN_DECISIONS = [
   },
   {
     id: 'blob-storage',
+    relatedConcepts: ["blob-storage","shared-filesystems","storage","databases","content-freshness"],
+    practiceTopics: ["blob-storage","storage"],
     title: 'Storage — object vs block vs file',
     question: 'Which storage model fits the data being stored?',
     context: 'Large binaries, random-access volumes, and shared trees have different needs.',
