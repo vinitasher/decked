@@ -12,6 +12,8 @@ export const DEFAULT_FREE_DAILY_WIKI_LIMIT = 10;
 export const DEFAULT_FREE_DAILY_SANDBOX_LIMIT = 3;
 
 const enc = new TextEncoder();
+const jwksCache = new Map();
+const JWKS_CACHE_MS = 5 * 60 * 1000;
 
 export function base64urlDecode(value) {
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -25,33 +27,64 @@ export function base64urlEncode(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/* Verify a Supabase-signed HS256 JWT (the app's auth tokens are signed with
-   the project's JWT secret). Returns the claims or null. */
-export async function verifySupabaseJwt(token, secret) {
-  if (!token || typeof token !== 'string' || !secret) return null;
+/* Verify legacy HS256 tokens or ES256 tokens signed by this project's public
+   JWKS. A signing-key rotation can temporarily issue both kinds. */
+export async function verifySupabaseJwt(token, secret, supabaseUrl = '') {
+  if (!token || typeof token !== 'string') return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [headerB64, payloadB64, signatureB64] = parts;
-
-  let key;
   try {
-    key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const header = JSON.parse(new TextDecoder().decode(base64urlDecode(headerB64)));
+    const signedPayload = enc.encode(`${headerB64}.${payloadB64}`);
+    const signature = base64urlDecode(signatureB64);
+    let valid = false;
+    if (header.alg === 'HS256' && secret) {
+      const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+      valid = await crypto.subtle.verify('HMAC', key, signature, signedPayload);
+    } else if (header.alg === 'ES256' && header.kid && supabaseUrl) {
+      const key = await getSupabaseJwk(supabaseUrl, header.kid);
+      if (!key) return null;
+      const publicKey = await crypto.subtle.importKey('jwk', key, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+      valid = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, publicKey, signature, signedPayload);
+    }
+    if (!valid) return null;
+
+    const claims = JSON.parse(new TextDecoder().decode(base64urlDecode(payloadB64)));
+    const now = Date.now() / 1000;
+    if (typeof claims.exp !== 'number' || claims.exp <= now || !claims.sub) return null;
+    if (typeof claims.nbf === 'number' && claims.nbf > now) return null;
+    if (header.alg === 'ES256' && claims.iss !== `${supabaseUrl.replace(/\/$/, '')}/auth/v1`) return null;
+    return claims;
   } catch {
     return null;
   }
-  const signature = base64urlDecode(signatureB64);
-  const valid = await crypto.subtle.verify('HMAC', key, signature, enc.encode(`${headerB64}.${payloadB64}`));
-  if (!valid) return null;
+}
 
-  let claims;
-  try {
-    claims = JSON.parse(new TextDecoder().decode(base64urlDecode(payloadB64)));
-  } catch {
-    return null;
+async function getSupabaseJwk(supabaseUrl, kid) {
+  const origin = new URL(supabaseUrl);
+  if (origin.protocol !== 'https:' || origin.username || origin.password) return null;
+  const url = `${origin.origin}/auth/v1/.well-known/jwks.json`;
+  const cached = jwksCache.get(url);
+  let keys;
+  if (cached && cached.expiresAt > Date.now()) {
+    keys = await cached.promise;
+  } else {
+    const promise = fetch(url).then(async response => {
+      if (!response.ok) throw new Error('Supabase JWKS unavailable');
+      const body = await response.json();
+      if (!Array.isArray(body.keys)) throw new Error('Invalid Supabase JWKS');
+      return body.keys;
+    });
+    jwksCache.set(url, { promise, expiresAt: Date.now() + JWKS_CACHE_MS });
+    try {
+      keys = await promise;
+    } catch (error) {
+      jwksCache.delete(url);
+      throw error;
+    }
   }
-  if (typeof claims.exp !== 'number' || claims.exp < Date.now() / 1000) return null;
-  if (!claims.sub) return null;
-  return claims;
+  return keys.find(key => key.kid === kid && key.kty === 'EC' && key.crv === 'P-256' && key.alg === 'ES256') || null;
 }
 
 function requestDeviceId(request) {
@@ -67,7 +100,7 @@ export async function resolveStableIdentity(env, request) {
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
   let claims = null;
   try {
-    claims = token ? await verifySupabaseJwt(token, env.SUPABASE_JWT_SECRET) : null;
+    claims = token ? await verifySupabaseJwt(token, env.SUPABASE_JWT_SECRET, env.SUPABASE_URL) : null;
   } catch (_) {
     claims = null;
   }

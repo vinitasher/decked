@@ -35,6 +35,20 @@ async function signJwt(claims, secret, expOffsetSeconds = 3600) {
   return `${header}.${payload}.${base64urlEncode(new Uint8Array(signature))}`;
 }
 
+async function es256Fixture(claimOverrides = {}) {
+  const keyPair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const jwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+  Object.assign(jwk, { kid: 'test-key', alg: 'ES256', use: 'sig' });
+  const header = base64urlEncode(enc.encode(JSON.stringify({ alg: 'ES256', kid: 'test-key', typ: 'JWT' })));
+  const claims = {
+    sub: 'es-user', iss: 'https://auth.example/auth/v1',
+    exp: Math.floor(Date.now() / 1000) + 3600, ...claimOverrides
+  };
+  const payload = base64urlEncode(enc.encode(JSON.stringify(claims)));
+  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keyPair.privateKey, enc.encode(`${header}.${payload}`));
+  return { token: `${header}.${payload}.${base64urlEncode(new Uint8Array(signature))}`, jwk };
+}
+
 function kvStore() {
   const store = new Map();
   return {
@@ -64,6 +78,42 @@ test('verifySupabaseJwt rejects wrong secrets, garbage, and expired tokens', asy
   assert.equal(await verifySupabaseJwt(token, ''), null);
   const expired = await signJwt({ sub: 'user-123' }, 'jwt-secret', -3600);
   assert.equal(await verifySupabaseJwt(expired, 'jwt-secret'), null);
+});
+
+test('verifySupabaseJwt accepts the project ES256 key and rejects forged or foreign tokens', async () => {
+  const { token, jwk } = await es256Fixture();
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async url => {
+    assert.equal(url, 'https://auth.example/auth/v1/.well-known/jwks.json');
+    fetchCount++;
+    return Response.json({ keys: [jwk] });
+  };
+  try {
+    assert.equal((await verifySupabaseJwt(token, '', 'https://auth.example')).sub, 'es-user');
+    assert.equal((await verifySupabaseJwt(token, '', 'https://auth.example')).sub, 'es-user');
+    assert.equal(fetchCount, 1, 'JWKS is cached across requests');
+    const [header, payload, signature] = token.split('.');
+    const forgedPayload = base64urlEncode(enc.encode(JSON.stringify({ sub: 'attacker', iss: 'https://auth.example/auth/v1', exp: Date.now() / 1000 + 3600 })));
+    assert.equal(await verifySupabaseJwt(`${header}.${forgedPayload}.${signature}`, '', 'https://auth.example'), null);
+    assert.equal(await verifySupabaseJwt(token, '', 'https://other.example'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('verifySupabaseJwt rejects expired ES256 tokens and missing signing keys', async () => {
+  const { token, jwk } = await es256Fixture({ exp: Math.floor(Date.now() / 1000) - 1 });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ keys: [jwk] });
+  try {
+    assert.equal(await verifySupabaseJwt(token, '', 'https://expired.example'), null);
+    const valid = await es256Fixture({ iss: 'https://missing.example/auth/v1' });
+    assert.equal(await verifySupabaseJwt(valid.token, '', 'https://missing.example'), null);
+    assert.equal(await verifySupabaseJwt(valid.token, '', 'http://missing.example'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('identityKey prefers the signed-in user, then device id, then IP', () => {

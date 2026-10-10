@@ -209,6 +209,40 @@ test('checkout creates a Stripe session with the user as client_reference_id', a
   }
 });
 
+test('checkout accepts a Supabase ES256 session token', async () => {
+  const keyPair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const jwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+  Object.assign(jwk, { kid: 'billing-key', alg: 'ES256', use: 'sig' });
+  const base64url = bytes => Buffer.from(bytes).toString('base64url');
+  const header = base64url(enc.encode(JSON.stringify({ alg: 'ES256', kid: 'billing-key' })));
+  const payload = base64url(enc.encode(JSON.stringify({
+    sub: 'es-buyer', iss: 'https://billing-auth.example/auth/v1',
+    exp: Math.floor(Date.now() / 1000) + 3600
+  })));
+  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keyPair.privateKey, enc.encode(`${header}.${payload}`));
+  const token = `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
+  const originalFetch = globalThis.fetch;
+  let stripeBody;
+  globalThis.fetch = async (url, options) => {
+    if (url === 'https://billing-auth.example/auth/v1/.well-known/jwks.json') return Response.json({ keys: [jwk] });
+    assert.equal(url, 'https://api.stripe.com/v1/checkout/sessions');
+    stripeBody = new URLSearchParams(options.body);
+    return Response.json({ id: 'cs_es', url: 'https://checkout.stripe.com/c/pay/cs_es' });
+  };
+  try {
+    const response = await checkoutOnRequest({
+      request: new Request('https://decked.pages.dev/api/billing/checkout', {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }
+      }),
+      env: { SUPABASE_URL: 'https://billing-auth.example', STRIPE_SECRET_KEY: 'sk_test', STRIPE_PRICE_ID: 'price_1' }
+    });
+    assert.equal(response.status, 200);
+    assert.equal(stripeBody.get('client_reference_id'), 'es-buyer');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('checkout reports 503 when the price is not configured', async () => {
   const token = await signJwt({});
   const response = await checkoutOnRequest({

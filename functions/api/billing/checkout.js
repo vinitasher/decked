@@ -29,7 +29,7 @@ export async function onRequestPost(context) {
 
   const authorization = request.headers.get('Authorization') || '';
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
-  const claims = token ? await verifySupabaseJwt(token, env.SUPABASE_JWT_SECRET) : null;
+  const claims = token ? await verifySupabaseJwt(token, env.SUPABASE_JWT_SECRET, env.SUPABASE_URL) : null;
   if (!claims) {
     return jsonResponse({ error: 'Sign in to upgrade to Pro.' }, 401, log, 'request rejected', { reason: 'Missing or invalid Supabase JWT.' });
   }

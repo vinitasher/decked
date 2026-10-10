@@ -15,7 +15,12 @@ grants Pro by writing the user's entitlement into KV. No database is required
 3. Copy from **Project Settings → API**:
    - Project URL → `SUPABASE_URL`
    - `anon` public key → `SUPABASE_ANON_KEY` (public, safe for the client)
-   - `JWT Secret` → `SUPABASE_JWT_SECRET` (server-side only, secret)
+   - `JWT Secret` → `SUPABASE_JWT_SECRET` (server-side only, for legacy HS256 tokens)
+
+   The server also verifies ES256 access tokens against the project's public
+   JWKS at `SUPABASE_URL/auth/v1/.well-known/jwks.json`. Keep `SUPABASE_URL`
+   pointed at the same project used for sign-in. The JWT secret cannot verify
+   ES256 tokens; the public signing key is fetched and cached for five minutes.
 
 4. In **Authentication → URL Configuration**, add these entries to
    **Redirect URLs**:
@@ -47,7 +52,7 @@ stable identity; entitlements live in Cloudflare KV.
 |---|---|---|
 | `SUPABASE_URL` | project URL | no |
 | `SUPABASE_ANON_KEY` | anon key | no |
-| `SUPABASE_JWT_SECRET` | JWT secret | **yes** |
+| `SUPABASE_JWT_SECRET` | legacy HS256 JWT secret, if those tokens are still issued | **yes, when used** |
 | `STRIPE_SECRET_KEY` | `sk_...` (test `sk_test_...` first) | **yes** |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...` | **yes** |
 | `STRIPE_PRICE_ID` | `price_...` | no |
