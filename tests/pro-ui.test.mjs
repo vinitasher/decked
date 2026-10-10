@@ -92,6 +92,16 @@ test('app.js wires sign-in, sign-out, and the checkout flow', () => {
   assert.match(app, /upgrade'\) === 'success'/);
 });
 
+test('the plan badge refreshes from the quota fetch and after checkout returns', () => {
+  assert.match(app, /currentPlan = data\.plan \|\| 'free';\s*renderAccountBar\(\);/);
+  assert.match(app, /refreshPlanAfterUpgrade\(banner\)/);
+  assert.match(app, /for \(let attempt = 0; attempt < 6; attempt \+= 1\)/);
+  assert.match(app, /await renderQuotaBar\(\);/);
+  assert.match(app, /if \(currentPlan === 'pro'\) \{/);
+  assert.match(app, /Upgrade complete — activating your Pro plan/);
+  assert.match(app, /Payment received — your Pro plan is still activating/);
+});
+
 test('styles exist for the account bar, plan badge, quota bar, and upgrade banner', () => {
   assert.match(css, /\.account-bar \{ display: flex;/);
   assert.match(css, /\.account-chip \{ display: inline-flex;/);

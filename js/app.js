@@ -323,6 +323,7 @@ async function renderQuotaBar() {
     if (!response.ok) return;
     const data = await response.json();
     currentPlan = data.plan || 'free';
+    renderAccountBar();
     bar.classList.remove('hidden');
     const sandboxQuota = data.sandbox || {
       used: 0,
@@ -342,14 +343,29 @@ function handleUpgradeReturn() {
   if (!banner) return;
   if (params.get('upgrade') === 'success') {
     banner.classList.remove('hidden');
-    banner.innerHTML = '✅ Upgrade complete — you are on Pro. Thanks for supporting the app!';
+    banner.innerHTML = '✅ Upgrade complete — activating your Pro plan…';
     window.history.replaceState({}, '', window.location.pathname);
-    renderQuotaBar();
+    refreshPlanAfterUpgrade(banner);
   } else if (params.get('upgrade') === 'cancelled') {
     banner.classList.remove('hidden');
     banner.innerHTML = 'Upgrade cancelled — the free tier is always available.';
     window.history.replaceState({}, '', window.location.pathname);
   }
+}
+
+/* Stripe's webhook can land a few seconds after the checkout redirect, so poll
+   a few times until the plan flips to Pro instead of leaving the stale Free
+   badge and upgrade button on screen. */
+async function refreshPlanAfterUpgrade(banner) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 2000));
+    await renderQuotaBar();
+    if (currentPlan === 'pro') {
+      banner.innerHTML = '✅ Upgrade complete — you are on Pro. Thanks for supporting the app!';
+      return;
+    }
+  }
+  banner.innerHTML = '⏳ Payment received — your Pro plan is still activating and will appear here shortly.';
 }
 
 const APP = {
