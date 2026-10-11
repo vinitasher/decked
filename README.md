@@ -1,6 +1,52 @@
-# System Design Flashcards
+# Decked
 
-**Website:** https://decked.pages.dev
+**Practice system design trade-offs in five minutes a day.**
+
+[Try 8 questions — no account required](https://decked.pages.dev) · [Ten sample challenges](docs/marketing/challenges.md)
+
+Preparing for a system design interview? Decked gives you short architecture scenarios, visual explanations of the alternatives, and adaptive review of your weakest topics. Use it alongside longer design exercises and mock interviews.
+
+### A 30-second walkthrough
+
+1. Start an eight-question session.
+2. Read a scenario and choose the approach that fits its constraints.
+3. Compare the architecture diagrams and read why the alternatives fail.
+4. Finish the session, review mistakes, and return for spaced review.
+
+### Try this decision
+
+An uploaded file takes 20 seconds to process. Your API must acknowledge acceptance within 300 ms, and accepted work must survive restarts.
+
+- **A:** Process it inside the API request.
+- **B:** Store it durably, enqueue a job, and process it with a worker.
+- **C:** Return success and start an in-memory background task.
+
+**B fits:** durable acceptance decouples response time from processing. A misses the latency budget; C can lose work on restart. Retried jobs need idempotent processing.
+
+```mermaid
+flowchart LR
+  Client --> API
+  API --> Store[Durable file storage]
+  API --> Queue[Durable job queue]
+  Queue --> Worker
+  Store --> Worker
+  Worker --> Result[Result and status]
+```
+
+### What you get
+
+- Short decision drills with explanations and architecture diagrams.
+- Adaptive topic selection and spaced review.
+- A Concept Lab for exploring explanations and bounded experiments.
+- Browser-based practice with offline fallback; no account required to start.
+
+Cards are AI-assisted and can contain mistakes. Report confusing explanations through the app’s feedback control. Drills train individual decisions; they do not establish readiness for a complete interview.
+
+[Launch and recruitment kit](docs/marketing/launch-kit.md)
+
+---
+
+## Product and technical reference
 
 A flash card app that trains system design intuition. Each card presents a
 **mini system design problem between two nodes** (e.g. "Client wants to send

@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>System Design Flashcards</title>
+<title>Decked — Daily System Design Practice</title>
 <meta name="description" content="Practice system design by making architecture decisions: pick between trade-offs, read the reasoning, and let adaptive spaced repetition strengthen your weakest topics.">
-<meta property="og:title" content="System Design Flashcards">
-<meta property="og:description" content="Train system design intuition one decision at a time. Adaptive flash cards, AI-assisted generation, and spaced repetition.">
+<meta property="og:title" content="Decked — Daily System Design Practice">
+<meta property="og:description" content="Practice system design trade-offs in five minutes a day. Short architecture scenarios, visual explanations, and adaptive review.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://decked.pages.dev">
 <meta property="og:image" content="/icon-512.png">
@@ -33,16 +33,16 @@
       <div class="welcome-title-row">
         <div>
           <span class="eyebrow">Adaptive system design practice</span>
-          <h1>System Design Flashcards<span class="status-badge" title="Stage: beta">Beta</span></h1>
-          <p class="subtitle">Mini architecture decisions. Adaptive spaced repetition. Master the trade-offs.</p>
+          <h1>Decked<span class="status-badge" title="Stage: beta">Beta</span></h1>
+          <p class="subtitle">Daily system design practice for your next interview.</p>
         </div>
         <button id="theme-toggle" class="btn btn-sm btn-outline theme-toggle" onclick="APP.toggleTheme()" aria-label="Toggle color theme">🌙</button>
       </div>
       <div id="quota-bar" class="quota-bar hidden"></div>
     </div>
     <section id="intro-hero" class="intro welcome-hero" aria-labelledby="intro-heading">
-      <h2 id="intro-heading">Train the decisions, not just the facts</h2>
-      <p>System design is about choosing between trade-offs. Each card drops you into a mini architecture problem between two nodes with a few plausible options — you pick the best wiring, then learn why it wins.</p>
+      <h2 id="intro-heading">Practice system design trade-offs in five minutes a day</h2>
+      <p>Preparing for a system design interview? Solve short architecture scenarios, compare the wiring, and revisit your weakest topics. Start free, without an account.</p>
       <ol class="how-list">
         <li><strong>Read the scenario.</strong> e.g. "A client pushes 1,000 events/s to a downstream service."</li>
         <li><strong>Pick an approach.</strong> 2-4 options; one fits the constraints best.</li>
@@ -55,7 +55,26 @@
       </details>
       <details class="about-details">
         <summary>Privacy &amp; your data</summary>
-        <p>No account required. Your profile, progress, and created cards are stored locally in your browser and never uploaded. Sessions may request freshly generated cards through the server, but your personal data stays on your device.</p>
+        <p>No account required. Progress is saved in your browser and synchronized with the server using a device identifier, or your account when signed in. Custom cards, bookmarks, and session resume state stay in this browser. Fresh card requests also go through the server.</p>
+      </details>
+    </section>
+    <section class="sample-challenge" aria-labelledby="sample-heading">
+      <span class="eyebrow">Try a trade-off</span>
+      <h2 id="sample-heading">An upload takes 20 seconds to process. Where should the work happen?</h2>
+      <p>Your API must acknowledge accepted uploads within 300 ms. Files must survive worker restarts, and users can check processing status later.</p>
+      <ol type="A">
+        <li>Process the file inside the API request.</li>
+        <li>Store the file durably, enqueue a job, and let a worker process it.</li>
+        <li>Return success, then start an in-memory background task in the API process.</li>
+      </ol>
+      <details>
+        <summary>Choose an answer, then reveal the trade-off</summary>
+        <p><strong>B fits these constraints.</strong> Durable storage and a durable job queue separate acceptance from processing. Return an accepted response with a status URL after durable acceptance; workers must tolerate retries.</p>
+        <div class="sample-flow" aria-label="Architecture: client to API to durable storage and job queue to worker">
+          <span>Client → API</span><span>↓ Durable file + job</span><span>Queue → Worker → Result</span>
+        </div>
+        <p>A misses the response budget. C can lose accepted work when the process restarts. If processing took only a few milliseconds, synchronous processing could be simpler.</p>
+        <button class="btn btn-primary" onclick="APP.startSession()">Practice 8 questions →</button>
       </details>
     </section>
     <div id="achievement-toast" class="toast"></div>
@@ -66,7 +85,7 @@
       <div class="stat-card"><div class="stat-num" id="stat-streak">0</div><div class="stat-label">Day Streak</div></div>
     </div>
     <div class="welcome-actions" aria-label="Study actions">
-      <button id="start-session-btn" class="btn btn-primary" onclick="APP.startSession()">Start Session</button>
+      <button id="start-session-btn" class="btn btn-primary" onclick="APP.startSession()">Try 8 questions</button>
       <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
       <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
     </div>
