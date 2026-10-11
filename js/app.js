@@ -1114,7 +1114,7 @@ const APP = {
       this.showScreen('session');
     } finally {
       startButton.disabled = false;
-      startButton.textContent = 'Start Session';
+      startButton.textContent = 'Try 8 questions';
     }
   },
 
