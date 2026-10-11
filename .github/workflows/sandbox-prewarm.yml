@@ -1,0 +1,47 @@
+name: Prewarm Concept Sandboxes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'js/wiki.js'
+      - 'js/sandbox.js'
+      - 'functions/shared/generated-sandbox.js'
+      - 'functions/shared/generated-sandbox-service.js'
+      - 'functions/api/sandbox/**'
+      - 'scripts/prewarm-sandboxes.mjs'
+      - '.github/workflows/sandbox-prewarm.yml'
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: production-sandbox-prewarm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prewarm:
+    name: Sequentially fill Sandbox cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prewarm one concept at a time
+        env:
+          SANDBOX_PREWARM_URL: ${{ secrets.SANDBOX_PREWARM_URL }}
+          SANDBOX_PREWARM_TOKEN: ${{ secrets.SANDBOX_PREWARM_TOKEN }}
+        run: |
+          if [[ -z "${SANDBOX_PREWARM_TOKEN:-}" ]]; then
+            echo "SANDBOX_PREWARM_TOKEN is not configured; skipping prewarm."
+            exit 0
+          fi
+          node scripts/prewarm-sandboxes.mjs

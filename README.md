@@ -512,14 +512,14 @@ monorepo?
 | Cross-project drift visibility | Weak | Strong |
 | Promotion cost (when launched) | None | A one-time split |
 
-**Decision:** Monorepo — this project is one top-level subdirectory of mamaLab
-until a promotion trigger (launch, independent versioning, ownership, or bloat)
-fires, at which point it moves to its own repository.
+**Decision:** Own repository. The project incubated as a top-level subdirectory
+of the mamaLab monorepo until the launch trigger fired — live at
+`decked.pages.dev` with paid Pro subscriptions — and was promoted to
+`vinitasher/decked` on 2026-10-10.
 
-**Rationale.** This is inherited from the lab's governance (AGENTS.md): extra
-repositories fragment portfolio context and cost agent runs without a
-launch-level benefit. The project stays here until a concrete trigger justifies
-a split.
+**Rationale.** This follows the lab's governance (AGENTS.md): projects stay in
+the incubator until a concrete trigger (launch, independent versioning,
+ownership, or bloat) justifies a split; the launch trigger fired first.
 
 ## Content strategy
 
@@ -531,7 +531,7 @@ a split.
 - Future: community-submitted cards with review; curated packs for specific
   companies / domains
 
-## Why this fits mamaLab
+## Product values
 
 - **Simple & easy:** one-card-at-a-time mobile UI; 3 minutes per session
 - **Best user experience:** adaptive difficulty means the app never feels too
@@ -672,10 +672,9 @@ The script verifies Cloudflare authentication and configured resource IDs,
 stages only public PWA assets, bundles the functions under `functions/`, and
 publishes the production branch to `https://decked.pages.dev`.
 
-Cloudflare Git integration uses `bash check.sh && bash build.sh`, watches
-`system-design-flashcards/**`, and deploys `.pages-dist` from the `main`
-branch. Pull requests receive preview deployments, while changes outside this
-project directory do not trigger unnecessary builds.
+Cloudflare Git integration uses `bash check.sh && bash build.sh` and deploys
+`.pages-dist` from the `main` branch. Pull requests receive preview
+deployments.
 
 ## PWA installability
 

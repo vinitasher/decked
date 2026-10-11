@@ -118,6 +118,7 @@ const modelSequence = [
   process.env.OPENCODE_MODEL || 'gpt-5.6-luna',
   'opencode-go/deepseek-v4-flash'
 ];
+const opencodeDir = process.env.OPENCODE_DIR || '/home/pi/git/decked';
 const opencodeBin = '/home/pi/.nvm/versions/node/v22.23.1/bin/opencode';
 
 function callModel(prompt, model) {
@@ -125,7 +126,7 @@ function callModel(prompt, model) {
   // Read-only enforcement: the model must not write files
   const env = { ...process.env, OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"deny","bash":"deny"}}' };
   return execSync(
-    `${opencodeBin} run --auto --dir /home/pi/git/mamaLab --model ${model} "${escaped}"`,
+    `${opencodeBin} run --auto --dir ${opencodeDir} --model ${model} "${escaped}"`,
     { timeout: 240000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, env }
   );
 }
@@ -144,7 +145,7 @@ function extractAndValidate(stdout, designatedCorrect, countScenarioRequirements
   // if not found in stdout, check for newly written JSON files (fallback)
   if (!card) {
     const fs = require('fs');
-    const dir = '/home/pi/git/mamaLab';
+    const dir = opencodeDir;
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') && (f.includes('card') || f.includes('gen')));
     // pick the most recent
     files.sort((a, b) => fs.statSync(dir + '/' + b).mtimeMs - fs.statSync(dir + '/' + a).mtimeMs);

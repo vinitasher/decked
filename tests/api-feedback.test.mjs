@@ -48,7 +48,7 @@ function githubOk(handler = () => {}) {
   return async (url, options) => {
     if (String(url).startsWith('https://api.github.com')) {
       handler(url, options);
-      return Response.json({ html_url: 'https://github.com/vinitasher/mamaLab/issues/7' }, { status: 201 });
+      return Response.json({ html_url: 'https://github.com/vinitasher/decked/issues/7' }, { status: 201 });
     }
     throw new Error(`unexpected fetch: ${url}`);
   };
@@ -123,7 +123,7 @@ test('feedback endpoint stores the record and creates a GitHub issue', async () 
     const body = await response.json();
     assert.equal(body.ok, true);
     assert.equal(body.issueStatus, 'created');
-    assert.equal(body.issueUrl, 'https://github.com/vinitasher/mamaLab/issues/7');
+    assert.equal(body.issueUrl, 'https://github.com/vinitasher/decked/issues/7');
     assert.ok(body.feedbackId.startsWith('feedback-'));
 
     const recordKeys = [...store.store.keys()].filter(key => key.startsWith('feedback:'));
@@ -197,7 +197,7 @@ test('feedback endpoint enforces Turnstile when a secret key is configured', asy
     if (String(url).startsWith('https://challenges.cloudflare.com')) {
       return Response.json({ success: true });
     }
-    return Response.json({ html_url: 'https://github.com/vinitasher/mamaLab/issues/9' }, { status: 201 });
+    return Response.json({ html_url: 'https://github.com/vinitasher/decked/issues/9' }, { status: 201 });
   });
   try {
     const withoutToken = await onRequestPost({

@@ -59,12 +59,12 @@ test('diagnostics report turnstile and rate limit configuration', () => {
 });
 
 test('parseRepository validates owner/repo pairs', () => {
-  assert.deepEqual(parseRepository('vinitasher/mamaLab'), { owner: 'vinitasher', repo: 'mamaLab', valid: true });
+  assert.deepEqual(parseRepository('vinitasher/decked'), { owner: 'vinitasher', repo: 'decked', valid: true });
   assert.equal(parseRepository('').valid, false);
   assert.equal(parseRepository('vinitasher').valid, false);
   assert.equal(parseRepository('a/b/c').valid, false);
 });
 
 test('DEFAULT_REPOSITORY points at the flashcards home repository', () => {
-  assert.equal(DEFAULT_REPOSITORY, 'vinitasher/mamaLab');
+  assert.equal(DEFAULT_REPOSITORY, 'vinitasher/decked');
 });

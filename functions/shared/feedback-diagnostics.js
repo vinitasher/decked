@@ -4,7 +4,7 @@
 
 import { FEEDBACK_RATE_LIMIT_MAX, FEEDBACK_RATE_LIMIT_WINDOW_SECONDS } from './feedback-security.js';
 
-export const DEFAULT_REPOSITORY = 'vinitasher/mamaLab';
+export const DEFAULT_REPOSITORY = 'vinitasher/decked';
 
 export function buildFeedbackDiagnostics(env) {
   const token = env.GITHUB_TOKEN?.trim() ?? '';

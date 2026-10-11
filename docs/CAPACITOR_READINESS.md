@@ -73,7 +73,7 @@ Native prerequisites:
 
 ## 4. Future setup sequence
 
-Run this from `system-design-flashcards/` in a dedicated branch after the
+Run this from the repository root in a dedicated branch after the
 decision to pilot. The commands are a runbook, not a request to run them now.
 
 ```sh

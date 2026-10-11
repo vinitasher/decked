@@ -230,8 +230,8 @@ const DESIGN_DECISIONS = [
       ['Weak', 'Strong'],
       ['None', 'A one-time split']
     ],
-    decision: 'Monorepo — this project is one top-level subdirectory of mamaLab until a promotion trigger (launch, independent versioning, ownership, or bloat) fires, at which point it moves to its own repository.',
-    rationale: 'Extra repositories fragment portfolio context and cost agent runs without a launch-level benefit. The project stays here until a concrete trigger justifies a split.'
+    decision: 'Own repository — the project incubated as a subdirectory of the mamaLab monorepo until the launch trigger fired, then was promoted to its own repository (vinitasher/decked).',
+    rationale: 'Extra repositories fragment portfolio context, so the project stays in the lab until a concrete trigger (launch, independent versioning, ownership, or bloat) justifies a split; the launch trigger fired first.'
   },
   {
     id: 'client-server-topology',

@@ -43,6 +43,7 @@ const cardsContext = vm.createContext({ console, Math, Date, JSON });
 vm.runInContext(`${cardsSource}\nglobalThis.normalizeCardFlowsForUpgrade = normalizeCardFlows;`, cardsContext);
 const normalizeCachedFlows = card => cardsContext.normalizeCardFlowsForUpgrade(card);
 
+const opencodeDir = process.env.OPENCODE_DIR || '/home/pi/git/decked';
 const opencodeBin = process.env.OPENCODE_BIN
   || '/home/pi/.nvm/versions/node/v22.23.1/bin/opencode';
 const modelSequence = [
@@ -114,7 +115,7 @@ function callModel(prompt, model) {
     OPENCODE_CONFIG_CONTENT: '{"permission":{"edit":"deny","bash":"deny"}}'
   };
   return execSync(
-    `${opencodeBin} run --auto --dir /home/pi/git/mamaLab --model ${model} "${escaped}"`,
+    `${opencodeBin} run --auto --dir ${opencodeDir} --model ${model} "${escaped}"`,
     { timeout: 120000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, env }
   );
 }
