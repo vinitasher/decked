@@ -4,7 +4,7 @@
 
 Decked helps engineers preparing for system design interviews practice individual architecture trade-offs in short daily sessions. Use it alongside complete design exercises and mock interviews.
 
-**Headline:** Practice system design trade-offs in five minutes a day.
+**Headline:** Practice system design trade-offs in short daily sessions.
 
 **Description:** Solve short architecture scenarios, compare the wiring, and revisit your weakest topics. Start free, without an account.
 

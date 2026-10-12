@@ -167,7 +167,7 @@ test('session plans cover all catalog topics and extend with unique topic+diffic
   assert.equal(new Set(forty.map(item => `${item.topic}:${item.difficulty}`)).size, 40);
 });
 
-test('standard sessions cap fresh cards at half the session', async () => {
+test('standard sessions fill all requested slots when no reviews are due', async () => {
   seedRandom(0);
   const app = freshApp();
   let calls = 0;
@@ -179,13 +179,13 @@ test('standard sessions cap fresh cards at half the session', async () => {
   const { cards, requested, mixShortfall } = await app._generateSessionCards(8);
 
   assert.equal(requested, 8);
-  assert.equal(cards.length, 4); // 0 due reviews → fresh capped at half
-  assert.equal(mixShortfall, true);
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 4);
-  assert.equal(calls, 4);
+  assert.equal(cards.length, 8);
+  assert.equal(mixShortfall, false);
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
+  assert.equal(calls, 8);
 });
 
-test('quick review sessions cap fresh cards at half the session', async () => {
+test('quick review planning fills its requested slots', async () => {
   seedRandom(0);
   const app = freshApp();
   let calls = 0;
@@ -197,10 +197,10 @@ test('quick review sessions cap fresh cards at half the session', async () => {
   const { cards, requested, mixShortfall } = await app._generateSessionCards(15);
 
   assert.equal(requested, 15);
-  assert.equal(cards.length, 8); // 0 due reviews → fresh capped at half
-  assert.equal(mixShortfall, true);
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
-  assert.equal(calls, 8);
+  assert.equal(cards.length, 15);
+  assert.equal(mixShortfall, false);
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 15);
+  assert.equal(calls, 15);
 });
 
 test('due reviews limit the fresh budget of a session', async () => {
@@ -265,7 +265,7 @@ test('a new user starts sessions at the easiest difficulty', async () => {
 
   const { cards } = await app._generateSessionCards(8);
 
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 8);
   assert.ok(cards.every(card => card.difficulty === 1),
     `first sessions should be difficulty 1, got ${cards.map(card => card.difficulty)}`);
 });
@@ -286,7 +286,7 @@ test('generated cards ramp from low to high difficulty within a session', async 
 
   const { cards } = await app._generateSessionCards(60);
 
-  assert.equal(cards.length, 30); // fresh capped at half of the request
+  assert.equal(cards.length, 60);
   const difficulties = cards.map(card => card.difficulty);
   assert.deepEqual(difficulties, difficulties.slice().sort((a, b) => a - b));
   assert.equal(difficulties[0], 1);
@@ -318,7 +318,7 @@ test('within a difficulty tier, prerequisite topics are served before dependents
 
   const { cards } = await app._generateSessionCards(20);
 
-  assert.equal(cards.length, 10);
+  assert.equal(cards.length, 20);
   const sessionTopics = cards.map(card => card.topic);
   const byRank = sessionTopics.slice().sort((a, b) => topoRank.get(a) - topoRank.get(b));
   assert.deepEqual(sessionTopics, byRank, 'session topic order must be prerequisite-first');
@@ -369,7 +369,7 @@ test('due reviews keep the first position in a ramped session', async () => {
 
   const { cards } = await app._generateSessionCards(8);
 
-  assert.equal(cards.length, 5);
+  assert.equal(cards.length, 8);
   assert.equal(cards[0].id, 'gen-due-ramp');
   assert.equal(cards[0].review, true);
   const fresh = cards.slice(1);
@@ -396,9 +396,9 @@ test('duplicate candidates are refilled with accumulated session exclusions', as
 
   const { cards } = await app._generateSessionCards(8);
 
-  assert.equal(cards.length, 4); // fresh budget of 4, one base + three refills
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 4);
-  assert.ok(calls <= 12, `refill stayed within the fresh-budget fetch bound (${calls})`);
+  assert.equal(cards.length, 8); // fresh budget of 8, duplicate candidates refilled
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
+  assert.ok(calls <= 24, `refill stayed within the fresh-budget fetch bound (${calls})`);
   const baseFingerprint = app._scenarioFingerprint(baseScenario);
   const refillRequests = avoidLists.filter(entry => entry.calls > 4);
   assert.ok(refillRequests.length > 0);
@@ -420,7 +420,7 @@ test('refill attempts are bounded and report the real available count', async ()
 
   assert.equal(requested, 8);
   assert.equal(cards.length, 1);
-  assert.ok(calls <= 12, `bounded to freshBudget*3 fetches (${calls})`);
+  assert.ok(calls <= 24, `bounded to freshBudget*3 fetches (${calls})`);
 });
 
 test('cross-topic padding candidates are never accepted into a session', async () => {
@@ -537,11 +537,11 @@ test('topic sessions remain scoped to their selected topic', async () => {
   assert.deepEqual([...new Set(calls.map(call => call.difficulty))].sort(), [1, 2, 3, 4, 5]);
 });
 
-test('a wrong answer re-serves the card at the end of the session', () => {
+test('a wrong answer uses a future slot without extending the session', () => {
   seedRandom(0);
   const app = freshApp();
   const card = generatedCard('card-a', 'A missable scenario', 'caching', 2);
-  app.sessionCards = [card];
+  app.sessionCards = [card, generatedCard('future', 'Future scenario', 'dns', 1)];
   app._retriedCardIds = new Set();
 
   app._maybeScheduleRetry(card);
@@ -619,4 +619,63 @@ test('mistake review is empty when nothing was missed', () => {
   app._sessionResults = { 'right-1': true };
 
   assert.equal(app._mistakesHtml(), '');
+});
+
+
+test('session results use completed attempts, not lifetime totals or prepared cards', () => {
+  const app = freshApp();
+  app.profile.totalCorrect = 100;
+  app.profile.totalAnswered = 120;
+  app.sessionCards = Array.from({ length: 8 }, (_, i) => generatedCard(`card-${i}`, `Scenario ${i}`, 'caching', 1));
+  app._sessionAttempts = [
+    { card: app.sessionCards[0], correct: false, confidence: 4 },
+    { card: app.sessionCards[1], correct: true, confidence: 1 }
+  ];
+  const stats = app._sessionStats();
+  assert.equal(stats.answered, 2);
+  assert.equal(stats.correct, 1);
+  assert.equal(stats.percent, 50);
+  app._sessionAttempts = [];
+  assert.equal(app._sessionStats().percent, 0);
+});
+
+test('a final-question mistake does not add an unrequested retry', () => {
+  const app = freshApp();
+  const card = generatedCard('last', 'Last question scenario', 'caching', 1);
+  app.sessionCards = [card];
+  app._retriedCardIds = new Set();
+  app._maybeScheduleRetry(card);
+  assert.equal(app.sessionCards.length, 1);
+});
+
+
+test('session review marks a confident wrong answer incorrect and excludes unanswered cards', () => {
+  const testContext = createContext();
+  const app = Object.create(testContext.appForTest);
+  const wrong = generatedCard('wrong', 'A confidently wrong answer', 'caching', 1);
+  const right = generatedCard('right', 'A hesitant right answer', 'dns', 1);
+  app.sessionCards = [wrong, right, generatedCard('unanswered', 'Not answered yet', 'queues', 1)];
+  app._sessionAttempts = [{ card: wrong, correct: false, confidence: 4 }, { card: right, correct: true, confidence: 1 }];
+  app.profile = { totalCorrect: 100, totalAnswered: 120 };
+  app._mistakesHtml = () => '';
+  const summary = { innerHTML: '' };
+  const getElement = testContext.document.getElementById;
+  testContext.document.getElementById = id => id === 'session-summary' ? summary : getElement(id);
+  testContext.SRS = { confidenceLabel: value => String(value) };
+  app.showSessionReview();
+  assert.match(summary.innerHTML, /2<\/strong> cards answered/);
+  assert.match(summary.innerHTML, /50%/);
+  assert.match(summary.innerHTML, /is-incorrect/);
+  assert.match(summary.innerHTML, /is-correct/);
+  assert.doesNotMatch(summary.innerHTML, /Not answered yet/);
+});
+
+test('normal account rendering refreshes a non-default generation allowance', () => {
+  const testContext = createContext();
+  const allowance = { textContent: 'Free: 10 cards' };
+  const getElement = testContext.document.getElementById;
+  testContext.document.getElementById = id => id === 'session-allowance' ? allowance : getElement(id);
+  vm.runInContext('appConfig.freeDailyCardLimit = 7; renderAccountBar();', testContext);
+  assert.match(allowance.textContent, /Free: 7 freshly generated cards/);
+  assert.match(allowance.textContent, /midnight UTC/);
 });

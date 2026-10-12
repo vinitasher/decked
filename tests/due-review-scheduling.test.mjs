@@ -174,7 +174,7 @@ test('past-due cards appear first with content matching the snapshot', async () 
   const { cards, requested } = await app._generateSessionCards(8);
 
   assert.equal(requested, 8);
-  assert.equal(cards.length, 5); // 1 due review + up to 4 fresh (mix ratio)
+  assert.equal(cards.length, 8); // 1 due review + 7 fresh
   assert.equal(cards[0].id, 'gen-due-1');
   assert.equal(cards[0].scenario, due.scenario);
   assert.equal(cards[0].correct, 'B');
@@ -217,8 +217,8 @@ test('future-due cards are not included in a session', async () => {
   const { cards } = await app._generateSessionCards(8);
 
   assert.equal(cards.some(card => card.id === 'gen-future'), false);
-  assert.equal(cards.length, 4); // no due reviews → 4 fresh (mix ratio cap)
-  assert.equal(calls, 4);
+  assert.equal(cards.length, 8); // no due reviews → 8 fresh
+  assert.equal(calls, 8);
 });
 
 test('standard sessions still deliver exactly 8 fingerprint-distinct cards when blended', async () => {
@@ -237,9 +237,9 @@ test('standard sessions still deliver exactly 8 fingerprint-distinct cards when 
   const { cards, requested } = await app._generateSessionCards(8);
 
   assert.equal(requested, 8);
-  assert.equal(cards.length, 6); // 2 due reviews + 4 fresh (mix ratio cap)
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 6);
-  assert.equal(calls, 4);
+  assert.equal(cards.length, 8); // 2 due reviews + 6 fresh
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
+  assert.equal(calls, 6);
 });
 
 test('quick review still delivers a full-size session when blended', async () => {
@@ -258,9 +258,9 @@ test('quick review still delivers a full-size session when blended', async () =>
   const { cards, requested } = await app._generateSessionCards(15);
 
   assert.equal(requested, 15);
-  assert.equal(cards.length, 10); // 2 due reviews + 8 fresh (mix ratio cap)
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 10);
-  assert.equal(calls, 8);
+  assert.equal(cards.length, 15); // 2 due reviews + 13 fresh
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 15);
+  assert.equal(calls, 13);
 });
 
 test('a past-due entry with no resolvable content is skipped without error', async () => {
@@ -278,8 +278,8 @@ test('a past-due entry with no resolvable content is skipped without error', asy
 
   assert.equal(cards.some(card => card.id === 'ghost-1'), false);
   assert.equal(cards.some(card => card.id === 'ghost-2'), false);
-  assert.equal(cards.length, 4); // no due reviews → 4 fresh (mix ratio cap)
-  assert.equal(calls, 4);
+  assert.equal(cards.length, 8); // no due reviews → 8 fresh
+  assert.equal(calls, 8);
 });
 
 test('when due cards exceed the requested count, the oldest are served first', async () => {
@@ -341,9 +341,9 @@ test('a due card already in the session is not fetched again as a new candidate'
 
   const { cards } = await app._generateSessionCards(8);
 
-  assert.equal(cards.length, 5); // 1 due review + 4 fresh (mix ratio cap)
+  assert.equal(cards.length, 8); // 1 due review + 7 fresh
   assert.equal(cards[0].id, 'gen-due-3');
-  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 5);
+  assert.equal(new Set(cards.map(card => app._scenarioFingerprint(card.scenario))).size, 8);
 });
 
 test('nextCard does not replace a due-review slot with the prefetched card', () => {
@@ -382,4 +382,17 @@ test('nextCard replaces a non-review slot with the prefetched card as before', (
   app.nextCard();
 
   assert.equal(app.sessionCards[1].id, 'prefetched');
+});
+
+
+test('prefetch cannot extend a completed session', () => {
+  const app = freshApp();
+  app.sessionCards = [newCandidate('last', 'Last planned question')];
+  app.sessionIndex = 0;
+  app._nextCard = newCandidate('extra', 'Unrequested extra question');
+  let ended = false;
+  app.showCard = () => { ended = app.sessionIndex === app.sessionCards.length; };
+  app.nextCard();
+  assert.equal(app.sessionCards.length, 1);
+  assert.equal(ended, true);
 });
