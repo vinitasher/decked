@@ -2,7 +2,7 @@
    topic on demand, caching it in KV. Mirrors the schema and provider settings
    of scripts/generate-wiki.mjs so bulk and lazy entries are interchangeable. */
 
-import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+import { resolveEntitlement } from '../shared/entitlement.js';
 import { API_MODEL_SEQUENCE } from '../shared/model-routing.js';
 import { ensureGeneratedSandbox } from '../shared/generated-sandbox-service.js';
 
@@ -78,22 +78,14 @@ export async function onRequest(context) {
     }
   }
 
-  if (!env.OPENCODE_API_KEY) {
-    return jsonResponse({ error: 'Card generation is not configured' }, 500);
-  }
-
   const entitlement = await resolveEntitlement(env, request, 'wiki');
-  if (!entitlement.pro && entitlement.used >= entitlement.limit) {
-    console.error('Wiki generation quota exceeded', topic, entitlement.used, entitlement.limit);
+  if (!entitlement.pro) {
     return jsonResponse({
-      error: 'Daily wiki limit reached — upgrade to Pro for unlimited wiki entries',
-      code: 'quota_exceeded',
-      kind: 'wiki',
-      used: entitlement.used,
-      limit: entitlement.limit,
-      remaining: 0
-    }, 429);
+      error: 'Fresh AI wiki entries require Pro. Existing content remains available for free.',
+      code: 'pro_required', kind: 'wiki'
+    }, 403);
   }
+  if (!env.OPENCODE_API_KEY) return jsonResponse({ error: 'Generation is not configured' }, 500);
 
   let entry = null;
   let lastError = null;
@@ -138,10 +130,6 @@ export async function onRequest(context) {
   if (!entry) {
     console.error('Wiki generation failed', topic, lastError?.message);
     return jsonResponse({ error: 'Wiki generation is temporarily unavailable' }, 503);
-  }
-
-  if (!entitlement.pro) {
-    await consumeQuota(env, entitlement.identity, 'wiki');
   }
 
   if (env.WIKI_CACHE) {

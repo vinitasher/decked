@@ -1,11 +1,13 @@
 # Pro monetization setup (Supabase + Stripe)
 
-The app's monetization: everyone gets a free tier (10 freshly generated cards,
-10 wiki entries, and 3 generated Sandbox definitions per day, UTC), and Pro
-removes the limits. Quotas are enforced server-side in the Cloudflare Pages
-Functions; Stripe Checkout sells the Pro subscription; the Stripe webhook
-grants Pro by writing the user's entitlement into KV. No database is required
-— KV is the source of truth.
+Free users can answer up to 100 questions per UTC day from bundled and cached
+cards, and use existing wiki entries and experiments. All fresh AI generation
+requires Pro. The Pages Functions check the paid entitlement before calling a
+provider, even for forced requests. The app counts completed answers (including
+retries) in the learner profile and blocks practice after 100 until midnight UTC.
+This study allowance is an application limit, not a tamper-proof server counter:
+static/offline content can be accessed outside the UI. Stripe Checkout sells Pro,
+and the Stripe webhook stores the entitlement in KV.
 
 ## 1. Supabase (accounts)
 
@@ -56,9 +58,6 @@ stable identity; entitlements live in Cloudflare KV.
 | `STRIPE_SECRET_KEY` | `sk_...` (test `sk_test_...` first) | **yes** |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...` | **yes** |
 | `STRIPE_PRICE_ID` | `price_...` | no |
-| `FREE_DAILY_CARD_LIMIT` | optional, default `10` | no |
-| `FREE_DAILY_WIKI_LIMIT` | optional, default `10` | no |
-| `FREE_DAILY_SANDBOX_LIMIT` | optional, default `3` | no |
 | `SANDBOX_PREWARM_TOKEN` | shared bearer token for maintenance prewarming | **yes** |
 
 Saving environment variables triggers a redeploy.
@@ -76,7 +75,7 @@ preview testing; it defaults to `https://decked.pages.dev/api/sandbox/prewarm`.
 The endpoint accepts small batches for operators, skips valid cached entries,
 and reports each topic independently without consuming learner quota. Missing
 or invalid definitions remain retryable, while a learner can still use the
-quota-aware on-demand `/api/sandbox` fallback.
+Pro-only on-demand `/api/sandbox` fallback.
 
 ## 4. Verify
 
@@ -86,10 +85,14 @@ quota-aware on-demand `/api/sandbox` fallback.
 - Signing in with GitHub updates the account bar; "Upgrade" opens Stripe
   Checkout; after paying, the webhook flips the plan to Pro and `GET
   /api/quota` reports `plan: "pro"` with unlimited generation.
-- Quota counters live in KV under `quota:cards:<identity>:<date>`,
-  `quota:wiki:<identity>:<date>`, and `quota:sandbox:<identity>:<date>` (expire
-  after ~3 days); billing records under `billing:<identity>`. Cache hits never
-  consume quota — only fresh AI generation does.
+- The former `FREE_DAILY_*_LIMIT` generation overrides are ignored. They cannot
+  enable free AI generation. `/api/config` advertises 100 daily questions and
+  zero free generation allowance for wiki and experiments.
+- `/api/quota` reports the plan, `aiGenerationAllowed`, and the daily answer
+  count from the most recently synchronized learner profile. The browser uses
+  its current profile to enforce the allowance, including when offline.
+- Cache hits remain available without paid generation; fresh cache misses return
+  HTTP 403 with `code: "pro_required"` for free accounts.
 
 Stripe customer and subscription identity mappings (`stripe:customer:*` and
 `stripe:sub:*`) are durable KV records so delayed webhooks can still resolve a
@@ -97,8 +100,6 @@ user. Expired historical mappings are not backfilled.
 
 ## Notes
 
-- Anonymous users get the free tier too, keyed by `X-Device-Id` (fallback:
-  client IP). This is advisory, not tamper-proof; signed-in free users are
-  keyed by their Supabase user id.
-- Test the whole flow in Stripe test mode before going live, then swap in the
-  live keys and re-verify with a test purchase.
+- Anonymous practice uses the device profile; signed-in practice uses the
+  account profile. Existing content remains accessible offline.
+- Test checkout and entitlement changes in Stripe test mode before going live.

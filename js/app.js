@@ -213,18 +213,21 @@ let appConfig = {
   supabaseUrl: '',
   supabaseAnonKey: '',
   stripePriceId: '',
-  freeDailyCardLimit: 10,
-  freeDailyWikiLimit: 10,
-  freeDailySandboxLimit: 3
+  freeDailyCardLimit: 100,
+  freeDailyWikiLimit: 0,
+  freeDailySandboxLimit: 0
 };
 let supabaseClient = null;
 let currentSession = null;
 let currentPlan = 'free';
+let currentPlanKnown = false;
 let quotaRequestVersion = 0;
 
 function setAccountSession(session) {
   if (currentSession?.user?.id !== session?.user?.id) {
     currentPlan = 'free';
+    currentPlanKnown = false;
+    renderFreeAd();
     quotaRequestVersion++;
     const bar = document.getElementById('quota-bar');
     if (bar) { bar.innerHTML = ''; bar.classList.add('hidden'); }
@@ -319,8 +322,9 @@ function renderAccountError(message) {
 }
 
 function renderAccountBar() {
+  renderFreeAd();
   const allowance = document.getElementById('session-allowance');
-  if (allowance) allowance.textContent = `Free: ${appConfig.freeDailyCardLimit} freshly generated cards per UTC day. Cached cards do not use this allowance. At the limit, review saved cards, wait until midnight UTC, or upgrade to Pro.`;
+  if (allowance) allowance.textContent = `Free: up to ${appConfig.freeDailyCardLimit} questions per UTC day from existing cards. Fresh AI generation requires Pro. Your allowance resets at midnight UTC.`;
   const bar = document.getElementById('account-bar');
   if (!bar) return;
   const signedIn = Boolean(currentSession?.user);
@@ -328,7 +332,7 @@ function renderAccountBar() {
   bar.classList.remove('hidden');
   bar.innerHTML = signedIn
     ? `<span class="account-chip">👤 <span class="account-email">${escHtml(email)}</span>${currentPlan === 'pro' ? ' <span class="plan-badge plan-pro">PRO</span>' : ' <span class="plan-badge">Free</span>'}</span> <button class="btn btn-sm btn-outline" onclick="APP.signOut()">Sign out</button>`
-    : `<span class="account-chip">Free tier: ${appConfig.freeDailyCardLimit} cards, ${appConfig.freeDailyWikiLimit} wiki entries &amp; ${appConfig.freeDailySandboxLimit} generated experiments per day</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGithub()">🐙 Sign in with GitHub</button>`;
+    : `<span class="account-chip">Free: ${appConfig.freeDailyCardLimit} questions per UTC day · existing wiki &amp; experiments</span> <button class="btn btn-sm btn-outline" onclick="APP.signInGithub()">🐙 Sign in with GitHub</button>`;
 }
 
 async function renderQuotaBar() {
@@ -342,18 +346,22 @@ async function renderQuotaBar() {
     const data = await response.json();
     if (version !== quotaRequestVersion || identity !== currentSession?.user?.id) return;
     currentPlan = data.plan || 'free';
+    currentPlanKnown = true;
     renderAccountBar();
     bar.classList.remove('hidden');
-    const sandboxQuota = data.sandbox || {
-      used: 0,
-      limit: appConfig.freeDailySandboxLimit
-    };
     if (data.plan === 'pro') {
       bar.innerHTML = '<span class="quota-text">♾️ Unlimited cards, wiki &amp; generated experiments — Pro</span>';
     } else {
-      bar.innerHTML = `<span class="quota-text">Today: <strong>${data.cards.used}/${data.cards.limit}</strong> cards · <strong>${data.wiki.used}/${data.wiki.limit}</strong> wiki · <strong>${sandboxQuota.used}/${sandboxQuota.limit}</strong> generated experiments</span> <button class="btn btn-sm btn-outline" onclick="APP.upgradeToPro()">Upgrade</button>`;
+      bar.innerHTML = `<span class="quota-text">Today: <strong><span id="free-question-usage">${APP._freeQuestionsUsed()}</span>/${appConfig.freeDailyCardLimit}</strong> questions · AI generation requires Pro</span> <button class="btn btn-sm btn-outline" onclick="APP.upgradeToPro()">Upgrade</button>`;
     }
   } catch (_) { /* offline — keep the bar hidden */ }
+}
+
+function renderFreeAd() {
+  if (typeof FreeAds === 'undefined') return;
+  const dashboard = document.getElementById('screen-welcome');
+  FreeAds.render(appConfig.adsense, currentPlanKnown && currentPlan === 'free'
+    && dashboard && !dashboard.classList.contains('hidden'));
 }
 
 function handleUpgradeReturn() {
@@ -585,7 +593,10 @@ const APP = {
 
   async fetchCard(topic, difficulty, avoidList = [], options = {}) {
     const key = this._cacheKey(topic, difficulty);
-    const excludedFingerprints = new Set(this._excludedScenarioFingerprints(avoidList));
+    if (options.force && currentPlan !== 'pro') { this.showProNotice('cards'); return null; }
+    const excludedFingerprints = new Set(currentPlan === 'pro'
+      ? this._excludedScenarioFingerprints(avoidList)
+      : avoidList.map(card => this._scenarioFingerprint(card?.scenario)).filter(Boolean));
     const localPool = this._readCardPool(key);
     const memoryPool = this._normalizeCardPool(this._cardCache[key] || { cards: [] });
     const available = this._normalizeCardPool({ cards: [...localPool.cards, ...memoryPool.cards] });
@@ -600,6 +611,7 @@ const APP = {
     try {
       const params = new URLSearchParams({ topic, difficulty: String(difficulty) });
       if (options.force) params.set('force', '1');
+      if (currentPlan !== 'pro') params.set('cache_only', '1');
       for (const fingerprint of excludedFingerprints) params.append('exclude', fingerprint);
       const res = await fetch(`${SERVER_BASE}/api/generate?${params}`, { headers: apiHeaders() });
       if (res.status === 429) {
@@ -626,7 +638,7 @@ const APP = {
     // seed fallback: only a topic-matched, unseen seed card may substitute so
     // offline sessions never pad a slot with cross-topic content.
     if (!options.force) {
-      const topicCards = SEED_CARDS.filter(c =>
+      const topicCards = this._bundledPracticeCards().filter(c =>
         c.topic === topic && !excludedFingerprints.has(this._scenarioFingerprint(c.scenario))
           && hasUsableCorrectOptionWiring(c)
           && !hasDegenerateLinearOptionTopology(c)
@@ -646,6 +658,7 @@ const APP = {
   },
 
   async prefetchNext() {
+    if (currentPlan !== 'pro') return;
     const cards = this.sessionCards;
     const slot = this.sessionIndex + 1;
     const target = cards[slot];
@@ -714,6 +727,7 @@ const APP = {
   },
 
   async startQuickReview() {
+    if (!this._canPractice()) return;
     const preparation = this._beginSessionPreparation();
     const { cards, requested } = await this._generateSessionCards(15);
     if (!this._preparationIsCurrent(preparation)) return;
@@ -1065,7 +1079,7 @@ const APP = {
         return card;
       }
     }
-    const seed = SEED_CARDS.find(card => card.id === id);
+    const seed = this._bundledPracticeCards().find(card => card.id === id);
     if (!seed) return null;
     const normalizedSeed = normalizeCardPrerequisites(seed);
     return hasUsableCorrectOptionWiring(normalizedSeed)
@@ -1103,7 +1117,7 @@ const APP = {
   /* Distinct card ids in the studied set: every seed card plus every card the
      user has ever reviewed (generated and seed alike). */
   _studiedCardIds() {
-    const ids = new Set(SEED_CARDS.map(card => card.id));
+    const ids = new Set(this._bundledPracticeCards().map(card => card.id));
     for (const id of Object.keys(this.profile?.cardHistory || {})) ids.add(id);
     return ids;
   },
@@ -1111,7 +1125,7 @@ const APP = {
   /* Distinct topics in the studied set: seed-card topics plus topics seen in
      reviewed-card snapshots or the topic-review ledger. */
   _studiedTopics() {
-    const topics = new Set(SEED_CARDS.map(card => card.topic));
+    const topics = new Set(this._bundledPracticeCards().map(card => card.topic));
     for (const record of Object.values(this.profile?.cardHistory || {})) {
       if (record && typeof record === 'object' && record.card && typeof record.card === 'object'
           && typeof record.card.topic === 'string') {
@@ -1139,6 +1153,7 @@ const APP = {
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
+    if (!this._canPractice()) return;
     const preparation = this._beginSessionPreparation();
     const startButton = document.getElementById('start-session-btn')
       || document.querySelector('button[onclick="APP.startSession()"]');
@@ -1178,10 +1193,11 @@ const APP = {
   },
 
   async startTopicSession(topic) {
+    if (!this._canPractice()) return;
     const preparation = this._beginSessionPreparation();
     if (!TOPIC_CATALOG[topic]) return;
     const candidates = await Promise.all(
-      [1, 2, 3, 4, 5].map(difficulty => this.fetchCard(topic, difficulty))
+      [1, 2, 3, 4, 5].slice(0, this._freeQuestionsRemaining()).map(difficulty => this.fetchCard(topic, difficulty))
     );
     if (!this._preparationIsCurrent(preparation)) return;
     this.sessionCards = candidates.filter((card, index) =>
@@ -1239,7 +1255,8 @@ const APP = {
      difficulty, then extra unique topic+difficulty pairs for the highest-ranked
      topics until the plan reaches `count`. */
   _buildSessionPlan(count) {
-    const requested = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8;
+    const requested = Math.min(Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8, this._freeQuestionsRemaining());
+    if (requested === 0) return [];
     const ranked = this._rankedSessionTopics();
     const plan = [];
     const used = new Set();
@@ -1283,8 +1300,23 @@ const APP = {
     return order;
   },
 
+  _bundledPracticeCards() {
+    return [...SEED_CARDS, ...(typeof FREE_CARDS === 'undefined' ? [] : FREE_CARDS)];
+  },
+
+  _existingPracticeCards() {
+    const snapshots = Object.entries(this.profile?.cardHistory || {})
+      .map(([id, review]) => review?.card ? { ...review.card, id } : null).filter(Boolean);
+    return [
+      ...this._bundledPracticeCards(),
+      ...this._loadCachedKeys(), ...snapshots
+    ].map(card => normalizeCardPrerequisites(card)).filter(card =>
+      hasUsableCorrectOptionWiring(card) && !hasDegenerateLinearOptionTopology(card));
+  },
+
   async _generateSessionCards(count) {
-    const requested = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8;
+    const requested = Math.min(Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 8, this._freeQuestionsRemaining());
+    if (requested === 0) return { cards: [], requested: 0, mixShortfall: false };
     const session = [];
     // Due reviews are served first, resolved from their stored content directly
     // (bypassing the seen-fingerprint ledger). Within a single session, cards
@@ -1298,28 +1330,37 @@ const APP = {
     // Preserve due reviews first, then fill every remaining requested slot.
     const freshBudget = Math.max(0, requested - dueCount);
     const mixShortfall = false;
-    const plan = this._buildSessionPlan(freshBudget);
-    // Generate one card at a time, in up to 3 refill rounds, so an
-    // unavailable generator cannot loop forever (bounded at freshBudget*3
-    // fetches) but every slot still gets retries with the accumulated
-    // session exclusions. Never fires concurrent generation requests.
-    const maxRounds = 3;
-    const maxFetches = Math.max(1, freshBudget * 3);
-    let fetches = 0;
-    for (let round = 0; round < maxRounds && session.length < dueCount + freshBudget && fetches < maxFetches; round++) {
-      for (const item of plan) {
-        if (session.length >= dueCount + freshBudget || fetches >= maxFetches) break;
-        fetches++;
-        let card = null;
-        try {
-          card = await this.fetchCard(item.topic, item.difficulty, session);
-        } catch (error) {
-          card = null;
+    if (currentPlan !== 'pro') {
+      const pool = this._existingPracticeCards().sort((a, b) =>
+        this.getTopicScore(a.topic) - this.getTopicScore(b.topic));
+      for (const card of pool) {
+        if (session.length >= requested) break;
+        if (!this._isDuplicateScenario(card.scenario, session)) session.push(card);
+      }
+    } else {
+      const plan = this._buildSessionPlan(freshBudget);
+      // Generate one card at a time, in up to 3 refill rounds, so an
+      // unavailable generator cannot loop forever (bounded at freshBudget*3
+      // fetches) but every slot still gets retries with the accumulated
+      // session exclusions. Never fires concurrent generation requests.
+      const maxRounds = 3;
+      const maxFetches = Math.max(1, freshBudget * 3);
+      let fetches = 0;
+      for (let round = 0; round < maxRounds && session.length < dueCount + freshBudget && fetches < maxFetches; round++) {
+        for (const item of plan) {
+          if (session.length >= dueCount + freshBudget || fetches >= maxFetches) break;
+          fetches++;
+          let card = null;
+          try {
+            card = await this.fetchCard(item.topic, item.difficulty, session);
+          } catch (error) {
+            card = null;
+          }
+          if (!card) continue;
+          if (this._isDuplicateScenario(card.scenario, session)) continue;
+          if (card.topic !== item.topic) continue;
+          session.push(card);
         }
-        if (!card) continue;
-        if (this._isDuplicateScenario(card.scenario, session)) continue;
-        if (card.topic !== item.topic) continue;
-        session.push(card);
       }
     }
     // Progressive difficulty ramp with prerequisite-first ordering: fresh
@@ -1387,6 +1428,7 @@ const APP = {
 
   /* Cache warming: pre-generate cards for likely next topics in background */
   async _warmCache() {
+    if (currentPlan !== 'pro') return;
     const scored = this._rankedSessionTopics();
     // pre-warm the top 3 likely topics
     for (const s of scored.slice(0, 3)) {
@@ -1398,6 +1440,7 @@ const APP = {
   },
 
   showCard() {
+    if (!this._canPractice()) { this.endSession(); return; }
     if (this._advanceTimer) {
       clearTimeout(this._advanceTimer);
       this._advanceTimer = null;
@@ -1479,7 +1522,7 @@ const APP = {
       button.disabled = false;
     });
     document.getElementById('next-btn').classList.add('hidden');
-    document.getElementById('regenerate-btn').classList.remove('hidden');
+    document.getElementById('regenerate-btn').classList[currentPlan === 'pro' ? 'remove' : 'add']('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
   },
 
@@ -1524,6 +1567,7 @@ const APP = {
   },
 
   rateConfidence(confidence) {
+    if (!this._canPractice()) { this.exitSession(); return; }
     if (this._confidenceSubmitted || !Number.isInteger(confidence) || confidence < 1 || confidence > 4) {
       return;
     }
@@ -1582,6 +1626,8 @@ const APP = {
     const today = new Date().toISOString().split('T')[0];
     this.profile.dailyAnswers = this.profile.dailyAnswers || {};
     this.profile.dailyAnswers[today] = (Number(this.profile.dailyAnswers[today]) || 0) + 1;
+    const freeUsage = document.getElementById('free-question-usage');
+    if (freeUsage) freeUsage.textContent = this._freeQuestionsUsed();
     if (this.profile.streaks.lastDate === today) {
       // already counted today
     } else if (this.profile.streaks.lastDate === this._yesterday()) {
@@ -1614,6 +1660,7 @@ const APP = {
   },
 
   async regenerateCard() {
+    if (currentPlan !== 'pro') { this.showProNotice('cards'); return; }
     if (this._regenerating || this._selectedId != null || !this.currentCard) return;
     this._regenerating = true;
     const button = document.getElementById('regenerate-btn');
@@ -2089,6 +2136,7 @@ const APP = {
     const renderedScreen = ['concept', 'wiki', 'sandbox'].includes(id) ? 'wiki' : id;
     const el = document.getElementById('screen-' + renderedScreen);
     if (el) el.classList.remove('hidden');
+    renderFreeAd();
     // Supabase's implicit OAuth response lives in the hash. Keep it intact
     // until the Supabase client has consumed it instead of replacing it with
     // the app's normal #/welcome route.
@@ -2436,6 +2484,7 @@ const APP = {
         headers: apiHeaders()
       });
       const body = await response.json().catch(() => ({}));
+      if (response.status === 403) { this.showProNotice('sandbox'); throw new Error(body.error); }
       if (response.status === 429) {
         if (body.code === 'quota_exceeded') this.showQuotaNotice('sandbox');
         throw new Error(`sandbox generation failed with ${response.status}`);
@@ -3187,6 +3236,7 @@ const APP = {
   async _ensureWiki(topic) {
     if ((WIKI || {})[topic]) return WIKI[topic];
     const response = await fetch(`${SERVER_BASE}/api/wiki?topic=${encodeURIComponent(topic)}`, { headers: apiHeaders() });
+    if (response.status === 403) { this.showProNotice('wiki'); throw new Error('Fresh wiki entries require Pro'); }
     if (response.status === 429) {
       const quotaBody = await response.json().catch(() => ({}));
       if (quotaBody.code === 'quota_exceeded') this.showQuotaNotice('wiki');
@@ -3369,7 +3419,7 @@ const APP = {
     const query = document.getElementById('search-input')?.value?.toLowerCase().trim() || '';
     const diffFilter = parseInt(document.getElementById('diff-filter')?.value) || 0;
     const topicFilter = document.getElementById('topic-filter')?.value || '';
-    let results = [...SEED_CARDS];
+    let results = this._bundledPracticeCards();
     if (query) results = results.filter(c => c.scenario.toLowerCase().includes(query) || c.topic.includes(query));
     if (diffFilter) results = results.filter(c => c.difficulty === diffFilter);
     if (topicFilter) results = results.filter(c => c.topic === topicFilter);
@@ -3393,6 +3443,7 @@ const APP = {
   },
 
   resumeSession() {
+    if (!this._canPractice()) return false;
     const raw = localStorage.getItem(this._resumeStorageKey());
     if (!raw) return false;
     try {
@@ -3431,7 +3482,7 @@ const APP = {
   /* ——— Auto-Calibrate Difficulty ——— */
 
   autoCalibrate() {
-    const cards = SEED_CARDS;
+    const cards = this._bundledPracticeCards();
     for (const card of cards) {
       const review = this.getCardReview(card.id);
       if (review.timesReviewed >= 3) {
@@ -3598,6 +3649,27 @@ const APP = {
         banner.innerHTML = 'Could not start checkout. Please try again.';
       }
     }
+  },
+
+  _freeQuestionsUsed() {
+    return Math.max(0, Number(this.profile?.dailyAnswers?.[new Date().toISOString().slice(0, 10)]) || 0);
+  },
+
+  _freeQuestionsRemaining() {
+    return currentPlan === 'pro' ? Infinity : Math.max(0, appConfig.freeDailyCardLimit - this._freeQuestionsUsed());
+  },
+
+  _canPractice() {
+    if (this._freeQuestionsRemaining() > 0) return true;
+    this.showQuotaNotice('cards');
+    return false;
+  },
+
+  showProNotice(kind) {
+    const banner = document.getElementById('upgrade-banner');
+    if (!banner) return;
+    banner.classList.remove('hidden');
+    banner.innerHTML = 'Fresh AI generation requires Pro. You can keep using existing cards, wiki entries, and experiments. <button class="btn btn-sm btn-primary" onclick="APP.upgradeToPro()">Upgrade to Pro</button>';
   },
 
   showQuotaNotice(kind) {

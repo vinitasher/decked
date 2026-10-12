@@ -257,11 +257,11 @@ test('quota endpoint reports usage, limits, and plan', async () => {
   const body = await response.json();
   assert.equal(body.signedIn, true);
   assert.equal(body.plan, 'pro');
-  assert.equal(body.cards.limit, 10);
-  assert.equal(body.cards.remaining, 10);
-  assert.equal(body.wiki.limit, 10);
-  assert.equal(body.sandbox.limit, 3);
-  assert.equal(body.sandbox.remaining, 3);
+  assert.equal(body.cards.limit, 100);
+  assert.equal(body.cards.remaining, 100);
+  assert.equal(body.wiki.limit, 0);
+  assert.equal(body.sandbox.limit, 0);
+  assert.equal(body.sandbox.remaining, 0);
 });
 
 test('quota endpoint tracks anonymous device usage and rejects non-GET', async () => {
@@ -274,7 +274,7 @@ test('quota endpoint tracks anonymous device usage and rejects non-GET', async (
   const body = await response.json();
   assert.equal(body.signedIn, false);
   assert.equal(body.plan, 'free');
-  assert.equal(body.sandbox.limit, 3);
+  assert.equal(body.sandbox.limit, 0);
   assert.equal(body.sandbox.used, 0);
 
   const post = await quotaOnRequest({
@@ -282,6 +282,25 @@ test('quota endpoint tracks anonymous device usage and rejects non-GET', async (
     env: { CARD_CACHE: store }
   });
   assert.equal(post.status, 405);
+});
+
+test('question allowance reports profile answers instead of old generation counters', async () => {
+  const store = kvStore();
+  const today = new Date().toISOString().slice(0, 10);
+  store.store.set(`quota:cards:dev:daily-reader:${today}`, { value: '10' });
+  store.store.set('profile:v1:dev:daily-reader', { value: JSON.stringify({
+    schemaVersion: 1, clientUpdatedAt: Date.now(), updatedAt: new Date().toISOString(),
+    profile: { userId: 'dev:daily-reader', dailyAnswers: { [today]: 42 } }
+  }) });
+  const response = await quotaOnRequest({
+    request: new Request('https://example.com/api/quota', { headers: { 'X-Device-Id': 'daily-reader' } }),
+    env: { CARD_CACHE: store, FREE_DAILY_CARD_LIMIT: '10' }
+  });
+  const body = await response.json();
+  assert.equal(body.cards.limit, 100);
+  assert.equal(body.cards.used, 42);
+  assert.equal(body.cards.remaining, 58);
+  assert.equal(body.aiGenerationAllowed, false);
 });
 
 test('public config exposes the generated Sandbox daily limit', async () => {
@@ -295,9 +314,9 @@ test('public config exposes the generated Sandbox daily limit', async () => {
   });
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(body.freeDailySandboxLimit, 6);
-  assert.equal(body.freeDailyCardLimit, 10);
-  assert.equal(body.freeDailyWikiLimit, 10);
+  assert.equal(body.freeDailySandboxLimit, 0);
+  assert.equal(body.freeDailyCardLimit, 100);
+  assert.equal(body.freeDailyWikiLimit, 0);
 });
 
 

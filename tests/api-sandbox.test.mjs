@@ -1,7 +1,8 @@
+import { proContext } from './helpers/pro-context.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { onRequest } from '../functions/api/sandbox.js';
+import { onRequest as productionOnRequest } from '../functions/api/sandbox.js';
 import { dailyBucket } from '../functions/shared/entitlement.js';
 
 const generatedDefinition = {
@@ -94,7 +95,7 @@ test('sandbox endpoint reports missing provider configuration clearly', async ()
     env: { CARD_CACHE: kvStore(), SANDBOX_CACHE: kvStore() }
   });
   assert.equal(response.status, 500);
-  assert.equal((await response.json()).error, 'Sandbox generation is not configured');
+  assert.equal((await response.json()).error, 'Generation is not configured');
 });
 
 test('sandbox endpoint serves a valid cached definition without provider or quota use', async () => {
@@ -146,7 +147,7 @@ test('sandbox endpoint validates, caches, and charges one fresh definition', asy
     assert.equal(cached.key, 'sandbox:v1:database-indexing');
     assert.equal(JSON.parse(cached.value).modelKind, 'bounded-pressure');
     assert.equal(cached.options.expirationTtl, 2592000);
-    assert.equal(cache.store.get(`quota:sandbox:dev:sandbox-device:${dailyBucket()}`).value, '1');
+    assert.equal([...cache.store.keys()].some(key => key.startsWith('quota:sandbox:')), false);
     assert.equal(provider.calls(), 1);
   } finally {
     provider.restore();
@@ -170,24 +171,17 @@ test('sandbox endpoint retries malformed provider output without charging or cac
   }
 });
 
-test('sandbox endpoint enforces the free daily quota before calling the provider', async () => {
+test('sandbox endpoint denies fresh AI to free users before calling the provider', async () => {
   const cache = kvStore();
   cache.store.set(`quota:sandbox:dev:limited:${dailyBucket()}`, { value: '3' });
   const provider = withProvider(() => { throw new Error('provider must not be called'); });
   try {
-    const response = await onRequest({
+    const response = await productionOnRequest({
       request: request(undefined, { 'X-Device-Id': 'limited' }),
       env: env({ CARD_CACHE: cache, SANDBOX_CACHE: kvStore(), FREE_DAILY_SANDBOX_LIMIT: '3' })
     });
-    assert.equal(response.status, 429);
-    assert.deepEqual(await response.json(), {
-      error: 'Daily Sandbox generation limit reached — upgrade to Pro for more generated experiments',
-      code: 'quota_exceeded',
-      kind: 'sandbox',
-      used: 3,
-      limit: 3,
-      remaining: 0
-    });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).code, 'pro_required');
     assert.equal(provider.calls(), 0);
   } finally {
     provider.restore();
@@ -234,3 +228,5 @@ async function signProToken() {
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(`${header}.${payload}`));
   return `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
 }
+
+async function onRequest(context) { return productionOnRequest(await proContext(context)); }

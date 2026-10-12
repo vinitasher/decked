@@ -7,9 +7,9 @@
    counters live in KV under `quota:` and expire after three days, so each
    UTC date bucket naturally dies off after the day ends. */
 
-export const DEFAULT_FREE_DAILY_CARD_LIMIT = 10;
-export const DEFAULT_FREE_DAILY_WIKI_LIMIT = 10;
-export const DEFAULT_FREE_DAILY_SANDBOX_LIMIT = 3;
+export const DEFAULT_FREE_DAILY_CARD_LIMIT = 100;
+export const DEFAULT_FREE_DAILY_WIKI_LIMIT = 0;
+export const DEFAULT_FREE_DAILY_SANDBOX_LIMIT = 0;
 
 const enc = new TextEncoder();
 const jwksCache = new Map();
@@ -132,24 +132,12 @@ export function quotaKey(kind, identity, now = Date.now()) {
 }
 
 export function freeLimit(env, kind) {
-  const envKey = {
-    cards: 'FREE_DAILY_CARD_LIMIT',
-    wiki: 'FREE_DAILY_WIKI_LIMIT',
-    sandbox: 'FREE_DAILY_SANDBOX_LIMIT'
-  }[kind];
-  const defaultLimit = {
-    cards: DEFAULT_FREE_DAILY_CARD_LIMIT,
-    wiki: DEFAULT_FREE_DAILY_WIKI_LIMIT,
-    sandbox: DEFAULT_FREE_DAILY_SANDBOX_LIMIT
-  }[kind] ?? 0;
-  const raw = envKey ? env[envKey] : undefined;
-  const parsed = Number.parseInt(raw ?? '', 10);
-  if (raw === undefined || raw === null || raw === '') return defaultLimit;
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultLimit;
+  // Former generation-quota overrides cannot reopen free AI access or lower
+  // the new 100-question allowance.
+  return kind === 'cards' ? DEFAULT_FREE_DAILY_CARD_LIMIT : 0;
 }
 
-/* An explicit limit of 0 disables the free quota entirely (used by tests and
-   previews). */
+/* Whether the surface has a free daily question allowance. */
 export function quotaEnabled(env, kind) {
   return freeLimit(env, kind) > 0;
 }
@@ -187,7 +175,7 @@ export async function getUsage(env, identity, kind, now = Date.now()) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-/* Atomically claim one unit of a daily quota. Returns the new usage count.
+/* Record one unit of a daily quota. Returns the new usage count.
    The counter expires three days out, which is enough for the date bucket to
    rotate while staying safe if a request straddles midnight. */
 export async function consumeQuota(env, identity, kind, now = Date.now()) {

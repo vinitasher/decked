@@ -7,6 +7,11 @@ import { freeLimit } from '../shared/entitlement.js';
 
 export function onRequestGet(context) {
   const { env } = context;
+  const client = env.ADSENSE_CLIENT_ID?.trim() || 'ca-pub-1421098160303360';
+  const slot = env.ADSENSE_DASHBOARD_SLOT?.trim() || '';
+  const adsense = env.ADSENSE_ENABLED === 'true' && env.ADSENSE_CONSENT_READY === 'true'
+    && /^ca-pub-\d{16}$/.test(client) && /^\d{10}$/.test(slot)
+    ? { client, slot } : null;
   return new Response(
     JSON.stringify({
       ok: true,
@@ -16,6 +21,7 @@ export function onRequestGet(context) {
       freeDailyCardLimit: freeLimit(env, 'cards'),
       freeDailyWikiLimit: freeLimit(env, 'wiki'),
       freeDailySandboxLimit: freeLimit(env, 'sandbox'),
+      adsense,
       turnstileSiteKey: env.TURNSTILE_SITE_KEY?.trim() || ''
     }),
     {

@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const cardsSource = await readFile(new URL('../js/cards.js', import.meta.url), 'utf8');
+const freeCardsSource = await readFile(new URL('../js/free-cards.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
 
 function makeClassList(initial = []) {
@@ -61,12 +62,13 @@ function createContext() {
   };
   vm.createContext(context);
   vm.runInContext(`${cardsSource}
+${freeCardsSource}
 globalThis.TOPIC_CATALOG = TOPIC_CATALOG;
 globalThis.SEED_CARDS = SEED_CARDS;
 globalThis.normalizeCardPrerequisites = normalizeCardPrerequisites;
 ${appSource}
 globalThis.normalizeProfileDataForTest = normalizeProfileData;
-globalThis.appForTest = APP;`, context);
+globalThis.appForTest = APP; currentPlan = 'pro';`, context);
   return context;
 }
 
@@ -677,7 +679,7 @@ test('normal account rendering refreshes a non-default generation allowance', ()
   const getElement = testContext.document.getElementById;
   testContext.document.getElementById = id => id === 'session-allowance' ? allowance : getElement(id);
   vm.runInContext('appConfig.freeDailyCardLimit = 7; renderAccountBar();', testContext);
-  assert.match(allowance.textContent, /Free: 7 freshly generated cards/);
+  assert.match(allowance.textContent, /Free: up to 7 questions/);
   assert.match(allowance.textContent, /midnight UTC/);
 });
 
@@ -953,6 +955,76 @@ test('empty session export does not include lifetime results or planned cards', 
   await Promise.resolve();
   assert.match(copied, /Cards: 0\nCorrect: 0 \(0%\)/);
   assert.doesNotMatch(copied, /Unanswered scenario/);
+});
+
+test('free sessions stop at the remaining daily answer allowance', async () => {
+  const ctx = createContext();
+  vm.runInContext("currentPlan = 'free'", ctx);
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  const today = new Date().toISOString().slice(0, 10);
+  app.profile.dailyAnswers = { [today]: 99 };
+  app._dueReviewCards = () => [];
+  app._buildSessionPlan = () => [{ topic: 'caching', difficulty: 1 }];
+  app.fetchCard = async () => generatedCard('one', 'One remaining question', 'caching', 1);
+  const session = await app._generateSessionCards(8);
+  assert.equal(session.requested, 1);
+  assert.equal(session.cards.length, 1);
+  app.profile.dailyAnswers[today] = 100;
+  assert.equal(app._freeQuestionsRemaining(), 0);
+  app.showQuotaNotice = kind => { assert.equal(kind, 'cards'); };
+  assert.equal(app._canPractice(), false);
+  const exhausted = await app._generateSessionCards(8);
+  assert.equal(exhausted.cards.length, 0);
+  app.profile.dailyAnswers = { '2000-01-01': 100 };
+  assert.equal(app._freeQuestionsRemaining(), 100);
+  vm.runInContext("currentPlan = 'pro'", ctx);
+  app.profile.dailyAnswers[today] = 1000;
+  assert.equal(app._freeQuestionsRemaining(), Infinity);
+});
+
+test('free requests use cache-only cards and cannot force AI generation', async () => {
+  const ctx = createContext();
+  vm.runInContext("currentPlan = 'free'", ctx);
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app._cardCache = {};
+  app.sessionCards = [];
+  let requests = 0;
+  const card = generatedCard('existing', 'An existing server card', 'caching', 1);
+  ctx.fetch = async url => {
+    requests++;
+    assert.equal(new URL(url, 'https://example.com').searchParams.get('cache_only'), '1');
+    return { ok: true, json: async () => ({ card }) };
+  };
+  assert.equal((await app.fetchCard('caching', 1)).id, card.id);
+  app.showProNotice = () => {};
+  assert.equal(await app.fetchCard('caching', 1, [], { force: true }), null);
+  await app.prefetchNext();
+  await app._warmCache();
+  assert.equal(requests, 1);
+  // A later free session may reuse the same existing card.
+  app.profile.seenScenarioFingerprints = [app._scenarioFingerprint(card.scenario)];
+  assert.equal((await app.fetchCard('caching', 1)).id, card.id);
+  assert.equal(requests, 1);
+});
+
+test('a new free visitor gets a complete offline session from existing cards', async () => {
+  const ctx = createContext();
+  vm.runInContext("currentPlan = 'free'", ctx);
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.sessionCards = [];
+  app._cardCache = {};
+  app.fetchCard = async () => assert.fail('free sessions must not need generation requests');
+  const first = await app._generateSessionCards(8);
+  assert.equal(first.cards.length, 8);
+  assert.equal(new Set(first.cards.map(card => card.id)).size, 8);
+  assert.ok(app._bundledPracticeCards().every(card => card.id && card.topic && card.options), 'snapshot pools must be flattened into cards');
+  app.profile.seenScenarioFingerprints = first.cards.map(card => app._scenarioFingerprint(card.scenario));
+  app.profile.dailyAnswers = { [new Date().toISOString().slice(0, 10)]: 8 };
+  const next = await app._generateSessionCards(8);
+  assert.equal(next.cards.length, 8, 'existing content remains reusable later in the day');
 });
 
 

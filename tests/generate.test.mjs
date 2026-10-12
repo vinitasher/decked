@@ -1,3 +1,4 @@
+import { proContext } from './helpers/pro-context.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
@@ -9,7 +10,7 @@ import {
   hasDegenerateLinearOptionTopology,
   hasUsableCorrectOptionWiring,
   normalizeCacheValue,
-  onRequest,
+  onRequest as productionOnRequest,
   scenarioFingerprint,
   selectCorrectLetter,
   validateGeneratedCard
@@ -849,3 +850,5 @@ test('only the first 100 valid exclusion fingerprints are accepted', async () =>
   assert.equal(body.cached, true);
   assert.equal(body.card.id, 'cached-100');
 });
+
+async function onRequest(context) { return productionOnRequest(await proContext(context)); }

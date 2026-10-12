@@ -155,13 +155,13 @@ test('freeLimit defaults and honors env overrides and zero for each generated su
   assert.equal(freeLimit({}, 'cards'), DEFAULT_FREE_DAILY_CARD_LIMIT);
   assert.equal(freeLimit({}, 'wiki'), DEFAULT_FREE_DAILY_WIKI_LIMIT);
   assert.equal(freeLimit({}, 'sandbox'), DEFAULT_FREE_DAILY_SANDBOX_LIMIT);
-  assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: '25' }, 'cards'), 25);
-  assert.equal(freeLimit({ FREE_DAILY_WIKI_LIMIT: '3' }, 'wiki'), 3);
-  assert.equal(freeLimit({ FREE_DAILY_SANDBOX_LIMIT: '7' }, 'sandbox'), 7);
-  assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: '0' }, 'cards'), 0);
-  assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: 'nope' }, 'cards'), 10);
+  assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: '25' }, 'cards'), 100);
+  assert.equal(freeLimit({ FREE_DAILY_WIKI_LIMIT: '3' }, 'wiki'), 0);
+  assert.equal(freeLimit({ FREE_DAILY_SANDBOX_LIMIT: '7' }, 'sandbox'), 0);
+  assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: '0' }, 'cards'), 100);
+  assert.equal(freeLimit({ FREE_DAILY_CARD_LIMIT: 'nope' }, 'cards'), 100);
   assert.equal(quotaEnabled({}, 'cards'), true);
-  assert.equal(quotaEnabled({ FREE_DAILY_CARD_LIMIT: '0' }, 'cards'), false);
+  assert.equal(quotaEnabled({ FREE_DAILY_CARD_LIMIT: '0' }, 'cards'), true);
   assert.equal(quotaEnabled({ FREE_DAILY_SANDBOX_LIMIT: '0' }, 'sandbox'), false);
 });
 
@@ -199,8 +199,8 @@ test('resolveEntitlement enforces the limit for anonymous and signed-in users', 
   const result = await resolveEntitlement(env, request({ 'X-Device-Id': 'abc' }), 'cards', now);
   assert.equal(result.identity, 'dev:abc');
   assert.equal(result.used, 10);
-  assert.equal(result.limit, 10);
-  assert.equal(result.remaining, 0);
+  assert.equal(result.limit, 100);
+  assert.equal(result.remaining, 90);
   assert.equal(result.pro, false);
 });
 
@@ -215,7 +215,7 @@ test('resolveEntitlement skips the limit for pro users', async () => {
   assert.equal(result.identity, 'user:u1');
   assert.equal(result.pro, true);
   assert.equal(result.used, 0);
-  assert.equal(result.remaining, 10);
+  assert.equal(result.remaining, 100);
 });
 
 test('base64url round trips bytes', () => {

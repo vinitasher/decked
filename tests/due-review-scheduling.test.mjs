@@ -73,7 +73,7 @@ ${srsSource}
 globalThis.SRS = SRS;
 ${appSource}
 globalThis.normalizeProfileDataForTest = normalizeProfileData;
-globalThis.appForTest = APP;`, context);
+globalThis.appForTest = APP; currentPlan = 'pro';`, context);
   return context;
 }
 

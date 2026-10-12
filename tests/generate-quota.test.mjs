@@ -1,3 +1,4 @@
+import { proContext } from './helpers/pro-context.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -105,7 +106,7 @@ function mockProvider() {
   return { restore: () => { globalThis.fetch = originalFetch; }, calls: () => calls };
 }
 
-test('card generation rejects with 429 once the free daily limit is reached', async () => {
+test('free card generation is denied before calling AI', async () => {
   const store = kvStore();
   const now = Date.now();
   store.store.set(`quota:cards:dev:abc:${dailyBucket(now)}`, { value: '10' });
@@ -116,9 +117,9 @@ test('card generation rejects with 429 once the free daily limit is reached', as
       random: () => 0.25,
       env: generateEnv({ CARD_CACHE: store, FREE_DAILY_CARD_LIMIT: '10' })
     });
-    assert.equal(response.status, 429);
+    assert.equal(response.status, 403);
     const body = await response.json();
-    assert.equal(body.code, 'quota_exceeded');
+    assert.equal(body.code, 'pro_required');
     assert.equal(body.kind, 'cards');
     assert.equal(provider.calls(), 0, 'the AI provider must not be called when quota is exhausted');
   } finally {
@@ -126,18 +127,18 @@ test('card generation rejects with 429 once the free daily limit is reached', as
   }
 });
 
-test('successful card generation consumes one unit of quota', async () => {
+test('Pro card generation does not consume free question allowance', async () => {
   const store = kvStore();
   const provider = mockProvider();
   try {
-    const response = await generateOnRequest({
+    const response = await generateOnRequest(await proContext({
       request: new Request('https://example.com/api/generate?topic=queues&difficulty=2', { headers: { 'X-Device-Id': 'abc' } }),
       random: () => 0.25,
       env: generateEnv({ CARD_CACHE: store })
-    });
+    }));
     assert.equal(response.status, 200);
     const key = `quota:cards:dev:abc:${dailyBucket()}`;
-    assert.equal(store.store.get(key).value, '1');
+    assert.equal(store.store.has(key), false);
   } finally {
     provider.restore();
   }
@@ -194,7 +195,7 @@ test('pro users bypass the card quota entirely', async () => {
   }
 });
 
-test('wiki generation rejects with 429 once the free daily limit is reached', async () => {
+test('free wiki generation is denied before calling AI', async () => {
   const store = kvStore();
   const now = Date.now();
   store.store.set(`quota:wiki:dev:abc:${dailyBucket(now)}`, { value: '10' });
@@ -204,9 +205,9 @@ test('wiki generation rejects with 429 once the free daily limit is reached', as
       request: new Request('https://example.com/api/wiki?topic=hot-key-handling', { headers: { 'X-Device-Id': 'abc' } }),
       env: wikiEnv({ CARD_CACHE: store, FREE_DAILY_WIKI_LIMIT: '10' })
     });
-    assert.equal(response.status, 429);
+    assert.equal(response.status, 403);
     const body = await response.json();
-    assert.equal(body.code, 'quota_exceeded');
+    assert.equal(body.code, 'pro_required');
     assert.equal(body.kind, 'wiki');
     assert.equal(provider.calls(), 0);
   } finally {
@@ -214,16 +215,16 @@ test('wiki generation rejects with 429 once the free daily limit is reached', as
   }
 });
 
-test('successful wiki generation consumes one unit of quota', async () => {
+test('Pro wiki generation does not consume free question allowance', async () => {
   const store = kvStore();
   const provider = mockProvider();
   try {
-    const response = await wikiOnRequest({
+    const response = await wikiOnRequest(await proContext({
       request: new Request('https://example.com/api/wiki?topic=hot-key-handling', { headers: { 'X-Device-Id': 'abc' } }),
       env: wikiEnv({ CARD_CACHE: store })
-    });
+    }));
     assert.equal(response.status, 200);
-    assert.equal(store.store.get(`quota:wiki:dev:abc:${dailyBucket()}`).value, '1');
+    assert.equal(store.store.has(`quota:wiki:dev:abc:${dailyBucket()}`), false);
   } finally {
     provider.restore();
   }
