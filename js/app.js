@@ -299,8 +299,6 @@ async function initAccount() {
 }
 
 function renderAccountError(message) {
-  const allowance = document.getElementById('session-allowance');
-  if (allowance) allowance.textContent = `Free: ${appConfig.freeDailyCardLimit} freshly generated cards per UTC day. Cached cards do not use this allowance. At the limit, review saved cards, wait until midnight UTC, or upgrade to Pro.`;
   const bar = document.getElementById('account-bar');
   if (!bar) return;
   bar.classList.remove('hidden');
@@ -308,6 +306,8 @@ function renderAccountError(message) {
 }
 
 function renderAccountBar() {
+  const allowance = document.getElementById('session-allowance');
+  if (allowance) allowance.textContent = `Free: ${appConfig.freeDailyCardLimit} freshly generated cards per UTC day. Cached cards do not use this allowance. At the limit, review saved cards, wait until midnight UTC, or upgrade to Pro.`;
   const bar = document.getElementById('account-bar');
   if (!bar) return;
   const signedIn = Boolean(currentSession?.user);
@@ -674,6 +674,11 @@ const APP = {
     if (cards.length < requested && !this._confirmShortSession(requested, cards.length)) return;
     this.sessionCards = cards;
     this.sessionIndex = 0;
+    this._sessionResults = {};
+    this._sessionAttempts = [];
+    this._retriedCardIds = new Set();
+    this._nextCard = null;
+    this.sessionStart = Date.now();
     this._quickReview = true;
     this._quickTimer = 120; // 2 minutes
     this.profile.totalSessions++;
@@ -1096,8 +1101,7 @@ const APP = {
         alert('No cards available! Check back later.');
         return;
       }
-      // A mix-ratio shortfall is expected (fresh capped when reviews are
-      // scarce); only a generation failure needs confirmation.
+      // Ask before starting fewer questions than the requested count.
       if (cards.length < requested && !mixShortfall && !this._confirmShortSession(requested, cards.length)) {
         return;
       }
@@ -1107,6 +1111,7 @@ const APP = {
       this._nextCard = null;
       this._retriedCardIds = new Set();
       this._sessionResults = {};
+      this._sessionAttempts = [];
       this.profile.totalSessions++;
       this._startTimer();
       this.saveProfile();
@@ -1138,6 +1143,7 @@ const APP = {
     this._nextCard = null;
     this._retriedCardIds = new Set();
     this._sessionResults = {};
+    this._sessionAttempts = [];
     this.profile.totalSessions++;
     this._startTimer();
     this.saveProfile();
@@ -1235,11 +1241,9 @@ const APP = {
       session.push(card);
     }
     const dueCount = session.length;
-    // Anki-style mix ratio: fresh cards are capped at half the session so
-    // scheduled reviews keep their slots and new content never dominates.
-    const freshCap = Math.max(2, Math.ceil(requested / 2));
-    const freshBudget = Math.max(0, Math.min(requested - dueCount, freshCap));
-    const mixShortfall = dueCount + freshBudget < requested;
+    // Preserve due reviews first, then fill every remaining requested slot.
+    const freshBudget = Math.max(0, requested - dueCount);
+    const mixShortfall = false;
     const plan = this._buildSessionPlan(freshBudget);
     // Generate one card at a time, in up to 3 refill rounds, so an
     // unavailable generator cannot loop forever (bounded at freshBudget*3
@@ -1317,13 +1321,13 @@ const APP = {
     return list.filter(entry => entry.correct).length / list.length;
   },
 
-  /* Delayed repetition: a card answered wrong returns at the end of the
-     session so the learner gets a second chance while the mistake is fresh
-     (once per card per session). */
+  /* Revisit a mistake in an existing future slot, without extending the
+     promised session length. Final-slot mistakes remain in the summary. */
   _maybeScheduleRetry(card) {
-    if (card?.id && !this._retriedCardIds.has(card.id) && Array.isArray(this.sessionCards)) {
+    const slot = this.sessionCards?.findLastIndex((candidate, index) => index > this.sessionIndex && !candidate.review && !candidate.retry);
+    if (card?.id && slot > this.sessionIndex && !this._retriedCardIds.has(card.id)) {
       this._retriedCardIds.add(card.id);
-      this.sessionCards.push({ ...card, review: true, retry: true });
+      this.sessionCards[slot] = { ...card, review: true, retry: true };
     }
   },
 
@@ -1508,11 +1512,14 @@ const APP = {
     // track per-card outcomes for this session (mistake review + retries)
     this._sessionResults = this._sessionResults || {};
     this._sessionResults[card.id] = correct;
+    this._sessionAttempts = this._sessionAttempts || [];
+    this._sessionAttempts.push({ card, correct, confidence });
     if (!correct) this._maybeScheduleRetry(card);
 
     // update global stats + streak
     this.profile.totalAnswered++;
     if (correct) this.profile.totalCorrect++;
+    this._saveSessionState();
     const today = new Date().toISOString().split('T')[0];
     if (this.profile.streaks.lastDate === today) {
       // already counted today
@@ -1653,14 +1660,12 @@ const APP = {
       const nextIdx = this.sessionIndex;
       if (nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review && !this.sessionCards[nextIdx]?.retry) {
         this.sessionCards[nextIdx] = this._nextCard;
-      } else if (nextIdx >= this.sessionCards.length) {
-        this.sessionCards.push(this._nextCard);
       }
       this._nextCard = null;
     }
 
-    // immediately start prefetching the one after that
-    this.prefetchNext();
+    // Prefetch only while another planned question remains.
+    if (this.sessionIndex < this.sessionCards.length - 1) this.prefetchNext();
 
     this.showCard();
   },
@@ -1676,21 +1681,27 @@ const APP = {
     this.showScreen('welcome');
   },
 
+  _sessionStats() {
+    const attempts = this._sessionAttempts || [];
+    const answered = attempts.length;
+    const correct = attempts.filter(attempt => attempt.correct).length;
+    return { attempts, answered, correct, percent: answered ? Math.round(100 * correct / answered) : 0 };
+  },
+
   endSession() {
     this._quickReview = false;
     this.showScreen('session-end');
-    const correct = this.profile.totalAnswered > 0
-      ? Math.round(100 * this.profile.totalCorrect / this.profile.totalAnswered) : 0;
+    const stats = this._sessionStats();
     document.getElementById('session-summary').innerHTML = `
-      <p>Cards reviewed: <strong>${this.sessionCards.length}</strong></p>
-      <p>Lifetime correct: <strong>${this.profile.totalCorrect} / ${this.profile.totalAnswered}</strong> (${correct}%)</p>
-      <p>Topics covered: <strong>${new Set(this.sessionCards.map(c => c.topic)).size}</strong></p>
+      <p>Cards reviewed: <strong>${stats.answered}</strong></p>
+      <p>Lifetime correct: <strong>${this.profile.totalCorrect} / ${this.profile.totalAnswered}</strong> (${this.profile.totalAnswered ? Math.round(100 * this.profile.totalCorrect / this.profile.totalAnswered) : 0}%)</p>
+      <p>Topics covered: <strong>${new Set(stats.attempts.map(attempt => attempt.card.topic)).size}</strong></p>
       <p>Current streak: <strong>${this.profile.streaks.current} days</strong> (best: ${this.profile.streaks.best})</p>
-      <p>Average difficulty of session: <strong>${(this.sessionCards.reduce((s,c) => s + c.difficulty, 0) / this.sessionCards.length).toFixed(1)} / 5</strong> — ${this.sessionCards.length > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
+      <p>Average difficulty of session: <strong>${stats.answered ? (stats.attempts.reduce((sum, attempt) => sum + attempt.card.difficulty, 0) / stats.answered).toFixed(1) : '—'} / 5</strong> — ${stats.answered > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
     `;
     this.showSessionReview();
     this._stopTimer();
-    this._saveSession(this.sessionCards.length, this.profile.totalCorrect);
+    this._saveSession(stats.answered, stats.correct, stats.attempts.map(attempt => attempt.card));
     this.renderDeckStats();
   },
 
@@ -2135,9 +2146,9 @@ const APP = {
 
   /* ——— Session History ——— */
 
-  _saveSession(cardCount, correct) {
+  _saveSession(cardCount, correct, cards = this.sessionCards) {
     const sessions = JSON.parse(localStorage.getItem('sdf_sessions') || '[]');
-    sessions.unshift({ date: new Date().toISOString(), cards: cardCount, correct, topics: [...new Set(this.sessionCards.map(c => c.topic))] });
+    sessions.unshift({ date: new Date().toISOString(), cards: cardCount, correct, topics: [...new Set(cards.map(c => c.topic))] });
     if (sessions.length > 50) sessions.length = 50;
     localStorage.setItem('sdf_sessions', JSON.stringify(sessions));
   },
@@ -2195,19 +2206,15 @@ const APP = {
 
   showSessionReview() {
     const el = document.getElementById('session-summary');
-    const correct = this.profile.totalCorrect;
-    const total = this.profile.totalAnswered;
-    const pct = total > 0 ? Math.round(100 * correct / total) : 0;
-    let html = `<p>Session complete — <strong>${this.sessionCards.length}</strong> cards, <strong>${pct}%</strong> correct</p><div class="review-list">`;
-    for (let i = 0; i < this.sessionCards.length; i++) {
-      const card = this.sessionCards[i];
-      const review = this.getCardReview(card.id);
-      const wasCorrect = review.lastConfidence && review.lastConfidence > 0;
+    const stats = this._sessionStats();
+    let html = `<p>Session complete — <strong>${stats.answered}</strong> cards answered, <strong>${stats.percent}%</strong> correct</p><div class="review-list">`;
+    for (let i = 0; i < stats.attempts.length; i++) {
+      const { card, correct: wasCorrect, confidence } = stats.attempts[i];
       html += `<div class="review-item ${wasCorrect ? 'is-correct' : 'is-incorrect'}">
         <span class="review-index">${i+1}.</span>
         <div class="review-copy">
           <strong>${card.topic}</strong>: ${card.scenario.substring(0, 70)}…<br>
-          <span class="review-meta">→ ${card.correct} · ${SRS.confidenceLabel(review.lastConfidence)}</span>
+          <span class="review-meta">→ ${card.correct} · ${SRS.confidenceLabel(confidence)}</span>
         </div>
       </div>`;
     }
@@ -3288,7 +3295,7 @@ const APP = {
 
   _saveSessionState() {
     if (this.sessionCards.length > 0 && this.sessionIndex < this.sessionCards.length) {
-      localStorage.setItem('sdf_resume', JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex, start: this.sessionStart }));
+      localStorage.setItem('sdf_resume', JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
     } else {
       localStorage.removeItem('sdf_resume');
     }
@@ -3317,6 +3324,10 @@ const APP = {
       this.sessionCards = cards;
       this.sessionIndex = resumeIndex;
       this.sessionStart = state.start || Date.now();
+      this._sessionAttempts = Array.isArray(state.attempts) ? state.attempts : [];
+      this._sessionResults = state.results || {};
+      this._retriedCardIds = new Set(cards.filter(card => card.retry).map(card => card.id));
+      this._nextCard = null;
       this._startTimer();
       this.showCard();
       this.showScreen('session');

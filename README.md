@@ -1,8 +1,8 @@
 # Decked
 
-**Practice system design trade-offs in five minutes a day.**
+**Practice system design trade-offs in short daily sessions.**
 
-[Try 8 questions — no account required](https://decked.pages.dev) · [Ten sample challenges](docs/marketing/challenges.md)
+[Try 8 questions · allow 5–10 min — no account required](https://decked.pages.dev) · [Ten sample challenges](docs/marketing/challenges.md)
 
 Preparing for a system design interview? Decked gives you short architecture scenarios, visual explanations of the alternatives, and adaptive review of your weakest topics. Use it alongside longer design exercises and mock interviews.
 
@@ -120,8 +120,8 @@ decision-based practice with adaptive difficulty.
   scheduled reviews and retries remain available.
 - Prerequisite-first ordering: within a difficulty tier, foundational topics
   are served before the topics that build on them
-- Anki-style mix ratio: fresh cards are capped at half the session so
-  scheduled reviews keep their slots and new content never dominates
+- Review-first sessions: scheduled reviews keep their slots, and fresh cards
+  fill the remaining requested questions
 - Desirable-difficulty pacing: recent answers (last 10 per topic) steer each
   topic's difficulty toward the 60-80% accuracy band
 - Due reviews are ordered by predicted-recall risk (FSRS R = e^(-t/S)), not
@@ -579,7 +579,7 @@ ownership, or bloat) justifies a split; the launch trigger fired first.
 
 ## Product values
 
-- **Simple & easy:** one-card-at-a-time mobile UI; 3 minutes per session
+- **Simple & easy:** one-card-at-a-time mobile UI; allow approximately 5–10 minutes for eight questions
 - **Best user experience:** adaptive difficulty means the app never feels too
   hard or too easy — it meets the user where they are
 - **Profitable:** subscription ($8/mo or $60/yr) for full deck + progress
