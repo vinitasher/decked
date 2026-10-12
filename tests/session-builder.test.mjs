@@ -874,3 +874,67 @@ test('late regeneration cannot overwrite a newer session', async () => {
   await pending;
   assert.equal(app.sessionCards[0].id, 'new');
 });
+
+
+test('late quota responses cannot expose a previous account plan', async () => {
+  const ctx = createContext();
+  const nodes = new Map();
+  const getElement = ctx.document.getElementById;
+  ctx.document.getElementById = id => getElement(id) || (nodes.has(id) ? nodes.get(id) : (nodes.set(id, { innerHTML: '', textContent: '', classList: makeClassList(['hidden']) }), nodes.get(id)));
+  let complete;
+  ctx.fetch = () => new Promise(resolve => { complete = resolve; });
+  vm.runInContext("setAccountSession({user:{id:'a'}});", ctx);
+  const pending = vm.runInContext('renderQuotaBar()', ctx);
+  vm.runInContext("setAccountSession({user:{id:'b'}});", ctx);
+  complete({ ok: true, json: async () => ({ plan: 'pro' }) });
+  await pending;
+  assert.equal(vm.runInContext('currentPlan', ctx), 'free');
+  assert.equal(ctx.document.getElementById('quota-bar').classList.contains('hidden'), true);
+});
+
+test('account switches clear a previously displayed Pro plan immediately', () => {
+  const ctx = createContext();
+  vm.runInContext("setAccountSession({user:{id:'a'}}); currentPlan = 'pro'; setAccountSession({user:{id:'b'}});", ctx);
+  assert.equal(vm.runInContext('currentPlan', ctx), 'free');
+});
+
+test('generated bookmarks persist content before grading and survive cache eviction', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.currentCard = generatedCard('generated-bookmark', 'A generated bookmarked scenario', 'caching', 1);
+  const list = { innerHTML: '', textContent: '' };
+  const getElement = ctx.document.getElementById;
+  ctx.document.getElementById = id => id === 'bookmark-list' ? list : getElement(id);
+  app._loadCachedKeys = () => [];
+  app.toggleBookmark(app.currentCard.id);
+  app.currentCard = null;
+  app.renderBookmarks();
+  assert.match(list.innerHTML, /A generated bookmarked scenario/);
+  app.toggleBookmark('generated-bookmark');
+  assert.deepEqual(JSON.parse(ctx.localStorage.getItem('sdf_bookmark_cards')), {});
+});
+
+test('card options and explanations render markup as text', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  const card = generatedCard('markup', 'Plain scenario', 'caching', 1);
+  card.options[0].label = '<img src=x onerror=alert(1)>';
+  card.explanation = '<img src=x onerror=alert(2)>';
+  app.sessionCards = [card];
+  app.sessionIndex = 0;
+  app._recordDisplayedScenario = () => {};
+  app._wikiLink = () => '';
+  app.isBookmarked = () => false;
+  const buttons = [];
+  ctx.document.createElement = () => { const button = { innerHTML: '', setAttribute() {} }; buttons.push(button); return button; };
+  ctx.Render = { diagram() {} };
+  app.showCard();
+  assert.ok(buttons.some(button => button.innerHTML.includes('&lt;img')));
+  assert.ok(buttons.every(button => !button.innerHTML.includes('<img')));
+  app.answer(card.correct);
+  const feedback = ctx.document.getElementById('feedback').innerHTML;
+  assert.match(feedback, /&lt;img/);
+  assert.doesNotMatch(feedback, /<img/);
+});
