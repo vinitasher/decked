@@ -1,7 +1,7 @@
 /* Cloudflare Pages Function — Stripe webhook: verifies the signature and
-   grants or revokes the Pro plan in KV. checkout.session.completed attaches
-   the subscription to the user (client_reference_id); subscription events
-   keep the mapping through the Stripe customer id. */
+   reconciles current subscription status before granting or revoking Pro.
+   Successful event IDs suppress duplicate deliveries; failed reconciliations
+   return an error so Stripe can retry. Customer/subscription mappings persist. */
 
 import { createServerRequestContext, logServerEvent } from '../../shared/server-logger.js';
 import { userBillingKey } from '../../shared/entitlement.js';
@@ -60,7 +60,7 @@ function jsonResponse(payload, status = 200, log, event = 'request completed') {
   });
 }
 
-export async function setPlan(env, userId, plan) {
+export async function setPlan(env, userId, plan, subscriptionId = null) {
   const key = userBillingKey(userId);
   if (!env.CARD_CACHE) return;
   if (plan === 'free') {
@@ -70,6 +70,7 @@ export async function setPlan(env, userId, plan) {
   await env.CARD_CACHE.put(key, JSON.stringify({
     plan: 'pro',
     status: 'active',
+    subscriptionId,
     updatedAt: new Date().toISOString()
   }));
 }
@@ -103,56 +104,43 @@ export async function onRequestPost(context) {
   return jsonResponse({ ok: true }, 200, log, 'request completed', { type: event.type });
 }
 
+async function reconcileSubscription(env, subscriptionId, userId) {
+  if (!env.STRIPE_SECRET_KEY || !subscriptionId) throw new Error('Subscription reconciliation is not configured.');
+  const response = await fetch(`https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` }
+  });
+  if (!response.ok) throw new Error('Could not retrieve current subscription state.');
+  const subscription = await response.json();
+  if (subscription.id !== subscriptionId || typeof subscription.status !== 'string') {
+    throw new Error('Stripe returned an invalid subscription.');
+  }
+  if (subscription.status === 'active') {
+    await setPlan(env, userId, 'pro', subscriptionId);
+  } else {
+    const current = JSON.parse(await env.CARD_CACHE.get(userBillingKey(userId)) || 'null');
+    // An older subscription must not revoke access granted by another one.
+    if (!current?.subscriptionId || current.subscriptionId === subscriptionId) await setPlan(env, userId, 'free');
+  }
+}
+
 async function handleEvent(env, event, log) {
-  const { type, data } = event;
-
-  if (type === 'checkout.session.completed') {
-    const session = data?.object || {};
-    const userId = session.client_reference_id;
-    if (userId) {
-      await setPlan(env, userId, 'pro');
-      if (env.CARD_CACHE && session.customer) {
-        await env.CARD_CACHE.put(`stripe:customer:${session.customer}`, userId);
-      }
-      if (env.CARD_CACHE && session.subscription) {
-        await env.CARD_CACHE.put(`stripe:sub:${session.subscription}`, userId);
-      }
-      logServerEvent(log, 'Pro granted from checkout', { userId });
-    }
-    return;
-  }
-
-  if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
-    const subscription = data?.object || {};
-    const userId = subscription.metadata?.user_id
-      || (await lookupCustomerUser(env, subscription.customer))
-      || (await lookupSubscriptionUser(env, subscription.id));
-    if (!userId) {
-      logServerEvent(log, 'Subscription event has no mapped user', { customer: subscription.customer, subscription: subscription.id }, 'warn');
-      return;
-    }
-    if (type === 'customer.subscription.deleted' || subscription.status !== 'active') {
-      await setPlan(env, userId, 'free');
-      logServerEvent(log, 'Pro revoked', { userId, status: subscription.status });
-    } else {
-      await setPlan(env, userId, 'pro');
-      logServerEvent(log, 'Pro confirmed', { userId, status: subscription.status });
-    }
-    return;
-  }
-
-  if (type === 'customer.subscription.created') {
-    const subscription = data?.object || {};
-    const userId = await lookupCustomerUser(env, subscription.customer) || subscription.metadata?.user_id;
-    if (userId) {
-      await setPlan(env, userId, 'pro');
-      if (env.CARD_CACHE) {
-        await env.CARD_CACHE.put(`stripe:sub:${subscription.id}`, userId);
-      }
-      logServerEvent(log, 'Pro granted from subscription created', { userId });
-    }
-    return;
-  }
+  const relevant = ['checkout.session.completed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'];
+  if (!relevant.includes(event.type)) return;
+  if (!env.CARD_CACHE) throw new Error('Billing storage is not configured.');
+  const eventKey = typeof event.id === 'string' ? `stripe:event:${event.id}` : null;
+  if (eventKey && await env.CARD_CACHE.get(eventKey)) return;
+  const object = event.data?.object || {};
+  const checkout = event.type === 'checkout.session.completed';
+  const subscriptionId = checkout ? object.subscription : object.id;
+  const userId = checkout ? object.client_reference_id : object.metadata?.user_id
+    || await lookupCustomerUser(env, object.customer)
+    || await lookupSubscriptionUser(env, subscriptionId);
+  if (!userId) throw new Error('Subscription event has no mapped user; retry after checkout mapping.');
+  if (object.customer) await env.CARD_CACHE.put(`stripe:customer:${object.customer}`, userId);
+  if (subscriptionId) await env.CARD_CACHE.put(`stripe:sub:${subscriptionId}`, userId);
+  await reconcileSubscription(env, subscriptionId, userId);
+  if (eventKey) await env.CARD_CACHE.put(eventKey, 'processed');
+  logServerEvent(log, 'Current subscription reconciled', { userId, subscriptionId });
 }
 
 async function lookupCustomerUser(env, customerId) {

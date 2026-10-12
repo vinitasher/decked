@@ -44,15 +44,24 @@ async function signJwt(claims) {
   return `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
 }
 
-async function postWebhook(store, event) {
-  const body = JSON.stringify(event);
-  return webhookOnRequest({
-    request: new Request('https://example.com/api/billing/webhook', {
-      method: 'POST', headers: { 'Stripe-Signature': stripeSignature('whsec_test', body) }, body
-    }),
-    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
-  });
+async function deliverWebhook(store, event, currentSubscription, fail = false) {
+  const object = event.data?.object || {};
+  if (event.type === 'checkout.session.completed' && !object.subscription) object.subscription = String(object.customer || 'cus_fixture').replace('cus_', 'sub_');
+  const subscription = currentSubscription || { id: event.type === 'checkout.session.completed' ? object.subscription : object.id, status: object.status || 'active' };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => fail ? new Response('unavailable', { status: 503 }) : new Response(JSON.stringify(subscription));
+  try {
+    const body = JSON.stringify(event);
+    return await webhookOnRequest({
+      request: new Request('https://example.com/api/billing/webhook', {
+        method: 'POST', headers: { 'Stripe-Signature': stripeSignature('whsec_test', body) }, body
+      }),
+      env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test', STRIPE_SECRET_KEY: 'sk_test_fixture' }
+    });
+  } finally { globalThis.fetch = originalFetch; }
 }
+
+async function postWebhook(store, event) { return deliverWebhook(store, event); }
 
 test('verifyStripeSignature accepts a valid signature and rejects bad ones', async () => {
   const body = JSON.stringify({ type: 'checkout.session.completed' });
@@ -72,14 +81,7 @@ test('checkout.session.completed grants Pro to the client_reference_id user', as
     type: 'checkout.session.completed',
     data: { object: { id: 'cs_123', client_reference_id: 'user-42', customer: 'cus_1', subscription: 'sub_1' } }
   });
-  const response = await webhookOnRequest({
-    request: new Request('https://example.com/api/billing/webhook', {
-      method: 'POST',
-      headers: { 'Stripe-Signature': stripeSignature('whsec_test', event) },
-      body: event
-    }),
-    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
-  });
+  const response = await deliverWebhook(store, JSON.parse(event));
   assert.equal(response.status, 200);
   const record = JSON.parse(store.store.get('billing:user:user-42').value);
   assert.equal(record.plan, 'pro');
@@ -123,14 +125,7 @@ test('customer.subscription.deleted revokes Pro', async () => {
     type: 'customer.subscription.deleted',
     data: { object: { id: 'sub_9', customer: 'cus_9', status: 'canceled', metadata: { user_id: 'user-7' } } }
   });
-  const response = await webhookOnRequest({
-    request: new Request('https://example.com/api/billing/webhook', {
-      method: 'POST',
-      headers: { 'Stripe-Signature': stripeSignature('whsec_test', event) },
-      body: event
-    }),
-    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
-  });
+  const response = await deliverWebhook(store, JSON.parse(event));
   assert.equal(response.status, 200);
   assert.equal(store.store.has('billing:user:user-7'), false, 'billing record removed on cancellation');
 });
@@ -142,14 +137,7 @@ test('customer.subscription.updated with a non-active status revokes Pro', async
     type: 'customer.subscription.updated',
     data: { object: { id: 'sub_3', customer: 'cus_3', status: 'past_due', metadata: { user_id: 'user-3' } } }
   });
-  await webhookOnRequest({
-    request: new Request('https://example.com/api/billing/webhook', {
-      method: 'POST',
-      headers: { 'Stripe-Signature': stripeSignature('whsec_test', event) },
-      body: event
-    }),
-    env: { CARD_CACHE: store, STRIPE_WEBHOOK_SECRET: 'whsec_test' }
-  });
+  await deliverWebhook(store, JSON.parse(event));
   assert.equal(store.store.has('billing:user:user-3'), false);
 });
 
@@ -310,4 +298,42 @@ test('public config exposes the generated Sandbox daily limit', async () => {
   assert.equal(body.freeDailySandboxLimit, 6);
   assert.equal(body.freeDailyCardLimit, 10);
   assert.equal(body.freeDailyWikiLimit, 10);
+});
+
+
+test('incomplete subscriptions do not grant Pro', async () => {
+  const store = kvStore();
+  const response = await deliverWebhook(store, { id: 'evt_incomplete', type: 'customer.subscription.created', data: { object: { id: 'sub_i', status: 'incomplete', metadata: { user_id: 'user-i' } } } });
+  assert.equal(response.status, 200);
+  assert.equal(await store.get('billing:user:user-i'), null);
+});
+
+test('older and duplicate events cannot restore canceled access', async () => {
+  const store = kvStore();
+  const object = { id: 'sub_r', status: 'active', metadata: { user_id: 'user-r' } };
+  const old = { id: 'evt_active', type: 'customer.subscription.created', data: { object } };
+  await deliverWebhook(store, old);
+  await deliverWebhook(store, { id: 'evt_canceled', type: 'customer.subscription.deleted', data: { object: { ...object, status: 'canceled' } } });
+  await deliverWebhook(store, old);
+  assert.equal(await store.get('billing:user:user-r'), null);
+  await deliverWebhook(store, { ...old, id: 'evt_delayed' }, { id: 'sub_r', status: 'canceled' });
+  assert.equal(await store.get('billing:user:user-r'), null);
+});
+
+test('failed Stripe reconciliation is retried rather than marked processed', async () => {
+  const store = kvStore();
+  const event = { id: 'evt_retry', type: 'customer.subscription.created', data: { object: { id: 'sub_retry', status: 'active', metadata: { user_id: 'user-retry' } } } };
+  assert.equal((await deliverWebhook(store, event, undefined, true)).status, 500);
+  assert.equal(await store.get('stripe:event:evt_retry'), null);
+  assert.equal(await store.get('billing:user:user-retry'), null);
+  assert.equal((await deliverWebhook(store, event)).status, 200);
+  assert.ok(await store.get('billing:user:user-retry'));
+});
+
+test('an inactive old subscription cannot revoke a newer active subscription', async () => {
+  const store = kvStore();
+  const object = { id: 'sub_new', status: 'active', metadata: { user_id: 'user-multi' } };
+  await deliverWebhook(store, { type: 'customer.subscription.created', data: { object } });
+  await deliverWebhook(store, { type: 'customer.subscription.deleted', data: { object: { ...object, id: 'sub_old', status: 'canceled' } } });
+  assert.equal(JSON.parse(await store.get('billing:user:user-multi')).subscriptionId, 'sub_new');
 });
