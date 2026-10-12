@@ -1411,6 +1411,7 @@ const APP = {
     const card = this.currentCard;
     this._recordDisplayedScenario(card);
     this._confidenceSubmitted = false;
+    this._selectedId = null;
 
     document.getElementById('card-counter').textContent =
       `${this.sessionIndex + 1} / ${this.sessionCards.length}${card.retry ? ' · retry' : ''}`;
@@ -1610,13 +1611,16 @@ const APP = {
   },
 
   async regenerateCard() {
-    if (this._regenerating) return;
+    if (this._regenerating || this._selectedId != null || !this.currentCard) return;
     this._regenerating = true;
     const button = document.getElementById('regenerate-btn');
     const snapshotCard = this.currentCard;
     const snapshotIndex = this.sessionIndex;
     const snapshotCards = this.sessionCards;
     const snapshotView = this._viewVersion;
+    const isCurrent = () => this.sessionCards === snapshotCards
+      && this.currentCard === snapshotCard && this.sessionIndex === snapshotIndex
+      && this._viewVersion === snapshotView && this._selectedId == null;
     if (button) {
       button.disabled = true;
       button.textContent = '⏳ Generating...';
@@ -1628,10 +1632,7 @@ const APP = {
         [snapshotCard, ...avoidList], { force: true });
       if (!newCard) throw new Error('fresh generation returned no card');
     } catch (error) {
-      if (this.currentCard === snapshotCard && this.sessionCards[snapshotIndex] !== snapshotCard) {
-        this.sessionCards[snapshotIndex] = snapshotCard;
-      }
-      this._announceRegenerate('Fresh generation is unavailable right now — please try again.', true);
+      if (isCurrent()) this._announceRegenerate('Fresh generation is unavailable right now — please try again.', true);
       return;
     } finally {
       this._regenerating = false;
@@ -1640,8 +1641,7 @@ const APP = {
         button.textContent = '🔄 Regenerate';
       }
     }
-    if (this.sessionCards !== snapshotCards || this.currentCard !== snapshotCard
-        || this.sessionIndex !== snapshotIndex || this._viewVersion !== snapshotView) return;
+    if (!isCurrent()) return;
     if (this.sessionIndex < this.sessionCards.length) this.sessionCards[this.sessionIndex] = newCard;
     this.currentCard = newCard;
     this.showCard();

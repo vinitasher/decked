@@ -875,6 +875,49 @@ test('late regeneration cannot overwrite a newer session', async () => {
   assert.equal(app.sessionCards[0].id, 'new');
 });
 
+test('answering while regeneration is pending preserves the answered card', async () => {
+  const app = freshApp();
+  const original = generatedCard('original', 'Original scenario', 'caching', 1);
+  app.sessionCards = [original];
+  app.currentCard = original;
+  app._selectedId = null;
+  let complete;
+  app.fetchCard = () => new Promise(resolve => { complete = resolve; });
+  app.showCard = () => assert.fail('must not reset the answered card');
+  const pending = app.regenerateCard();
+  app._selectedId = original.correct;
+  complete(generatedCard('replacement', 'Replacement scenario', 'caching', 1));
+  await pending;
+  assert.equal(app.currentCard, original);
+  assert.equal(app.sessionCards[0], original);
+  assert.equal(app._selectedId, original.correct);
+});
+
+test('failed regeneration cannot announce an error in a newer session', async () => {
+  const app = freshApp();
+  const original = generatedCard('original', 'Original scenario', 'caching', 1);
+  app.sessionCards = [original];
+  app.currentCard = original;
+  let reject;
+  app.fetchCard = () => new Promise((resolve, fail) => { reject = fail; });
+  app._announceRegenerate = () => assert.fail('stale errors must not reach the new session');
+  const pending = app.regenerateCard();
+  const next = generatedCard('next', 'Next scenario', 'dns', 1);
+  app.sessionCards = [next];
+  app.currentCard = next;
+  reject(new Error('generation failed'));
+  await pending;
+  assert.equal(app.sessionCards[0], next);
+});
+
+test('an answered card cannot start regeneration', async () => {
+  const app = freshApp();
+  app.currentCard = generatedCard('answered', 'Answered scenario', 'caching', 1);
+  app._selectedId = app.currentCard.correct;
+  app.fetchCard = () => assert.fail('answered cards must not be regenerated');
+  await app.regenerateCard();
+});
+
 
 test('late quota responses cannot expose a previous account plan', async () => {
   const ctx = createContext();
