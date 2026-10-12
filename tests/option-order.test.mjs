@@ -143,10 +143,9 @@ test('card rendering, answer feedback, and diagram rendering use one stable shuf
   assert.equal(renderCalls[0][2].reveal, true);
   assert.equal(renderCalls[0][2].compare, true);
 
-  optionButtons.forEach(button => {
-    button.disabled = false;
-    button.classList = makeClassList();
-  });
+  // Start a new presentation to exercise the incorrect-answer path.
+  optionButtons.length = 0;
+  app.showCard();
   optionButtons[1].click();
 
   assert.equal(app._cardCorrect, false);

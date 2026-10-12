@@ -34,7 +34,8 @@ function createContext() {
     scrollIntoView() {}
   });
   for (const id of [
-    'confidence-buttons', 'next-btn', 'consecutive-correct', 'achievement-toast'
+    'confidence-buttons', 'next-btn', 'consecutive-correct', 'achievement-toast',
+    'feedback', 'post-answer-actions', 'regenerate-btn', 'quality-rating'
   ]) elements.set(id, makeElement(id));
   const context = {
     window: { location: { hostname: 'example.com' } },
@@ -254,4 +255,27 @@ test('nodes is optional in the snapshot when the card has none', () => {
   app.rateConfidence(1);
 
   assert.equal('nodes' in app.profile.cardHistory[card.id].card, false);
+});
+
+test('response time ends at the answer rather than the confidence rating', () => {
+  const app = freshApp();
+  const card = generatedCard();
+  app.currentCard = card;
+  app.sessionCards = [card];
+  app._selectedId = null;
+  app._cardStartTime = 0;
+  app.closeWikiModal = () => {};
+  let now = 2500;
+  context.Date = class extends Date { static now() { return now; } };
+  try {
+    app.answer(card.correct);
+    now = 15000;
+    // Repeated answer events must not reset the choice or response time.
+    app.answer('A');
+    app.rateConfidence(3);
+    assert.equal(app.profile.cardHistory[card.id].lastResponseTime, 2500);
+    assert.equal(app.profile.cardHistory[card.id].timesCorrect, 1);
+  } finally {
+    delete context.Date;
+  }
 });
