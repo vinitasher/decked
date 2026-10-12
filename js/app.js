@@ -624,18 +624,36 @@ const APP = {
     return null;
   },
 
+  _invalidatePrefetch() {
+    this._prefetchRequest = null;
+    this._isGenerating = false;
+    this._nextCard = null;
+    this._nextCardSlot = null;
+  },
+
   async prefetchNext() {
-    if (this._isGenerating) return;
+    const cards = this.sessionCards;
+    const slot = this.sessionIndex + 1;
+    const target = cards[slot];
+    if (this._isGenerating || !target || target.review || target.retry) return;
+    const request = { cards, slot, target };
+    this._prefetchRequest = request;
     this._isGenerating = true;
     try {
-      const scored = this._rankedSessionTopics();
-      const nextTopic = scored[0].topic;
-      const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
-      this._nextCard = await this.fetchCard(nextTopic, 3, avoidList);
-    } catch (error) {
-      this._nextCard = null;
+      const card = await this.fetchCard(target.topic, target.difficulty, cards);
+      if (this._prefetchRequest !== request || this.sessionCards !== cards
+          || cards[slot] !== target || this.sessionIndex >= slot) return;
+      if (card && card.topic === target.topic && card.difficulty === target.difficulty) {
+        this._nextCard = card;
+        this._nextCardSlot = slot;
+      }
+    } catch (_) {
+      if (this._prefetchRequest === request) this._nextCard = null;
     } finally {
-      this._isGenerating = false;
+      if (this._prefetchRequest === request) {
+        this._isGenerating = false;
+        this._prefetchRequest = null;
+      }
     }
   },
 
@@ -1665,7 +1683,7 @@ const APP = {
     // their re-service)
     if (this._nextCard) {
       const nextIdx = this.sessionIndex;
-      if (nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review && !this.sessionCards[nextIdx]?.retry) {
+      if ((this._nextCardSlot == null || this._nextCardSlot === nextIdx) && nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review && !this.sessionCards[nextIdx]?.retry) {
         this.sessionCards[nextIdx] = this._nextCard;
       }
       this._nextCard = null;
@@ -1678,6 +1696,8 @@ const APP = {
   },
 
   exitSession() {
+    this._saveSessionState();
+    this._invalidatePrefetch();
     if (this._advanceTimer) {
       clearTimeout(this._advanceTimer);
       this._advanceTimer = null;
@@ -1696,10 +1716,11 @@ const APP = {
   },
 
   endSession() {
+    this._invalidatePrefetch();
     if (this._advanceTimer) clearTimeout(this._advanceTimer);
     this._advanceTimer = null;
     this._stopTimer();
-    localStorage.removeItem(this._resumeStorageKey());
+    localStorage.removeItem(this._resumeStorageKey(this._sessionOwner || undefined));
     this._quickReview = false;
     this.showScreen('session-end');
     const stats = this._sessionStats();
@@ -2138,6 +2159,8 @@ const APP = {
   _sessionTimer: false,
 
   _startTimer() {
+    this._sessionOwner = this._profileIdentity() || this._profileSyncIdentity || this.profile?.userId;
+    this._invalidatePrefetch();
     this._stopTimer();
     this._sessionStartMs = Date.now();
     this._sessionTimer = true;
@@ -3310,16 +3333,15 @@ const APP = {
 
   /* ——— Session Resume ——— */
 
-  _resumeStorageKey() {
-    const identity = this._profileIdentity() || this._profileSyncIdentity || this.profile?.userId;
+  _resumeStorageKey(identity = this._profileIdentity() || this._profileSyncIdentity || this.profile?.userId) {
     return `sdf_resume_${encodeURIComponent(identity || 'local')}`;
   },
 
   _saveSessionState() {
     if (this.sessionCards.length > 0 && this.sessionIndex < this.sessionCards.length) {
-      localStorage.setItem(this._resumeStorageKey(), JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, quickReview: Boolean(this._quickReview), quickTimer: this._quickTimer, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
+      localStorage.setItem(this._resumeStorageKey(this._sessionOwner || undefined), JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, quickReview: Boolean(this._quickReview), quickTimer: this._quickTimer, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
     } else {
-      localStorage.removeItem(this._resumeStorageKey());
+      localStorage.removeItem(this._resumeStorageKey(this._sessionOwner || undefined));
     }
   },
 
