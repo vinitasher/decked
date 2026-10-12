@@ -67,7 +67,7 @@ test('app.js synchronizes the identity-scoped learner profile through KV', () =>
 });
 
 test('service worker never caches identity-scoped profile responses', () => {
-  assert.match(serviceWorker, /url\.pathname === '\/api\/profile'/);
+  assert.match(serviceWorker, /url\.pathname\.startsWith\('\/api\/'\)/);
 });
 
 test('app.js handles quota-exceeded responses with an upgrade notice', () => {
@@ -112,7 +112,7 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
 });
 
 test('service worker cache version is bumped for the account assets', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v33';/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v34';/);
 });
 
 test('modern visual system keeps dashboard and study surfaces hooked together', () => {
