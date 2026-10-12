@@ -890,9 +890,10 @@ const APP = {
       // Local state remains authoritative until a later visibility/auth sync.
     } finally {
       this._profileSyncInFlight = false;
-      if (identity === this._profileSyncIdentity && this._profileChangeVersion > profileChangeVersion) {
-        this._scheduleProfileSync(0);
-      }
+      const changedDuringSave = identity === this._profileSyncIdentity && this._profileChangeVersion > profileChangeVersion;
+      const newAccountHasPendingChanges = identity !== this._profileSyncIdentity && this._profileSyncReady
+        && this._profileLocalUpdatedAt > (this._profileLastSyncedClientUpdatedAt || 0);
+      if (changedDuringSave || newAccountHasPendingChanges) this._scheduleProfileSync(0);
     }
   },
 
@@ -1344,7 +1345,7 @@ const APP = {
 
   _yesterday() {
     const d = new Date();
-    d.setDate(d.getDate() - 1);
+    d.setUTCDate(d.getUTCDate() - 1);
     return d.toISOString().split('T')[0];
   },
 
@@ -1405,6 +1406,7 @@ const APP = {
       this.endSession();
       return;
     }
+    this._cardStartTime = Date.now();
     this.currentCard = this.sessionCards[this.sessionIndex];
     const card = this.currentCard;
     this._recordDisplayedScenario(card);

@@ -938,3 +938,59 @@ test('card options and explanations render markup as text', () => {
   assert.match(feedback, /&lt;img/);
   assert.doesNotMatch(feedback, /<img/);
 });
+
+
+test('UTC yesterday remains correct across the daylight-saving fallback', () => {
+  const ctx = createContext();
+  const priorTimezone = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  const instant = Date.parse('2026-11-02T06:30:00Z');
+  ctx.Date = class extends Date { constructor(...args) { super(...(args.length ? args : [instant])); } static now() { return instant; } };
+  try {
+    assert.equal(ctx.appForTest._yesterday(), '2026-11-01');
+  } finally {
+    if (priorTimezone === undefined) delete process.env.TZ; else process.env.TZ = priorTimezone;
+  }
+});
+
+test('displaying the first or a regenerated card starts its response timer', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.sessionCards = [generatedCard('first', 'First timed scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._recordDisplayedScenario = () => {};
+  app._wikiLink = () => '';
+  app.isBookmarked = () => false;
+  ctx.document.createElement = () => ({ innerHTML: '', setAttribute() {} });
+  ctx.Date = class extends Date { static now() { return 1000; } };
+  app.showCard();
+  assert.equal(app._cardStartTime, 1000);
+  ctx.Date = class extends Date { static now() { return 2000; } };
+  app.showCard();
+  assert.equal(app._cardStartTime, 2000);
+});
+
+test('a previous account save releases pending sync for the current account', async () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app._profileSyncIdentity = 'user:a';
+  app._profileSyncReady = true;
+  app._profileLocalUpdatedAt = 100;
+  app._profileChangeVersion = 1;
+  let complete;
+  ctx.fetch = () => new Promise(resolve => { complete = resolve; });
+  const pending = app._flushProfileSync();
+  app._profileSyncIdentity = 'user:b';
+  app._profileLocalUpdatedAt = 200;
+  app._profileLastSyncedClientUpdatedAt = 0;
+  let scheduled = false;
+  app._scheduleProfileSync = delay => { scheduled = delay === 0; };
+  // The new account's scheduled attempt is blocked by the earlier in-flight PUT.
+  await app._flushProfileSync();
+  complete({ ok: true, json: async () => ({ clientUpdatedAt: 100 }) });
+  await pending;
+  assert.equal(scheduled, true);
+  assert.equal(app._profileSyncInFlight, false);
+});
