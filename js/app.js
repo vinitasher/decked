@@ -689,8 +689,20 @@ const APP = {
 
   /* —── Quick Review ——— */
 
+  _beginSessionPreparation() {
+    const token = { identity: this._profileIdentity() };
+    this._sessionPreparation = token;
+    return token;
+  },
+
+  _preparationIsCurrent(token) {
+    return this._sessionPreparation === token && token.identity === this._profileIdentity();
+  },
+
   async startQuickReview() {
+    const preparation = this._beginSessionPreparation();
     const { cards, requested } = await this._generateSessionCards(15);
+    if (!this._preparationIsCurrent(preparation)) return;
     if (cards.length === 0) return alert('No cards available!');
     if (cards.length < requested && !this._confirmShortSession(requested, cards.length)) return;
     this.sessionCards = cards;
@@ -1112,12 +1124,14 @@ const APP = {
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
+    const preparation = this._beginSessionPreparation();
     const startButton = document.getElementById('start-session-btn')
       || document.querySelector('button[onclick="APP.startSession()"]');
     startButton.disabled = true;
     startButton.textContent = 'Preparing session...';
     try {
       const { cards, requested, mixShortfall } = await this._generateSessionCards(count);
+      if (!this._preparationIsCurrent(preparation)) return;
       if (cards.length === 0) {
         alert('No cards available! Check back later.');
         return;
@@ -1149,10 +1163,12 @@ const APP = {
   },
 
   async startTopicSession(topic) {
+    const preparation = this._beginSessionPreparation();
     if (!TOPIC_CATALOG[topic]) return;
     const candidates = await Promise.all(
       [1, 2, 3, 4, 5].map(difficulty => this.fetchCard(topic, difficulty))
     );
+    if (!this._preparationIsCurrent(preparation)) return;
     this.sessionCards = candidates.filter((card, index) =>
       card && !this._isDuplicateScenario(card.scenario, candidates.slice(0, index))
     );
@@ -1445,7 +1461,7 @@ const APP = {
       button.disabled = false;
     });
     document.getElementById('next-btn').classList.add('hidden');
-    document.getElementById('regenerate-btn').classList.add('hidden');
+    document.getElementById('regenerate-btn').classList.remove('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
   },
 
@@ -1583,6 +1599,8 @@ const APP = {
     const button = document.getElementById('regenerate-btn');
     const snapshotCard = this.currentCard;
     const snapshotIndex = this.sessionIndex;
+    const snapshotCards = this.sessionCards;
+    const snapshotView = this._viewVersion;
     if (button) {
       button.disabled = true;
       button.textContent = '⏳ Generating...';
@@ -1606,6 +1624,8 @@ const APP = {
         button.textContent = '🔄 Regenerate';
       }
     }
+    if (this.sessionCards !== snapshotCards || this.currentCard !== snapshotCard
+        || this.sessionIndex !== snapshotIndex || this._viewVersion !== snapshotView) return;
     if (this.sessionIndex < this.sessionCards.length) this.sessionCards[this.sessionIndex] = newCard;
     this.currentCard = newCard;
     this.showCard();
@@ -1696,6 +1716,7 @@ const APP = {
   },
 
   exitSession() {
+    this._sessionPreparation = null;
     this._saveSessionState();
     this._invalidatePrefetch();
     if (this._advanceTimer) {
@@ -1716,6 +1737,7 @@ const APP = {
   },
 
   endSession() {
+    this._sessionPreparation = null;
     this._invalidatePrefetch();
     if (this._advanceTimer) clearTimeout(this._advanceTimer);
     this._advanceTimer = null;
@@ -1766,14 +1788,8 @@ const APP = {
     else el.innerHTML = '';
     const today = new Date();
     const dayMs = 86400000;
-    // count reviews on each calendar day from the persisted review timestamps,
-    // covering every reviewed card (generated and seed alike)
-    const reviewsByDay = {};
-    for (const review of Object.values(this.profile.cardHistory)) {
-      if (!review || typeof review !== 'object') continue;
-      const key = new Date(review._createdAt || Date.now()).toISOString().split('T')[0];
-      reviewsByDay[key] = (reviewsByDay[key] || 0) + 1;
-    }
+    // Count completed answers by UTC day, including repeated reviews.
+    const reviewsByDay = this.profile.dailyAnswers || {};
 
     const makeElement = (className, text = '') => {
       const node = document.createElement('span');
@@ -2048,6 +2064,8 @@ const APP = {
   },
 
   showScreen(id) {
+    this._viewVersion = (this._viewVersion || 0) + 1;
+    if (id !== 'session') this._sessionPreparation = null;
     document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
     const renderedScreen = ['concept', 'wiki', 'sandbox'].includes(id) ? 'wiki' : id;
     const el = document.getElementById('screen-' + renderedScreen);
