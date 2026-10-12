@@ -217,6 +217,7 @@
       <div class="session-main">
         <div id="scenario"></div>
         <div id="options"></div>
+            <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
         <div id="feedback" aria-live="polite"></div>
         <div id="post-answer-actions" class="post-answer-actions hidden">
           <div id="confidence-buttons" class="hidden">
@@ -236,7 +237,6 @@
           <button type="button" class="btn btn-sm btn-outline" onclick="APP.reportExplanation()">Report an explanation</button>
           <div class="next-card-actions">
             <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>
-            <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
           </div>
         </div>
       </div>

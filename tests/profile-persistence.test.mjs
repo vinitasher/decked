@@ -124,7 +124,7 @@ test('resumeSession drops cached cards with degenerate diagram topology', () => 
   const originalShowScreen = app.showScreen;
   const bad = { id: 'bad-diagram', scenario: 'Bad', topic: 'caching' };
   const good = { id: 'good-diagram', scenario: 'Good', topic: 'caching' };
-  context.localStorage.setItem('sdf_resume', JSON.stringify({
+  context.localStorage.setItem(app._resumeStorageKey(), JSON.stringify({
     cards: [bad, good], index: 1, start: 123
   }));
   app._startTimer = () => {};
@@ -139,7 +139,7 @@ test('resumeSession drops cached cards with degenerate diagram topology', () => 
     app._startTimer = originalStartTimer;
     app.showCard = originalShowCard;
     app.showScreen = originalShowScreen;
-    context.localStorage.removeItem('sdf_resume');
+    context.localStorage.removeItem(app._resumeStorageKey());
   }
 });
 
@@ -150,7 +150,7 @@ test('resumeSession drops cached cards without correct-option wiring', () => {
   const originalShowScreen = app.showScreen;
   const bad = { id: 'missing-correct-diagram', scenario: 'Missing wiring', topic: 'caching' };
   const good = { id: 'good-diagram', scenario: 'Good', topic: 'caching' };
-  context.localStorage.setItem('sdf_resume', JSON.stringify({
+  context.localStorage.setItem(app._resumeStorageKey(), JSON.stringify({
     cards: [bad, good], index: 1, start: 123
   }));
   app._startTimer = () => {};
@@ -165,7 +165,7 @@ test('resumeSession drops cached cards without correct-option wiring', () => {
     app._startTimer = originalStartTimer;
     app.showCard = originalShowCard;
     app.showScreen = originalShowScreen;
-    context.localStorage.removeItem('sdf_resume');
+    context.localStorage.removeItem(app._resumeStorageKey());
   }
 });
 

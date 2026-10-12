@@ -232,7 +232,7 @@ test('coverage heatmap rerenders in place without duplicating the surface', () =
   assert.equal((heatEl.innerHTML.match(/class="heatmap"/g) || []).length, 1);
 });
 
-test('study calendar counts generated-card reviews on the correct day', () => {
+test('study calendar counts dated answers including repeated reviews', () => {
   const app = freshApp();
   const dayMs = 86400000;
   const now = Date.now();
@@ -248,6 +248,7 @@ test('study calendar counts generated-card reviews on the correct day', () => {
   app.profile.cardHistory['gen-security'] = reviewRecord(twoDaysAgo,
     snapshotCard('gen-security', 'A generated security scenario', 'security'), twoDaysAgo);
 
+  app.profile.dailyAnswers = { [key3]: 2, [key2]: 5 };
   app.renderStudyCalendar();
 
   const calendar = context.document.getElementById('study-calendar');
@@ -256,7 +257,7 @@ test('study calendar counts generated-card reviews on the correct day', () => {
   const dayGrid = main.children[1];
   const titles = dayGrid.children.map(cell => cell.title);
   assert.equal(titles.includes(`${key3}: 2 reviews`), true);
-  assert.equal(titles.includes(`${key2}: 1 review`), true);
+  assert.equal(titles.includes(`${key2}: 5 reviews`), true);
   assert.equal(dayGrid.children.length, 53 * 7);
   assert.equal(main.children[0].children.length, 53);
 });

@@ -481,10 +481,11 @@ test('startSession cancels without mutating state when the shortfall is declined
   assert.deepEqual(app.sessionCards.map(card => card.id), ['prior']);
 });
 
-test('prefetchNext picks from the full catalog, not just seed topics', async () => {
+test('prefetchNext respects the upcoming full-catalog slot', async () => {
   seedRandom(0);
   const app = freshApp();
   app.profile.topicScores = { dns: { raw: 0, cardsReviewed: 0, daysSpanned: [] } };
+  app.sessionCards = [generatedCard('first', 'First scenario', 'caching', 1), generatedCard('next', 'Next scenario', 'dns', 1)];
   let requestedTopic;
   app.fetchCard = async (topic, difficulty) => {
     requestedTopic = topic;
@@ -678,4 +679,198 @@ test('normal account rendering refreshes a non-default generation allowance', ()
   vm.runInContext('appConfig.freeDailyCardLimit = 7; renderAccountBar();', testContext);
   assert.match(allowance.textContent, /Free: 7 freshly generated cards/);
   assert.match(allowance.textContent, /midnight UTC/);
+});
+
+
+function timerContext() {
+  const ctx = createContext();
+  const callbacks = new Map();
+  let nextId = 0;
+  ctx.setTimeout = fn => { callbacks.set(++nextId, fn); return nextId; };
+  ctx.clearTimeout = id => callbacks.delete(id);
+  const nodes = new Map();
+  const getElement = ctx.document.getElementById;
+  ctx.document.getElementById = id => getElement(id) || (nodes.has(id) ? nodes.get(id) : (nodes.set(id, { textContent: '', innerHTML: '', style: {} }), nodes.get(id)));
+  return { ctx, callbacks };
+}
+
+test('quick review has one countdown loop and stopping cancels it', () => {
+  const { ctx, callbacks } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app._quickReview = true;
+  app._quickTimer = 120;
+  app._startTimer();
+  assert.equal(ctx.document.getElementById('session-timer').textContent, '⏱ 120s');
+  assert.equal(callbacks.size, 1);
+  app._startTimer();
+  assert.equal(callbacks.size, 1, 'restarting must cancel the old loop');
+  app._stopTimer();
+  assert.equal(callbacks.size, 0);
+});
+
+test('ending a timed session cancels delayed advancement and clears resume', () => {
+  const { ctx, callbacks } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = { totalCorrect: 0, totalAnswered: 0, streaks: { current: 0, best: 0 } };
+  app.sessionCards = [];
+  app._sessionAttempts = [];
+  app._profileIdentity = () => 'user:a';
+  app.showScreen = app.showSessionReview = app.renderDeckStats = app._saveSession = () => {};
+  app._advanceTimer = ctx.setTimeout(() => { throw new Error('unexpected advancement'); });
+  app._timerTimeout = ctx.setTimeout(() => {});
+  ctx.localStorage.setItem(app._resumeStorageKey(), '{}');
+  app.endSession();
+  assert.equal(callbacks.size, 0);
+  assert.equal(ctx.localStorage.getItem(app._resumeStorageKey()), null);
+});
+
+test('daily goal ignores lifetime totals and answers from yesterday', () => {
+  const { ctx } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = { totalAnswered: 100, dailyAnswers: { '2000-01-01': 10 } };
+  app.renderGoal();
+  assert.equal(ctx.document.getElementById('goal-fill').style.width, '0%');
+  app.profile.dailyAnswers[new Date().toISOString().split('T')[0]] = 3;
+  app.renderGoal();
+  assert.equal(ctx.document.getElementById('goal-fill').style.width, '30%');
+});
+
+test('resume records stay with their owner across account switches', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  let identity = 'user:a';
+  app._profileIdentity = () => identity;
+  app.sessionCards = [generatedCard('a', 'Account A scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._saveSessionState();
+  const ownerKey = app._resumeStorageKey();
+  identity = 'user:b';
+  assert.equal(app.resumeSession(), false);
+  assert.notEqual(app._resumeStorageKey(), ownerKey);
+  assert.ok(ctx.localStorage.getItem(ownerKey));
+  identity = 'user:a';
+  app._startTimer = app.showCard = app.showScreen = () => {};
+  assert.equal(app.resumeSession(), true);
+  assert.equal(app.sessionCards[0].id, 'a');
+});
+
+
+test('a late prefetch cannot modify a newer session', async () => {
+  const app = freshApp();
+  app.sessionCards = [generatedCard('a', 'First scenario', 'caching', 1), generatedCard('b', 'Next scenario', 'dns', 1)];
+  let resolveOld;
+  app.fetchCard = () => new Promise(resolve => { resolveOld = resolve; });
+  const pending = app.prefetchNext();
+  app.sessionCards = [generatedCard('new', 'New session scenario', 'queues', 1)];
+  app._invalidatePrefetch();
+  resolveOld(generatedCard('stale', 'Old prefetch scenario', 'dns', 1));
+  await pending;
+  assert.equal(app._nextCard, null);
+  assert.equal(app._isGenerating, false);
+});
+
+test('prefetch retains the next slot difficulty and skips scheduled reviews', async () => {
+  const app = freshApp();
+  const next = generatedCard('next', 'Next scenario', 'dns', 1);
+  app.sessionCards = [generatedCard('first', 'First scenario', 'caching', 1), next];
+  let calls = 0;
+  app.fetchCard = async (topic, difficulty) => {
+    calls++;
+    assert.equal(topic, 'dns');
+    assert.equal(difficulty, 1);
+    return generatedCard('prefetch', 'Fresh next scenario', topic, difficulty);
+  };
+  await app.prefetchNext();
+  assert.equal(app._nextCard.difficulty, 1);
+  next.review = true;
+  await app.prefetchNext();
+  assert.equal(calls, 1);
+});
+
+test('exiting quick review saves its remaining time and mode', () => {
+  const { ctx } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app._profileIdentity = () => 'user:quick';
+  app.sessionCards = [generatedCard('quick', 'Quick scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._quickReview = true;
+  app._quickTimer = 60;
+  app.renderDeckStats = app.showScreen = () => {};
+  app.exitSession();
+  const saved = JSON.parse(ctx.localStorage.getItem(app._resumeStorageKey()));
+  assert.equal(saved.quickTimer, 60);
+  assert.equal(saved.quickReview, true);
+});
+
+
+test('exit after authentication changes saves only under the original session owner', () => {
+  const { ctx } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app._sessionOwner = 'user:a';
+  app._profileIdentity = () => 'user:b';
+  app.sessionCards = [generatedCard('a', 'Account A question', 'caching', 1)];
+  app.sessionIndex = 0;
+  app.renderDeckStats = app.showScreen = () => {};
+  app.exitSession();
+  assert.ok(ctx.localStorage.getItem(app._resumeStorageKey('user:a')));
+  assert.equal(ctx.localStorage.getItem(app._resumeStorageKey('user:b')), null);
+});
+
+
+test('navigation cancels an unfinished quick-review preparation', async () => {
+  const app = freshApp();
+  app._syncScreen = () => {};
+  let complete;
+  app._generateSessionCards = () => new Promise(resolve => { complete = resolve; });
+  const pending = app.startQuickReview();
+  app.showScreen('concepts');
+  complete({ cards: [generatedCard('late', 'Late scenario', 'caching', 1)], requested: 1 });
+  await pending;
+  assert.equal(app.sessionCards.length, 0);
+  assert.equal(app.profile.totalSessions, 0);
+});
+
+test('newer preparation wins when earlier preparation finishes last', async () => {
+  const app = freshApp();
+  const completions = [];
+  app._generateSessionCards = () => new Promise(resolve => completions.push(resolve));
+  app._startTimer = app.showCard = app.showScreen = app.prefetchNext = () => {};
+  const first = app.startQuickReview();
+  const second = app.startQuickReview();
+  completions[1]({ cards: [generatedCard('new', 'New request', 'dns', 1)], requested: 1 });
+  await second;
+  completions[0]({ cards: [generatedCard('old', 'Old request', 'caching', 1)], requested: 1 });
+  await first;
+  assert.equal(app.sessionCards[0].id, 'new');
+  assert.equal(app.profile.totalSessions, 1);
+});
+
+test('regenerate is visible before answering a card', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.sessionCards = [generatedCard('card', 'Scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._recordDisplayedScenario = () => {};
+  app._wikiLink = () => '';
+  app.isBookmarked = () => false;
+  ctx.document.createElement = () => ({ className: '', innerHTML: '', setAttribute() {} });
+  app.showCard();
+  assert.equal(ctx.document.getElementById('regenerate-btn').classList.contains('hidden'), false);
+});
+
+test('late regeneration cannot overwrite a newer session', async () => {
+  const app = freshApp();
+  const old = generatedCard('old', 'Old scenario', 'caching', 1);
+  app.sessionCards = [old];
+  app.currentCard = old;
+  let complete;
+  app.fetchCard = () => new Promise(resolve => { complete = resolve; });
+  const pending = app.regenerateCard();
+  const next = generatedCard('new', 'New scenario', 'dns', 1);
+  app.sessionCards = [next];
+  app.currentCard = next;
+  complete(generatedCard('late', 'Late replacement', 'caching', 1));
+  await pending;
+  assert.equal(app.sessionCards[0].id, 'new');
 });

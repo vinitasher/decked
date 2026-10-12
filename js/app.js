@@ -53,6 +53,8 @@ function normalizeProfileData(profile) {
     ? normalized.totalSessions : 0;
   normalized.totalAnswered = Number.isFinite(normalized.totalAnswered)
     ? normalized.totalAnswered : 0;
+  normalized.dailyAnswers = normalized.dailyAnswers && typeof normalized.dailyAnswers === 'object'
+    ? normalized.dailyAnswers : {};
   normalized.totalCorrect = Number.isFinite(normalized.totalCorrect)
     ? normalized.totalCorrect : 0;
   normalized._topicCardSeen = normalized._topicCardSeen && typeof normalized._topicCardSeen === 'object'
@@ -414,7 +416,7 @@ const APP = {
     });
     initAccount();
     // auto-resume prompt: show button if session was interrupted
-    if (localStorage.getItem('sdf_resume')) {
+    if (localStorage.getItem(this._resumeStorageKey())) {
       const btn = document.getElementById('resume-btn');
       if (btn) btn.classList.remove('hidden');
     }
@@ -622,18 +624,36 @@ const APP = {
     return null;
   },
 
+  _invalidatePrefetch() {
+    this._prefetchRequest = null;
+    this._isGenerating = false;
+    this._nextCard = null;
+    this._nextCardSlot = null;
+  },
+
   async prefetchNext() {
-    if (this._isGenerating) return;
+    const cards = this.sessionCards;
+    const slot = this.sessionIndex + 1;
+    const target = cards[slot];
+    if (this._isGenerating || !target || target.review || target.retry) return;
+    const request = { cards, slot, target };
+    this._prefetchRequest = request;
     this._isGenerating = true;
     try {
-      const scored = this._rankedSessionTopics();
-      const nextTopic = scored[0].topic;
-      const avoidList = this.sessionCards.filter(c => c && c.id !== this.currentCard?.id);
-      this._nextCard = await this.fetchCard(nextTopic, 3, avoidList);
-    } catch (error) {
-      this._nextCard = null;
+      const card = await this.fetchCard(target.topic, target.difficulty, cards);
+      if (this._prefetchRequest !== request || this.sessionCards !== cards
+          || cards[slot] !== target || this.sessionIndex >= slot) return;
+      if (card && card.topic === target.topic && card.difficulty === target.difficulty) {
+        this._nextCard = card;
+        this._nextCardSlot = slot;
+      }
+    } catch (_) {
+      if (this._prefetchRequest === request) this._nextCard = null;
     } finally {
-      this._isGenerating = false;
+      if (this._prefetchRequest === request) {
+        this._isGenerating = false;
+        this._prefetchRequest = null;
+      }
     }
   },
 
@@ -661,15 +681,28 @@ const APP = {
     if (!el || !target) return;
     const goal = this.getGoal();
     target.value = goal;
-    const done = Math.min(goal, this.profile.totalAnswered);
+    const today = new Date().toISOString().split('T')[0];
+    const done = Math.min(goal, Number(this.profile.dailyAnswers?.[today]) || 0);
     const pct = Math.round(100 * done / goal);
     el.style.width = pct + '%';
   },
 
   /* —── Quick Review ——— */
 
+  _beginSessionPreparation() {
+    const token = { identity: this._profileIdentity() };
+    this._sessionPreparation = token;
+    return token;
+  },
+
+  _preparationIsCurrent(token) {
+    return this._sessionPreparation === token && token.identity === this._profileIdentity();
+  },
+
   async startQuickReview() {
+    const preparation = this._beginSessionPreparation();
     const { cards, requested } = await this._generateSessionCards(15);
+    if (!this._preparationIsCurrent(preparation)) return;
     if (cards.length === 0) return alert('No cards available!');
     if (cards.length < requested && !this._confirmShortSession(requested, cards.length)) return;
     this.sessionCards = cards;
@@ -686,7 +719,6 @@ const APP = {
     this.prefetchNext();
     this.showCard();
     this.showScreen('session');
-    this._tickQuickTimer();
   },
 
   _tickQuickTimer() {
@@ -695,7 +727,7 @@ const APP = {
     if (el) el.textContent = `⏱ ${this._quickTimer}s`;
     if (this._quickTimer <= 0) { this.endSession(); return; }
     this._quickTimer--;
-    setTimeout(() => this._tickQuickTimer(), 1000);
+    this._timerTimeout = setTimeout(() => this._tickQuickTimer(), 1000);
   },
 
   /* ——— Profile persistence ——— */
@@ -902,6 +934,7 @@ const APP = {
     if (!identity) return false;
     const previousIdentity = this._profileSyncIdentity;
     if (previousIdentity && previousIdentity !== identity) {
+      if (this._sessionTimer || this._advanceTimer) this.exitSession();
       const previousProfile = this.profile;
       const previousUpdatedAt = this._profileLocalUpdatedAt || (this._profileHasData() ? Date.now() : 0);
       this._profileSyncReady = false;
@@ -1091,12 +1124,14 @@ const APP = {
   /* ——— Session management ——— */
 
   async startSession(count = 8) {
+    const preparation = this._beginSessionPreparation();
     const startButton = document.getElementById('start-session-btn')
       || document.querySelector('button[onclick="APP.startSession()"]');
     startButton.disabled = true;
     startButton.textContent = 'Preparing session...';
     try {
       const { cards, requested, mixShortfall } = await this._generateSessionCards(count);
+      if (!this._preparationIsCurrent(preparation)) return;
       if (cards.length === 0) {
         alert('No cards available! Check back later.');
         return;
@@ -1112,6 +1147,7 @@ const APP = {
       this._retriedCardIds = new Set();
       this._sessionResults = {};
       this._sessionAttempts = [];
+      this._quickReview = false;
       this.profile.totalSessions++;
       this._startTimer();
       this.saveProfile();
@@ -1127,10 +1163,12 @@ const APP = {
   },
 
   async startTopicSession(topic) {
+    const preparation = this._beginSessionPreparation();
     if (!TOPIC_CATALOG[topic]) return;
     const candidates = await Promise.all(
       [1, 2, 3, 4, 5].map(difficulty => this.fetchCard(topic, difficulty))
     );
+    if (!this._preparationIsCurrent(preparation)) return;
     this.sessionCards = candidates.filter((card, index) =>
       card && !this._isDuplicateScenario(card.scenario, candidates.slice(0, index))
     );
@@ -1144,6 +1182,7 @@ const APP = {
     this._retriedCardIds = new Set();
     this._sessionResults = {};
     this._sessionAttempts = [];
+    this._quickReview = false;
     this.profile.totalSessions++;
     this._startTimer();
     this.saveProfile();
@@ -1422,7 +1461,7 @@ const APP = {
       button.disabled = false;
     });
     document.getElementById('next-btn').classList.add('hidden');
-    document.getElementById('regenerate-btn').classList.add('hidden');
+    document.getElementById('regenerate-btn').classList.remove('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
   },
 
@@ -1521,6 +1560,8 @@ const APP = {
     if (correct) this.profile.totalCorrect++;
     this._saveSessionState();
     const today = new Date().toISOString().split('T')[0];
+    this.profile.dailyAnswers = this.profile.dailyAnswers || {};
+    this.profile.dailyAnswers[today] = (Number(this.profile.dailyAnswers[today]) || 0) + 1;
     if (this.profile.streaks.lastDate === today) {
       // already counted today
     } else if (this.profile.streaks.lastDate === this._yesterday()) {
@@ -1558,6 +1599,8 @@ const APP = {
     const button = document.getElementById('regenerate-btn');
     const snapshotCard = this.currentCard;
     const snapshotIndex = this.sessionIndex;
+    const snapshotCards = this.sessionCards;
+    const snapshotView = this._viewVersion;
     if (button) {
       button.disabled = true;
       button.textContent = '⏳ Generating...';
@@ -1581,6 +1624,8 @@ const APP = {
         button.textContent = '🔄 Regenerate';
       }
     }
+    if (this.sessionCards !== snapshotCards || this.currentCard !== snapshotCard
+        || this.sessionIndex !== snapshotIndex || this._viewVersion !== snapshotView) return;
     if (this.sessionIndex < this.sessionCards.length) this.sessionCards[this.sessionIndex] = newCard;
     this.currentCard = newCard;
     this.showCard();
@@ -1658,7 +1703,7 @@ const APP = {
     // their re-service)
     if (this._nextCard) {
       const nextIdx = this.sessionIndex;
-      if (nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review && !this.sessionCards[nextIdx]?.retry) {
+      if ((this._nextCardSlot == null || this._nextCardSlot === nextIdx) && nextIdx < this.sessionCards.length && !this.sessionCards[nextIdx]?.review && !this.sessionCards[nextIdx]?.retry) {
         this.sessionCards[nextIdx] = this._nextCard;
       }
       this._nextCard = null;
@@ -1671,6 +1716,9 @@ const APP = {
   },
 
   exitSession() {
+    this._sessionPreparation = null;
+    this._saveSessionState();
+    this._invalidatePrefetch();
     if (this._advanceTimer) {
       clearTimeout(this._advanceTimer);
       this._advanceTimer = null;
@@ -1689,6 +1737,12 @@ const APP = {
   },
 
   endSession() {
+    this._sessionPreparation = null;
+    this._invalidatePrefetch();
+    if (this._advanceTimer) clearTimeout(this._advanceTimer);
+    this._advanceTimer = null;
+    this._stopTimer();
+    localStorage.removeItem(this._resumeStorageKey(this._sessionOwner || undefined));
     this._quickReview = false;
     this.showScreen('session-end');
     const stats = this._sessionStats();
@@ -1734,14 +1788,8 @@ const APP = {
     else el.innerHTML = '';
     const today = new Date();
     const dayMs = 86400000;
-    // count reviews on each calendar day from the persisted review timestamps,
-    // covering every reviewed card (generated and seed alike)
-    const reviewsByDay = {};
-    for (const review of Object.values(this.profile.cardHistory)) {
-      if (!review || typeof review !== 'object') continue;
-      const key = new Date(review._createdAt || Date.now()).toISOString().split('T')[0];
-      reviewsByDay[key] = (reviewsByDay[key] || 0) + 1;
-    }
+    // Count completed answers by UTC day, including repeated reviews.
+    const reviewsByDay = this.profile.dailyAnswers || {};
 
     const makeElement = (className, text = '') => {
       const node = document.createElement('span');
@@ -2016,6 +2064,8 @@ const APP = {
   },
 
   showScreen(id) {
+    this._viewVersion = (this._viewVersion || 0) + 1;
+    if (id !== 'session') this._sessionPreparation = null;
     document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
     const renderedScreen = ['concept', 'wiki', 'sandbox'].includes(id) ? 'wiki' : id;
     const el = document.getElementById('screen-' + renderedScreen);
@@ -2054,7 +2104,7 @@ const APP = {
     this.renderChallengeLadder();
     // show resume button if session state exists
     const resumeBtn = document.getElementById('resume-btn');
-    if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem('sdf_resume'));
+    if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem(this._resumeStorageKey()));
 
     // achievements display
     const aEl = document.getElementById('achievement-list');
@@ -2127,9 +2177,13 @@ const APP = {
   _sessionTimer: false,
 
   _startTimer() {
+    this._sessionOwner = this._profileIdentity() || this._profileSyncIdentity || this.profile?.userId;
+    this._invalidatePrefetch();
+    this._stopTimer();
     this._sessionStartMs = Date.now();
     this._sessionTimer = true;
-    this._tickTimer();
+    if (this._quickReview) this._tickQuickTimer();
+    else this._tickTimer();
   },
 
   _tickTimer() {
@@ -2139,10 +2193,14 @@ const APP = {
     const s = elapsed % 60;
     const el = document.getElementById('session-timer');
     if (el) el.textContent = `${m}:${s.toString().padStart(2, '0')}`;
-    setTimeout(() => this._tickTimer(), 1000);
+    this._timerTimeout = setTimeout(() => this._tickTimer(), 1000);
   },
 
-  _stopTimer() { this._sessionTimer = false; },
+  _stopTimer() {
+    this._sessionTimer = false;
+    if (this._timerTimeout) clearTimeout(this._timerTimeout);
+    this._timerTimeout = null;
+  },
 
   /* ——— Session History ——— */
 
@@ -3293,16 +3351,20 @@ const APP = {
 
   /* ——— Session Resume ——— */
 
+  _resumeStorageKey(identity = this._profileIdentity() || this._profileSyncIdentity || this.profile?.userId) {
+    return `sdf_resume_${encodeURIComponent(identity || 'local')}`;
+  },
+
   _saveSessionState() {
     if (this.sessionCards.length > 0 && this.sessionIndex < this.sessionCards.length) {
-      localStorage.setItem('sdf_resume', JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
+      localStorage.setItem(this._resumeStorageKey(this._sessionOwner || undefined), JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, quickReview: Boolean(this._quickReview), quickTimer: this._quickTimer, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
     } else {
-      localStorage.removeItem('sdf_resume');
+      localStorage.removeItem(this._resumeStorageKey(this._sessionOwner || undefined));
     }
   },
 
   resumeSession() {
-    const raw = localStorage.getItem('sdf_resume');
+    const raw = localStorage.getItem(this._resumeStorageKey());
     if (!raw) return false;
     try {
       const state = JSON.parse(raw);
@@ -3318,7 +3380,7 @@ const APP = {
         cards.push(card);
       });
       if (!cards.length || resumeIndex >= cards.length) {
-        localStorage.removeItem('sdf_resume');
+        localStorage.removeItem(this._resumeStorageKey());
         return false;
       }
       this.sessionCards = cards;
@@ -3328,6 +3390,8 @@ const APP = {
       this._sessionResults = state.results || {};
       this._retriedCardIds = new Set(cards.filter(card => card.retry).map(card => card.id));
       this._nextCard = null;
+      this._quickReview = Boolean(state.quickReview);
+      this._quickTimer = Number.isFinite(state.quickTimer) ? Math.max(0, state.quickTimer) : 120;
       this._startTimer();
       this.showCard();
       this.showScreen('session');
