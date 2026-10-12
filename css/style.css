@@ -910,3 +910,9 @@ footer { padding-top: 34px; color: var(--muted); }
 [hidden] { display: none !important; }
 .session-allowance { color: var(--muted); line-height: 1.6; margin: -8px 0 24px; }
 .dashboard-tools > summary { cursor: pointer; font-weight: 700; padding: 16px 0; }
+/* A bounded dashboard placement, below the study controls. */
+.free-ad { margin: 24px auto 0; max-width: 728px; }
+.free-ad-label { display: block; color: var(--muted); font-size: .7rem; text-align: center; margin-bottom: 6px; }
+.free-ad-unit { width: 100%; height: 100px; }
+@media (min-width: 500px) { .free-ad-unit { height: 60px; } }
+@media (min-width: 800px) { .free-ad-unit { height: 90px; } }

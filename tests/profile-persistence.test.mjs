@@ -34,7 +34,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(`${source}
 globalThis.normalizeProfileDataForTest = normalizeProfileData;
-globalThis.appForTest = APP;`, context);
+globalThis.appForTest = APP; currentPlan = 'pro';`, context);
 
 test('profile migration replaces non-serializable set remnants with arrays', () => {
   const profile = context.normalizeProfileDataForTest({

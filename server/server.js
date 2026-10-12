@@ -68,6 +68,11 @@ function handleRequest(req, res) {
       return res.end(JSON.stringify({ cached: true, card: cache[key] }));
     }
 
+    if (url.searchParams.get('cache_only') === '1') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ code: 'pro_required', error: 'Fresh AI generation requires Pro' }));
+    }
+
     // generate
     generateCard(topic, difficulty, (err, card) => {
       if (err) {

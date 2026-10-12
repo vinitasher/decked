@@ -1,6 +1,6 @@
 /* Cloudflare Pages Function — generate flash cards using OpenCode Go */
 
-import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+import { resolveEntitlement } from '../shared/entitlement.js';
 import { CARD_MODEL_SEQUENCE } from '../shared/model-routing.js';
 import { countScenarioRequirements, difficultyFromScenario } from '../shared/requirement-count.js';
 import { getOptionPrerequisites } from '../shared/production-option-prerequisites.js';
@@ -364,29 +364,14 @@ export async function onRequest(context) {
   }
 
   try {
-    if (!env.OPENCODE_API_KEY) {
-      throw new Error('Card generation is not configured');
-    }
-
     const entitlement = await resolveEntitlement(env, request, 'cards');
-    if (!entitlement.pro && entitlement.used >= entitlement.limit) {
-      logEntry(context, {
-        event: 'request', outcome: 'quota_exceeded', topic, difficulty,
-        identity: entitlement.identity, used: entitlement.used, limit: entitlement.limit,
-        ms: Date.now() - startedAt
-      });
+    if (!entitlement.pro || url.searchParams.get('cache_only') === '1') {
       return new Response(JSON.stringify({
-        error: 'Daily card limit reached — upgrade to Pro for unlimited cards',
-        code: 'quota_exceeded',
-        kind: 'cards',
-        used: entitlement.used,
-        limit: entitlement.limit,
-        remaining: 0
-      }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
+        error: 'Fresh AI cards require Pro. Free users can practice existing cards.',
+        code: 'pro_required', kind: 'cards'
+      }), { status: 403, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
     }
+    if (!env.OPENCODE_API_KEY) throw new Error('Card generation is not configured');
 
     const models = CARD_MODEL_SEQUENCE;
     const distinctFrom = new Set([
@@ -467,10 +452,6 @@ export async function onRequest(context) {
     }
 
     pool = { cards: deduplicatePool([...pool.cards, card]) };
-
-    if (!entitlement.pro) {
-      await consumeQuota(env, entitlement.identity, 'cards');
-    }
 
     if (env.CARD_CACHE) {
       await env.CARD_CACHE.put(cacheKey, JSON.stringify(pool));

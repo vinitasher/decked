@@ -22,12 +22,12 @@ test('README documents the deployed AI generation and daily quota model', () => 
     /generated on demand with AI/i,
     /cached for reuse/i,
     /offline seed-card fallback/i,
-    /10 freshly generated cards and 10 wiki entries\s+per\s+UTC\s+day/i,
-    /3\s+fresh generated Sandbox definitions/i,
+    /100 questions per UTC day/i,
+    /Fresh AI\s+generation.*requires Pro/is,
     /bounded-pressure/i,
     /never executes provider-authored code or formulas/i,
-    /Pro removes those limits/i,
-    /cache hits do not consume quota/i
+    /Pro adds fresh AI generation and unlimited questions/i,
+    /without triggering AI provider calls/i
   ]) {
     assert.match(readme, requiredStatement);
   }

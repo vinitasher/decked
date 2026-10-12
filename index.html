@@ -50,7 +50,7 @@
       <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
       <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
     </div>
-    <p id="session-allowance" class="session-allowance">Free: 10 freshly generated cards per UTC day. Cached cards do not use this allowance. At the limit, review saved cards, wait until midnight UTC, or upgrade to Pro.</p>
+    <p id="session-allowance" class="session-allowance">Free: up to 100 questions per UTC day from existing cards. Fresh AI generation requires Pro. Your allowance resets at midnight UTC.</p>
       <details class="about-details">
         <summary>How practice works</summary>
       <ol class="how-list">
@@ -143,6 +143,10 @@
       </nav>
     </section>
     </details>
+    <aside id="free-ad" class="free-ad hidden" aria-label="Advertisement">
+      <span class="free-ad-label">Advertisement</span>
+      <div id="free-ad-slot"></div>
+    </aside>
   </div>
 
   <!-- Concept Lab index -->
@@ -459,6 +463,7 @@
 </div>
 
 <script src="js/cards.js"></script>
+<script src="js/free-cards.js"></script>
 <script src="js/wiki.js"></script>
 <script src="js/concept-categories.js"></script>
 <script src="js/design-decisions.js"></script>
@@ -467,6 +472,7 @@
 <script src="js/sandbox.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="js/ads.js"></script>
 <script src="js/app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

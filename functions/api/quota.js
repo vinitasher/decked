@@ -9,6 +9,8 @@ import {
   isProRecord,
   getBillingRecord
 } from '../shared/entitlement.js';
+import { dailyBucket } from '../shared/entitlement.js';
+import { profileKey, parseProfileEnvelope } from './profile.js';
 import { createServerRequestContext, logServerEvent } from '../shared/server-logger.js';
 
 function jsonResponse(payload, status = 200, log, event = 'request completed') {
@@ -29,17 +31,20 @@ export async function onRequestGet(context) {
   const wiki = await resolveEntitlement(env, request, 'wiki');
   const sandbox = await resolveEntitlement(env, request, 'sandbox');
   const billing = await getBillingRecord(env, cards.identity);
+  const envelope = parseProfileEnvelope(await env.CARD_CACHE?.get(profileKey(cards.identity)));
+  const questionsUsed = Math.max(0, Number(envelope?.profile?.dailyAnswers?.[dailyBucket()]) || 0);
 
   return jsonResponse(
     {
       ok: true,
       signedIn: Boolean(cards.claims),
       plan: isProRecord(billing) ? 'pro' : 'free',
+      aiGenerationAllowed: cards.pro,
       cards: {
         enabled: quotaEnabled(env, 'cards'),
         limit: freeLimit(env, 'cards'),
-        used: cards.used,
-        remaining: cards.remaining
+        used: questionsUsed,
+        remaining: Math.max(0, cards.limit - questionsUsed)
       },
       wiki: {
         enabled: quotaEnabled(env, 'wiki'),

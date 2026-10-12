@@ -93,7 +93,7 @@ test('app.js wires sign-in, sign-out, and the checkout flow', () => {
 });
 
 test('the plan badge refreshes from the quota fetch and after checkout returns', () => {
-  assert.match(app, /currentPlan = data\.plan \|\| 'free';\s*renderAccountBar\(\);/);
+  assert.match(app, /currentPlan = data\.plan \|\| 'free';\s*currentPlanKnown = true;\s*renderAccountBar\(\);/);
   assert.match(app, /refreshPlanAfterUpgrade\(banner\)/);
   assert.match(app, /for \(let attempt = 0; attempt < 6; attempt \+= 1\)/);
   assert.match(app, /await renderQuotaBar\(\);/);
@@ -112,7 +112,7 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
 });
 
 test('service worker cache version is bumped for the account assets', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v38';/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v39';/);
 });
 
 test('modern visual system keeps dashboard and study surfaces hooked together', () => {

@@ -5,7 +5,7 @@
  * output is never treated as code or a formula.
  */
 
-import { resolveEntitlement, consumeQuota } from '../shared/entitlement.js';
+import { resolveEntitlement } from '../shared/entitlement.js';
 import {
   GENERATED_SANDBOX_MAX_TOPIC_LENGTH,
   GENERATED_SANDBOX_TOPIC_RE
@@ -39,21 +39,14 @@ export async function onRequestGet(context) {
   const cached = await readCachedGeneratedSandbox(env, topic);
   if (cached) return jsonResponse(cached);
 
-  if (!env.OPENCODE_API_KEY) {
-    return jsonResponse({ error: 'Sandbox generation is not configured' }, 500);
-  }
-
   const entitlement = await resolveEntitlement(env, request, 'sandbox');
-  if (!entitlement.pro && entitlement.used >= entitlement.limit) {
+  if (!entitlement.pro) {
     return jsonResponse({
-      error: 'Daily Sandbox generation limit reached — upgrade to Pro for more generated experiments',
-      code: 'quota_exceeded',
-      kind: 'sandbox',
-      used: entitlement.used,
-      limit: entitlement.limit,
-      remaining: 0
-    }, 429);
+      error: 'Fresh AI experiments require Pro. Existing content remains available for free.',
+      code: 'pro_required', kind: 'sandbox'
+    }, 403);
   }
+  if (!env.OPENCODE_API_KEY) return jsonResponse({ error: 'Generation is not configured' }, 500);
 
   let definition;
   try {
@@ -62,8 +55,6 @@ export async function onRequestGet(context) {
     console.error('Sandbox generation failed', topic, error?.message);
     return jsonResponse({ error: 'Sandbox generation is temporarily unavailable' }, 503);
   }
-
-  if (!entitlement.pro) await consumeQuota(env, entitlement.identity, 'sandbox');
 
   const cache = sandboxCache(env);
   if (cache) {

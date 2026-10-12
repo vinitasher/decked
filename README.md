@@ -224,9 +224,11 @@ decision-based practice with adaptive difficulty.
 **Generated content and quotas:**
 - Cards are generated on demand with AI, cached for reuse, and supported by an
   offline seed-card fallback.
-- The default free tier is 10 freshly generated cards and 10 wiki entries per
-  UTC day, plus 3 fresh generated Sandbox definitions. Pro removes those limits,
-  and cache hits do not consume quota.
+- Free users can answer up to 100 questions per UTC day from bundled and
+  cached cards. Existing wiki entries and experiments remain free. Fresh AI
+  generation for cards, wiki entries, and experiments requires Pro and is
+  enforced by the server. Completed answers, including retries, count toward
+  the question allowance stored in the learner profile; it resets at midnight UTC.
 - When a learner opens a full Concept Lab for a Wiki topic without a reviewed
   node mapping, the app can generate a labeled `bounded-pressure` experiment.
   The provider supplies only escaped copy and bounded situation values; the
@@ -440,9 +442,7 @@ ships in the bundle, while unseen concepts and fresh cards are lazily generated
 at runtime and cached in KV (30-day TTL for wiki, permanent pools for cards).
 
 **Rationale.** The snapshot makes the most common content instant and offline;
-lazy generation covers the long tail without pre-paying for it. Quota limits
-(10 fresh cards + 10 wiki entries per UTC day) and cache reuse bound model cost,
-so cache hits never consume quota.
+lazy generation covers the long tail without pre-paying for it. Pro-only generation and cache reuse bound model cost. Free users study existing content without triggering AI provider calls.
 
 ### 7. Offline strategy — cache-first vs network-first
 
@@ -583,9 +583,8 @@ ownership, or bloat) justifies a split; the launch trigger fired first.
 - **Best user experience:** adaptive difficulty means the app never feels too
   hard or too easy — it meets the user where they are
 - **Profitable:** subscription ($8/mo or $60/yr) for full deck + progress
-  tracking; the free tier provides 10 freshly generated cards and 10 wiki
-  entries per UTC day, while Pro removes those limits. Cache hits do not
-  consume quota.
+  tracking; free users receive up to 100 questions per UTC day from existing
+  content, while Pro adds fresh AI generation and unlimited questions.
 - **Community:** user-submitted cards with voting; community-ranked "best
   explanations" for each card
 - **Force for good:** democratises system design education; transparent about
@@ -765,3 +764,10 @@ The learning ladder and Concept Sandbox are behavior changes in addition to the
 shared visual system: the ladder updates from study evidence, sandbox
 prediction aggregates are included in the existing local profile sync path,
 and the Wiki and experiment now share one two-pane learning surface.
+
+### Free-tier advertising
+
+A single optional AdSense banner appears below the free dashboard content. Pro
+users and study sessions have no ad placements. Ads stay disabled until the
+publisher ID, dashboard slot, and consent configuration are ready. See
+[AdSense setup](docs/adsense-setup.md) for activation and verification.
