@@ -918,6 +918,43 @@ test('an answered card cannot start regeneration', async () => {
   await app.regenerateCard();
 });
 
+test('session export uses completed attempts and preserves plain text', async () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.profile.totalCorrect = 90;
+  const answered = generatedCard('answered', 'Cache <hot> reads & writes', 'caching', 1);
+  const unseen = generatedCard('unseen', 'Unanswered scenario', 'dns', 1);
+  app.sessionCards = [answered, unseen];
+  app._sessionAttempts = [
+    { card: answered, correct: false, confidence: 1 },
+    { card: answered, correct: true, confidence: 3 }
+  ];
+  let copied;
+  ctx.navigator = { clipboard: { writeText: async text => { copied = text; } } };
+  app.exportSession();
+  await Promise.resolve();
+  assert.match(copied, /Cards: 2\nCorrect: 1 \(50%\)/);
+  assert.match(copied, /Topics: caching\n/);
+  assert.match(copied, /Cache <hot> reads & writes/);
+  assert.doesNotMatch(copied, /Unanswered scenario|&lt;|&amp;/);
+});
+
+test('empty session export does not include lifetime results or planned cards', async () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.profile.totalCorrect = 90;
+  app.sessionCards = [generatedCard('unseen', 'Unanswered scenario', 'dns', 1)];
+  app._sessionAttempts = [];
+  let copied;
+  ctx.navigator = { clipboard: { writeText: async text => { copied = text; } } };
+  app.exportSession();
+  await Promise.resolve();
+  assert.match(copied, /Cards: 0\nCorrect: 0 \(0%\)/);
+  assert.doesNotMatch(copied, /Unanswered scenario/);
+});
+
 
 test('late quota responses cannot expose a previous account plan', async () => {
   const ctx = createContext();

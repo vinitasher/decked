@@ -1407,6 +1407,7 @@ const APP = {
       return;
     }
     this._cardStartTime = Date.now();
+    this._cardResponseTime = null;
     this.currentCard = this.sessionCards[this.sessionIndex];
     const card = this.currentCard;
     this._recordDisplayedScenario(card);
@@ -1485,6 +1486,8 @@ const APP = {
   answer(selectedId) {
     this.closeWikiModal();
     const card = this.currentCard;
+    if (this._selectedId != null || !card || !card.options.some(option => option.id === selectedId)) return;
+    this._cardResponseTime = Math.max(0, Date.now() - (this._cardStartTime ?? Date.now()));
     this._selectedId = selectedId;
     this._cardCorrect = selectedId === card.correct;
 
@@ -1527,7 +1530,7 @@ const APP = {
     this._confidenceSubmitted = true;
     const card = this.currentCard;
     const correct = this._cardCorrect;
-    const responseTime = Date.now() - (this._cardStartTime || Date.now());
+    const responseTime = this._cardResponseTime ?? Math.max(0, Date.now() - (this._cardStartTime ?? Date.now()));
 
     // Respond to the tap before storage or rendering work can fail.
     const confidenceButtons = document.getElementById('confidence-buttons');
@@ -2243,19 +2246,19 @@ const APP = {
   },
 
   exportSession() {
-    const cards = this.sessionCards.length;
-    const correct = this.profile.totalCorrect;
-    const topics = [...new Set(this.sessionCards.map(c => c.topic))];
+    const stats = this._sessionStats();
+    const cards = stats.attempts.map(attempt => attempt.card);
+    const topics = [...new Set(cards.map(c => c.topic))];
     const lines = [
       `System Design Flashcards — Session Results`,
       `Date: ${new Date().toLocaleString()}`,
-      `Cards: ${cards}`,
-      `Correct: ${correct} (${cards > 0 ? Math.round(100 * correct / cards) : 0}%)`,
+      `Cards: ${stats.answered}`,
+      `Correct: ${stats.correct} (${stats.percent}%)`,
       `Topics: ${topics.join(', ')}`,
       `Streak: ${this.profile.streaks.current} days`,
       ``,
       `Cards in this session:`,
-      ...this.sessionCards.map(c => `  • ${c.topic}: ${escHtml(c.scenario.substring(0, 60))}... [${escHtml(c.correct)}]`)
+      ...cards.map(c => `  • ${c.topic}: ${c.scenario.substring(0, 60)}... [${c.correct}]`)
     ].join('\n');
     navigator.clipboard.writeText(lines).then(() => {
       const toast = document.getElementById('achievement-toast');
