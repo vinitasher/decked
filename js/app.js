@@ -53,6 +53,8 @@ function normalizeProfileData(profile) {
     ? normalized.totalSessions : 0;
   normalized.totalAnswered = Number.isFinite(normalized.totalAnswered)
     ? normalized.totalAnswered : 0;
+  normalized.dailyAnswers = normalized.dailyAnswers && typeof normalized.dailyAnswers === 'object'
+    ? normalized.dailyAnswers : {};
   normalized.totalCorrect = Number.isFinite(normalized.totalCorrect)
     ? normalized.totalCorrect : 0;
   normalized._topicCardSeen = normalized._topicCardSeen && typeof normalized._topicCardSeen === 'object'
@@ -414,7 +416,7 @@ const APP = {
     });
     initAccount();
     // auto-resume prompt: show button if session was interrupted
-    if (localStorage.getItem('sdf_resume')) {
+    if (localStorage.getItem(this._resumeStorageKey())) {
       const btn = document.getElementById('resume-btn');
       if (btn) btn.classList.remove('hidden');
     }
@@ -661,7 +663,8 @@ const APP = {
     if (!el || !target) return;
     const goal = this.getGoal();
     target.value = goal;
-    const done = Math.min(goal, this.profile.totalAnswered);
+    const today = new Date().toISOString().split('T')[0];
+    const done = Math.min(goal, Number(this.profile.dailyAnswers?.[today]) || 0);
     const pct = Math.round(100 * done / goal);
     el.style.width = pct + '%';
   },
@@ -686,7 +689,6 @@ const APP = {
     this.prefetchNext();
     this.showCard();
     this.showScreen('session');
-    this._tickQuickTimer();
   },
 
   _tickQuickTimer() {
@@ -695,7 +697,7 @@ const APP = {
     if (el) el.textContent = `⏱ ${this._quickTimer}s`;
     if (this._quickTimer <= 0) { this.endSession(); return; }
     this._quickTimer--;
-    setTimeout(() => this._tickQuickTimer(), 1000);
+    this._timerTimeout = setTimeout(() => this._tickQuickTimer(), 1000);
   },
 
   /* ——— Profile persistence ——— */
@@ -902,6 +904,7 @@ const APP = {
     if (!identity) return false;
     const previousIdentity = this._profileSyncIdentity;
     if (previousIdentity && previousIdentity !== identity) {
+      if (this._sessionTimer || this._advanceTimer) this.exitSession();
       const previousProfile = this.profile;
       const previousUpdatedAt = this._profileLocalUpdatedAt || (this._profileHasData() ? Date.now() : 0);
       this._profileSyncReady = false;
@@ -1112,6 +1115,7 @@ const APP = {
       this._retriedCardIds = new Set();
       this._sessionResults = {};
       this._sessionAttempts = [];
+      this._quickReview = false;
       this.profile.totalSessions++;
       this._startTimer();
       this.saveProfile();
@@ -1144,6 +1148,7 @@ const APP = {
     this._retriedCardIds = new Set();
     this._sessionResults = {};
     this._sessionAttempts = [];
+    this._quickReview = false;
     this.profile.totalSessions++;
     this._startTimer();
     this.saveProfile();
@@ -1521,6 +1526,8 @@ const APP = {
     if (correct) this.profile.totalCorrect++;
     this._saveSessionState();
     const today = new Date().toISOString().split('T')[0];
+    this.profile.dailyAnswers = this.profile.dailyAnswers || {};
+    this.profile.dailyAnswers[today] = (Number(this.profile.dailyAnswers[today]) || 0) + 1;
     if (this.profile.streaks.lastDate === today) {
       // already counted today
     } else if (this.profile.streaks.lastDate === this._yesterday()) {
@@ -1689,6 +1696,10 @@ const APP = {
   },
 
   endSession() {
+    if (this._advanceTimer) clearTimeout(this._advanceTimer);
+    this._advanceTimer = null;
+    this._stopTimer();
+    localStorage.removeItem(this._resumeStorageKey());
     this._quickReview = false;
     this.showScreen('session-end');
     const stats = this._sessionStats();
@@ -2054,7 +2065,7 @@ const APP = {
     this.renderChallengeLadder();
     // show resume button if session state exists
     const resumeBtn = document.getElementById('resume-btn');
-    if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem('sdf_resume'));
+    if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem(this._resumeStorageKey()));
 
     // achievements display
     const aEl = document.getElementById('achievement-list');
@@ -2127,9 +2138,11 @@ const APP = {
   _sessionTimer: false,
 
   _startTimer() {
+    this._stopTimer();
     this._sessionStartMs = Date.now();
     this._sessionTimer = true;
-    this._tickTimer();
+    if (this._quickReview) this._tickQuickTimer();
+    else this._tickTimer();
   },
 
   _tickTimer() {
@@ -2139,10 +2152,14 @@ const APP = {
     const s = elapsed % 60;
     const el = document.getElementById('session-timer');
     if (el) el.textContent = `${m}:${s.toString().padStart(2, '0')}`;
-    setTimeout(() => this._tickTimer(), 1000);
+    this._timerTimeout = setTimeout(() => this._tickTimer(), 1000);
   },
 
-  _stopTimer() { this._sessionTimer = false; },
+  _stopTimer() {
+    this._sessionTimer = false;
+    if (this._timerTimeout) clearTimeout(this._timerTimeout);
+    this._timerTimeout = null;
+  },
 
   /* ——— Session History ——— */
 
@@ -3293,16 +3310,21 @@ const APP = {
 
   /* ——— Session Resume ——— */
 
+  _resumeStorageKey() {
+    const identity = this._profileIdentity() || this._profileSyncIdentity || this.profile?.userId;
+    return `sdf_resume_${encodeURIComponent(identity || 'local')}`;
+  },
+
   _saveSessionState() {
     if (this.sessionCards.length > 0 && this.sessionIndex < this.sessionCards.length) {
-      localStorage.setItem('sdf_resume', JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
+      localStorage.setItem(this._resumeStorageKey(), JSON.stringify({ cards: this.sessionCards, index: this.sessionIndex + (this._confidenceSubmitted ? 1 : 0), start: this.sessionStart, quickReview: Boolean(this._quickReview), quickTimer: this._quickTimer, attempts: this._sessionAttempts || [], results: this._sessionResults || {} }));
     } else {
-      localStorage.removeItem('sdf_resume');
+      localStorage.removeItem(this._resumeStorageKey());
     }
   },
 
   resumeSession() {
-    const raw = localStorage.getItem('sdf_resume');
+    const raw = localStorage.getItem(this._resumeStorageKey());
     if (!raw) return false;
     try {
       const state = JSON.parse(raw);
@@ -3318,7 +3340,7 @@ const APP = {
         cards.push(card);
       });
       if (!cards.length || resumeIndex >= cards.length) {
-        localStorage.removeItem('sdf_resume');
+        localStorage.removeItem(this._resumeStorageKey());
         return false;
       }
       this.sessionCards = cards;
@@ -3328,6 +3350,8 @@ const APP = {
       this._sessionResults = state.results || {};
       this._retriedCardIds = new Set(cards.filter(card => card.retry).map(card => card.id));
       this._nextCard = null;
+      this._quickReview = Boolean(state.quickReview);
+      this._quickTimer = Number.isFinite(state.quickTimer) ? Math.max(0, state.quickTimer) : 120;
       this._startTimer();
       this.showCard();
       this.showScreen('session');

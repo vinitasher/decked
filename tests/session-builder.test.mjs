@@ -679,3 +679,76 @@ test('normal account rendering refreshes a non-default generation allowance', ()
   assert.match(allowance.textContent, /Free: 7 freshly generated cards/);
   assert.match(allowance.textContent, /midnight UTC/);
 });
+
+
+function timerContext() {
+  const ctx = createContext();
+  const callbacks = new Map();
+  let nextId = 0;
+  ctx.setTimeout = fn => { callbacks.set(++nextId, fn); return nextId; };
+  ctx.clearTimeout = id => callbacks.delete(id);
+  const nodes = new Map();
+  const getElement = ctx.document.getElementById;
+  ctx.document.getElementById = id => getElement(id) || (nodes.has(id) ? nodes.get(id) : (nodes.set(id, { textContent: '', innerHTML: '', style: {} }), nodes.get(id)));
+  return { ctx, callbacks };
+}
+
+test('quick review has one countdown loop and stopping cancels it', () => {
+  const { ctx, callbacks } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app._quickReview = true;
+  app._quickTimer = 120;
+  app._startTimer();
+  assert.equal(ctx.document.getElementById('session-timer').textContent, '⏱ 120s');
+  assert.equal(callbacks.size, 1);
+  app._startTimer();
+  assert.equal(callbacks.size, 1, 'restarting must cancel the old loop');
+  app._stopTimer();
+  assert.equal(callbacks.size, 0);
+});
+
+test('ending a timed session cancels delayed advancement and clears resume', () => {
+  const { ctx, callbacks } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = { totalCorrect: 0, totalAnswered: 0, streaks: { current: 0, best: 0 } };
+  app.sessionCards = [];
+  app._sessionAttempts = [];
+  app._profileIdentity = () => 'user:a';
+  app.showScreen = app.showSessionReview = app.renderDeckStats = app._saveSession = () => {};
+  app._advanceTimer = ctx.setTimeout(() => { throw new Error('unexpected advancement'); });
+  app._timerTimeout = ctx.setTimeout(() => {});
+  ctx.localStorage.setItem(app._resumeStorageKey(), '{}');
+  app.endSession();
+  assert.equal(callbacks.size, 0);
+  assert.equal(ctx.localStorage.getItem(app._resumeStorageKey()), null);
+});
+
+test('daily goal ignores lifetime totals and answers from yesterday', () => {
+  const { ctx } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = { totalAnswered: 100, dailyAnswers: { '2000-01-01': 10 } };
+  app.renderGoal();
+  assert.equal(ctx.document.getElementById('goal-fill').style.width, '0%');
+  app.profile.dailyAnswers[new Date().toISOString().split('T')[0]] = 3;
+  app.renderGoal();
+  assert.equal(ctx.document.getElementById('goal-fill').style.width, '30%');
+});
+
+test('resume records stay with their owner across account switches', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  let identity = 'user:a';
+  app._profileIdentity = () => identity;
+  app.sessionCards = [generatedCard('a', 'Account A scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._saveSessionState();
+  const ownerKey = app._resumeStorageKey();
+  identity = 'user:b';
+  assert.equal(app.resumeSession(), false);
+  assert.notEqual(app._resumeStorageKey(), ownerKey);
+  assert.ok(ctx.localStorage.getItem(ownerKey));
+  identity = 'user:a';
+  app._startTimer = app.showCard = app.showScreen = () => {};
+  assert.equal(app.resumeSession(), true);
+  assert.equal(app.sessionCards[0].id, 'a');
+});
