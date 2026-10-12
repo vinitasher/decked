@@ -905,3 +905,8 @@ footer { padding-top: 34px; color: var(--muted); }
 .sample-challenge summary { cursor: pointer; font-weight: 700; padding: 10px 0; }
 .sample-challenge details p { margin: 12px 0; }
 .sample-flow { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--card-border); border-radius: 12px; font-family: monospace; overflow-wrap: anywhere; }
+
+/* First-session controls stay ahead of optional dashboard tools. */
+[hidden] { display: none !important; }
+.session-allowance { color: var(--muted); line-height: 1.6; margin: -8px 0 24px; }
+.dashboard-tools > summary { cursor: pointer; font-weight: 700; padding: 16px 0; }
