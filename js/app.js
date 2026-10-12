@@ -260,6 +260,7 @@ function apiHeaders() {
 async function initAccount() {
   const callbackError = getOAuthCallbackError();
   await loadAppConfig();
+  renderAccountBar();
   if (!appConfig.supabaseUrl || !appConfig.supabaseAnonKey) {
     if (callbackError) renderAccountError(callbackError);
     renderQuotaBar();
@@ -298,6 +299,8 @@ async function initAccount() {
 }
 
 function renderAccountError(message) {
+  const allowance = document.getElementById('session-allowance');
+  if (allowance) allowance.textContent = `Free: ${appConfig.freeDailyCardLimit} freshly generated cards per UTC day. Cached cards do not use this allowance. At the limit, review saved cards, wait until midnight UTC, or upgrade to Pro.`;
   const bar = document.getElementById('account-bar');
   if (!bar) return;
   bar.classList.remove('hidden');
@@ -1114,7 +1117,7 @@ const APP = {
       this.showScreen('session');
     } finally {
       startButton.disabled = false;
-      startButton.textContent = 'Try 8 questions';
+      startButton.textContent = 'Try 8 questions · allow 5–10 min';
     }
   },
 
@@ -2020,6 +2023,8 @@ const APP = {
 
     // The onboarding intro is only relevant before a user has any study
     // history; returning users land directly on their dashboard.
+    const tools = document.getElementById('dashboard-tools');
+    if (tools && this._profileHasData()) tools.open = true;
     const introHero = document.getElementById('intro-hero');
     if (introHero) {
       if (this._profileHasData()) introHero.classList.add('hidden');
@@ -3350,6 +3355,26 @@ const APP = {
   },
 
   /* ——— Feedback ——— */
+
+  revealSample() {
+    const answer = document.getElementById('sample-answer');
+    const template = document.getElementById('sample-answer-template');
+    const button = document.getElementById('sample-reveal');
+    if (!answer || !template || !button) return;
+    if (!answer.childNodes.length) answer.append(template.content.cloneNode(true));
+    answer.hidden = !answer.hidden;
+    button.setAttribute('aria-expanded', String(!answer.hidden));
+    button.textContent = answer.hidden ? 'Reveal the trade-off' : 'Hide the trade-off';
+  },
+
+  reportExplanation() {
+    this.openFeedbackModal();
+    const card = this.currentCard;
+    document.getElementById('feedback-category').value = 'content';
+    document.getElementById('feedback-title').value = `Explanation concern: ${card?.title || 'study card'}`.slice(0, 120);
+    document.getElementById('feedback-text').value = `Card ID: ${card?.id || 'unknown'}\nScenario: ${card?.scenario || ''}\n\nWhat seems incorrect, and why?\n`;
+    document.getElementById('feedback-text').focus();
+  },
 
   openFeedbackModal() {
     const modal = document.getElementById('feedback-modal');

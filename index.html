@@ -6,7 +6,7 @@
 <title>Decked — Daily System Design Practice</title>
 <meta name="description" content="Practice system design by making architecture decisions: pick between trade-offs, read the reasoning, and let adaptive spaced repetition strengthen your weakest topics.">
 <meta property="og:title" content="Decked — Daily System Design Practice">
-<meta property="og:description" content="Practice system design trade-offs in five minutes a day. Short architecture scenarios, visual explanations, and adaptive review.">
+<meta property="og:description" content="Practice system design trade-offs in short daily sessions. Short architecture scenarios, visual explanations, and adaptive review.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://decked.pages.dev">
 <meta property="og:image" content="/icon-512.png">
@@ -40,18 +40,29 @@
       </div>
       <div id="quota-bar" class="quota-bar hidden"></div>
     </div>
-    <section id="intro-hero" class="intro welcome-hero" aria-labelledby="intro-heading">
-      <h2 id="intro-heading">Practice system design trade-offs in five minutes a day</h2>
+    <section class="intro welcome-hero" aria-label="Start a study session">
+      <div id="intro-hero">
+      <h2 id="intro-heading">Practice system design trade-offs in short daily sessions</h2>
       <p>Preparing for a system design interview? Solve short architecture scenarios, compare the wiring, and revisit your weakest topics. Start free, without an account.</p>
+      </div>
+    <div class="welcome-actions" aria-label="Study actions">
+      <button id="start-session-btn" class="btn btn-primary" onclick="APP.startSession()">Try 8 questions · allow 5–10 min</button>
+      <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
+      <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
+    </div>
+    <p id="session-allowance" class="session-allowance">Free: 10 freshly generated cards per UTC day. Cached cards do not use this allowance. At the limit, review saved cards, wait until midnight UTC, or upgrade to Pro.</p>
+      <details class="about-details">
+        <summary>How practice works</summary>
       <ol class="how-list">
         <li><strong>Read the scenario.</strong> e.g. "A client pushes 1,000 events/s to a downstream service."</li>
         <li><strong>Pick an approach.</strong> 2-4 options; one fits the constraints best.</li>
         <li><strong>Learn the trade-offs.</strong> Every card explains why the winner wins and the rest fail.</li>
         <li><strong>Study adaptively.</strong> Sessions target your weakest topics, and spaced repetition resurfaces cards before you forget.</li>
       </ol>
+      </details>
       <details class="about-details">
         <summary>How cards are made</summary>
-        <p>Cards are generated on the fly with AI assistance and cached for instant reuse, so sessions start without waiting. Cards also stay available on your device for offline review, with seed cards as an offline fallback.</p>
+        <p>Cards are generated with AI assistance and cached for reuse. Automatic checks verify required fields, answer labels, and diagram connections before accepting a generated card; they do not verify technical accuracy. Explanations can be wrong. Use “Report an explanation” after answering to send the card details for review. Saved cards remain available for offline review, with seed cards as a fallback.</p>
       </details>
       <details class="about-details">
         <summary>Privacy &amp; your data</summary>
@@ -67,27 +78,25 @@
         <li>Store the file durably, enqueue a job, and let a worker process it.</li>
         <li>Return success, then start an in-memory background task in the API process.</li>
       </ol>
-      <details>
-        <summary>Choose an answer, then reveal the trade-off</summary>
+      <button type="button" id="sample-reveal" class="btn btn-outline" aria-expanded="false" aria-controls="sample-answer" onclick="APP.revealSample()">Choose an answer, then reveal the trade-off</button>
+      <div id="sample-answer" hidden></div>
+      <template id="sample-answer-template">
         <p><strong>B fits these constraints.</strong> Durable storage and a durable job queue separate acceptance from processing. Return an accepted response with a status URL after durable acceptance; workers must tolerate retries.</p>
         <div class="sample-flow" aria-label="Architecture: client to API to durable storage and job queue to worker">
           <span>Client → API</span><span>↓ Durable file + job</span><span>Queue → Worker → Result</span>
         </div>
         <p>A misses the response budget. C can lose accepted work when the process restarts. If processing took only a few milliseconds, synchronous processing could be simpler.</p>
-        <button class="btn btn-primary" onclick="APP.startSession()">Practice 8 questions →</button>
-      </details>
+        <button class="btn btn-primary" onclick="APP.startSession()">Practice 8 questions · allow 5–10 min →</button>
+      </template>
     </section>
+    <details id="dashboard-tools" class="dashboard-tools">
+      <summary>Your progress, Concept Lab &amp; tools</summary>
     <div id="achievement-toast" class="toast"></div>
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Cards</div></div>
       <div class="stat-card"><div class="stat-num" id="stat-reviewed">0</div><div class="stat-label">Learned</div></div>
       <div class="stat-card"><div class="stat-num" id="stat-due">0</div><div class="stat-label">Due Now</div></div>
       <div class="stat-card"><div class="stat-num" id="stat-streak">0</div><div class="stat-label">Day Streak</div></div>
-    </div>
-    <div class="welcome-actions" aria-label="Study actions">
-      <button id="start-session-btn" class="btn btn-primary" onclick="APP.startSession()">Try 8 questions</button>
-      <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
-      <button class="btn btn-success" onclick="APP.startQuickReview()">⏱ Quick Review (2 min)</button>
     </div>
     <section id="challenge-ladder" class="challenge-ladder" aria-labelledby="learning-level-title">
       <div class="challenge-ladder-heading">
@@ -133,6 +142,7 @@
         <button class="btn btn-outline" onclick="APP.toggleContrast()">♿ Toggle High Contrast</button>
       </nav>
     </section>
+    </details>
   </div>
 
   <!-- Concept Lab index -->
@@ -223,6 +233,7 @@
             <span>Rate card quality</span>
             <button class="btn btn-sm btn-outline quality-good" onclick="APP.rateCard('good')" aria-label="Good card quality">👍</button>
           </div>
+          <button type="button" class="btn btn-sm btn-outline" onclick="APP.reportExplanation()">Report an explanation</button>
           <div class="next-card-actions">
             <button id="next-btn" class="btn btn-primary hidden" onclick="APP.nextCard()">Next Card <span class="keyboard-hint">[N]</span> →</button>
             <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
