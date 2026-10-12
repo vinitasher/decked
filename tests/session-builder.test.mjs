@@ -481,10 +481,11 @@ test('startSession cancels without mutating state when the shortfall is declined
   assert.deepEqual(app.sessionCards.map(card => card.id), ['prior']);
 });
 
-test('prefetchNext picks from the full catalog, not just seed topics', async () => {
+test('prefetchNext respects the upcoming full-catalog slot', async () => {
   seedRandom(0);
   const app = freshApp();
   app.profile.topicScores = { dns: { raw: 0, cardsReviewed: 0, daysSpanned: [] } };
+  app.sessionCards = [generatedCard('first', 'First scenario', 'caching', 1), generatedCard('next', 'Next scenario', 'dns', 1)];
   let requestedTopic;
   app.fetchCard = async (topic, difficulty) => {
     requestedTopic = topic;
@@ -751,4 +752,66 @@ test('resume records stay with their owner across account switches', () => {
   app._startTimer = app.showCard = app.showScreen = () => {};
   assert.equal(app.resumeSession(), true);
   assert.equal(app.sessionCards[0].id, 'a');
+});
+
+
+test('a late prefetch cannot modify a newer session', async () => {
+  const app = freshApp();
+  app.sessionCards = [generatedCard('a', 'First scenario', 'caching', 1), generatedCard('b', 'Next scenario', 'dns', 1)];
+  let resolveOld;
+  app.fetchCard = () => new Promise(resolve => { resolveOld = resolve; });
+  const pending = app.prefetchNext();
+  app.sessionCards = [generatedCard('new', 'New session scenario', 'queues', 1)];
+  app._invalidatePrefetch();
+  resolveOld(generatedCard('stale', 'Old prefetch scenario', 'dns', 1));
+  await pending;
+  assert.equal(app._nextCard, null);
+  assert.equal(app._isGenerating, false);
+});
+
+test('prefetch retains the next slot difficulty and skips scheduled reviews', async () => {
+  const app = freshApp();
+  const next = generatedCard('next', 'Next scenario', 'dns', 1);
+  app.sessionCards = [generatedCard('first', 'First scenario', 'caching', 1), next];
+  let calls = 0;
+  app.fetchCard = async (topic, difficulty) => {
+    calls++;
+    assert.equal(topic, 'dns');
+    assert.equal(difficulty, 1);
+    return generatedCard('prefetch', 'Fresh next scenario', topic, difficulty);
+  };
+  await app.prefetchNext();
+  assert.equal(app._nextCard.difficulty, 1);
+  next.review = true;
+  await app.prefetchNext();
+  assert.equal(calls, 1);
+});
+
+test('exiting quick review saves its remaining time and mode', () => {
+  const { ctx } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app._profileIdentity = () => 'user:quick';
+  app.sessionCards = [generatedCard('quick', 'Quick scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._quickReview = true;
+  app._quickTimer = 60;
+  app.renderDeckStats = app.showScreen = () => {};
+  app.exitSession();
+  const saved = JSON.parse(ctx.localStorage.getItem(app._resumeStorageKey()));
+  assert.equal(saved.quickTimer, 60);
+  assert.equal(saved.quickReview, true);
+});
+
+
+test('exit after authentication changes saves only under the original session owner', () => {
+  const { ctx } = timerContext();
+  const app = Object.create(ctx.appForTest);
+  app._sessionOwner = 'user:a';
+  app._profileIdentity = () => 'user:b';
+  app.sessionCards = [generatedCard('a', 'Account A question', 'caching', 1)];
+  app.sessionIndex = 0;
+  app.renderDeckStats = app.showScreen = () => {};
+  app.exitSession();
+  assert.ok(ctx.localStorage.getItem(app._resumeStorageKey('user:a')));
+  assert.equal(ctx.localStorage.getItem(app._resumeStorageKey('user:b')), null);
 });
