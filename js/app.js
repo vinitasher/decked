@@ -220,6 +220,17 @@ let appConfig = {
 let supabaseClient = null;
 let currentSession = null;
 let currentPlan = 'free';
+let quotaRequestVersion = 0;
+
+function setAccountSession(session) {
+  if (currentSession?.user?.id !== session?.user?.id) {
+    currentPlan = 'free';
+    quotaRequestVersion++;
+    const bar = document.getElementById('quota-bar');
+    if (bar) { bar.innerHTML = ''; bar.classList.add('hidden'); }
+  }
+  currentSession = session;
+}
 const PROFILE_SYNC_DELAY_MS = 250;
 
 function getOAuthRedirectUrl() {
@@ -286,9 +297,9 @@ async function initAccount() {
   }
   const { data, error } = sessionData;
   const authError = callbackError || error?.message || '';
-  currentSession = data?.session || null;
+  setAccountSession(data?.session || null);
   supabaseClient.auth.onAuthStateChange((_event, session) => {
-    currentSession = session;
+    setAccountSession(session);
     renderAccountBar();
     renderQuotaBar();
     if (typeof APP !== 'undefined') APP._onAccountIdentityReady().catch(() => {});
@@ -323,10 +334,13 @@ function renderAccountBar() {
 async function renderQuotaBar() {
   const bar = document.getElementById('quota-bar');
   if (!bar) return;
+  const version = ++quotaRequestVersion;
+  const identity = currentSession?.user?.id;
   try {
     const response = await fetch(`${SERVER_BASE}/api/quota`, { headers: apiHeaders() });
     if (!response.ok) return;
     const data = await response.json();
+    if (version !== quotaRequestVersion || identity !== currentSession?.user?.id) return;
     currentPlan = data.plan || 'free';
     renderAccountBar();
     bar.classList.remove('hidden');
@@ -1441,7 +1455,7 @@ const APP = {
       const optionPrerequisites = opt.prerequisiteTopics
         .map(topic => this._wikiLink(topic))
         .join(', ');
-      btn.innerHTML = `<span class="option-letter">${opt.id}<span class="option-key">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${opt.label}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
+      btn.innerHTML = `<span class="option-letter">${opt.id}<span class="option-key">[${keyNum}]</span></span><span class="option-content"><span class="option-text">${escHtml(opt.label)}</span><span class="option-prerequisites">${optionPrerequisites ? `Know first: ${optionPrerequisites}` : 'No additional prerequisites'}</span></span>`;
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-label', `Option ${opt.id}: ${opt.label}`);
       btn.onclick = () => this.answer(opt.id);
@@ -1488,9 +1502,9 @@ const APP = {
     const feedbackEl = document.getElementById('feedback');
     const isCorrect = this._cardCorrect;
     feedbackEl.className = isCorrect ? 'feedback correct' : 'feedback incorrect';
-    feedbackEl.innerHTML = `<strong>${isCorrect ? '✓ Correct!' : '✗ The answer was ' + card.correct}</strong><br><br>${card.explanation}`;
+    feedbackEl.innerHTML = `<strong>${isCorrect ? '✓ Correct!' : '✗ The answer was ' + escHtml(card.correct)}</strong><br><br>${escHtml(card.explanation)}`;
     if (!isCorrect) {
-      feedbackEl.innerHTML += `<br><br><em>The correct answer was <strong>${card.correct}</strong>.</em>`;
+      feedbackEl.innerHTML += `<br><br><em>The correct answer was <strong>${escHtml(card.correct)}</strong>.</em>`;
     }
 
     // show confidence buttons (hidden until user taps one)
@@ -2239,7 +2253,7 @@ const APP = {
       `Streak: ${this.profile.streaks.current} days`,
       ``,
       `Cards in this session:`,
-      ...this.sessionCards.map(c => `  • ${c.topic}: ${c.scenario.substring(0, 60)}... [${c.correct}]`)
+      ...this.sessionCards.map(c => `  • ${c.topic}: ${escHtml(c.scenario.substring(0, 60))}... [${escHtml(c.correct)}]`)
     ].join('\n');
     navigator.clipboard.writeText(lines).then(() => {
       const toast = document.getElementById('achievement-toast');
@@ -2271,8 +2285,8 @@ const APP = {
       html += `<div class="review-item ${wasCorrect ? 'is-correct' : 'is-incorrect'}">
         <span class="review-index">${i+1}.</span>
         <div class="review-copy">
-          <strong>${card.topic}</strong>: ${card.scenario.substring(0, 70)}…<br>
-          <span class="review-meta">→ ${card.correct} · ${SRS.confidenceLabel(confidence)}</span>
+          <strong>${escHtml(card.topic)}</strong>: ${escHtml(card.scenario.substring(0, 70))}…<br>
+          <span class="review-meta">→ ${escHtml(card.correct)} · ${SRS.confidenceLabel(confidence)}</span>
         </div>
       </div>`;
     }
@@ -3320,6 +3334,11 @@ const APP = {
     const idx = bm.indexOf(cardId);
     if (idx >= 0) bm.splice(idx, 1); else bm.push(cardId);
     localStorage.setItem('sdf_bookmarks', JSON.stringify(bm));
+    let snapshots = {};
+    try { snapshots = JSON.parse(localStorage.getItem('sdf_bookmark_cards') || '{}'); } catch (_) {}
+    if (bm.includes(cardId) && this.currentCard?.id === cardId) snapshots[cardId] = this._cardSnapshot(this.currentCard);
+    if (!bm.includes(cardId)) delete snapshots[cardId];
+    localStorage.setItem('sdf_bookmark_cards', JSON.stringify(snapshots));
     this.renderBookmarks();
   },
 
@@ -3330,8 +3349,13 @@ const APP = {
     if (!el) return;
     const bm = JSON.parse(localStorage.getItem('sdf_bookmarks') || '[]');
     if (bm.length === 0) { el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">No bookmarked cards yet. Use the ★ button during a session to save one.</p>'; return; }
-    const cards = SEED_CARDS.filter(c => bm.includes(c.id));
-    el.innerHTML = cards.map(c => `<div class="bookmark-item"><strong>${c.topic}</strong>: ${c.scenario.substring(0, 60)}… <span class="item-meta">[${c.correct}]</span></div>`).join('');
+    let snapshots = {};
+    try { snapshots = JSON.parse(localStorage.getItem('sdf_bookmark_cards') || '{}'); } catch (_) {}
+    const cached = this._loadCachedKeys();
+    const cards = bm.map(id => snapshots[id] ? { ...snapshots[id], id }
+      : this._resolveCardContent(id) || cached.find(card => card.id === id)).filter(Boolean);
+    if (!cards.length) { el.textContent = 'Saved card content is unavailable in this browser.'; return; }
+    el.innerHTML = cards.map(c => `<div class="bookmark-item"><strong>${escHtml(c.topic)}</strong>: ${escHtml(c.scenario.substring(0, 60))}… <span class="item-meta">[${escHtml(c.correct)}]</span></div>`).join('');
   },
 
   /* ——— Search / Filter ——— */
@@ -3346,7 +3370,7 @@ const APP = {
     if (topicFilter) results = results.filter(c => c.topic === topicFilter);
     document.getElementById('search-results').innerHTML = results.length === 0
       ? '<p style="color:var(--muted);font-size:0.85rem;">No matching cards.</p>'
-      : results.slice(0, 20).map(c => `<div class="search-item"><strong>${c.topic}</strong> <span class="difficulty-mark">★${c.difficulty}</span>: ${c.scenario.substring(0, 80)}… <span class="item-meta">[${c.correct}]</span></div>`).join('');
+      : results.slice(0, 20).map(c => `<div class="search-item"><strong>${escHtml(c.topic)}</strong> <span class="difficulty-mark">★${c.difficulty}</span>: ${escHtml(c.scenario.substring(0, 80))}… <span class="item-meta">[${escHtml(c.correct)}]</span></div>`).join('');
   },
 
   /* ——— Session Resume ——— */
