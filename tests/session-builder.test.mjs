@@ -815,3 +815,62 @@ test('exit after authentication changes saves only under the original session ow
   assert.ok(ctx.localStorage.getItem(app._resumeStorageKey('user:a')));
   assert.equal(ctx.localStorage.getItem(app._resumeStorageKey('user:b')), null);
 });
+
+
+test('navigation cancels an unfinished quick-review preparation', async () => {
+  const app = freshApp();
+  app._syncScreen = () => {};
+  let complete;
+  app._generateSessionCards = () => new Promise(resolve => { complete = resolve; });
+  const pending = app.startQuickReview();
+  app.showScreen('concepts');
+  complete({ cards: [generatedCard('late', 'Late scenario', 'caching', 1)], requested: 1 });
+  await pending;
+  assert.equal(app.sessionCards.length, 0);
+  assert.equal(app.profile.totalSessions, 0);
+});
+
+test('newer preparation wins when earlier preparation finishes last', async () => {
+  const app = freshApp();
+  const completions = [];
+  app._generateSessionCards = () => new Promise(resolve => completions.push(resolve));
+  app._startTimer = app.showCard = app.showScreen = app.prefetchNext = () => {};
+  const first = app.startQuickReview();
+  const second = app.startQuickReview();
+  completions[1]({ cards: [generatedCard('new', 'New request', 'dns', 1)], requested: 1 });
+  await second;
+  completions[0]({ cards: [generatedCard('old', 'Old request', 'caching', 1)], requested: 1 });
+  await first;
+  assert.equal(app.sessionCards[0].id, 'new');
+  assert.equal(app.profile.totalSessions, 1);
+});
+
+test('regenerate is visible before answering a card', () => {
+  const ctx = createContext();
+  const app = Object.create(ctx.appForTest);
+  app.profile = ctx.normalizeProfileDataForTest(baseProfile());
+  app.sessionCards = [generatedCard('card', 'Scenario', 'caching', 1)];
+  app.sessionIndex = 0;
+  app._recordDisplayedScenario = () => {};
+  app._wikiLink = () => '';
+  app.isBookmarked = () => false;
+  ctx.document.createElement = () => ({ className: '', innerHTML: '', setAttribute() {} });
+  app.showCard();
+  assert.equal(ctx.document.getElementById('regenerate-btn').classList.contains('hidden'), false);
+});
+
+test('late regeneration cannot overwrite a newer session', async () => {
+  const app = freshApp();
+  const old = generatedCard('old', 'Old scenario', 'caching', 1);
+  app.sessionCards = [old];
+  app.currentCard = old;
+  let complete;
+  app.fetchCard = () => new Promise(resolve => { complete = resolve; });
+  const pending = app.regenerateCard();
+  const next = generatedCard('new', 'New scenario', 'dns', 1);
+  app.sessionCards = [next];
+  app.currentCard = next;
+  complete(generatedCard('late', 'Late replacement', 'caching', 1));
+  await pending;
+  assert.equal(app.sessionCards[0].id, 'new');
+});
