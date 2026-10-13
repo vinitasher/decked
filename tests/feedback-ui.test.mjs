@@ -12,7 +12,8 @@ test('footer offers a send-feedback button that opens a modal, not an external l
   const footerBtn = html.indexOf('class="footer-btn"', footer);
   assert.ok(footerBtn > footer);
   assert.match(html, /<button[^>]*class="footer-btn"[^>]*onclick="APP\.openFeedbackModal\(\)"/);
-  assert.doesNotMatch(html.slice(footer), /<a\s/);
+  assert.doesNotMatch(html.slice(footer), /<a\s[^>]*href="(?:https?:)?\/\//);
+  assert.match(html.slice(footer), /<a class="footer-btn" href="\/privacy">Privacy<\/a>/);
 });
 
 test('feedback modal contains title, details, five categories, contact, and a turnstile container', () => {

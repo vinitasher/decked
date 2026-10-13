@@ -283,6 +283,8 @@ footer a:hover { color: var(--primary); }
 /* Footer */
 .footer-btn { background: none; border: none; padding: 0; font-size: 0.8rem; font-family: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .footer-btn:hover, .footer-btn:focus-visible { color: var(--primary); outline: none; }
+.policy-link { color: var(--primary); text-decoration: underline; }
+.policy-link:hover, .policy-link:focus-visible { text-decoration: none; }
 
 /* Accounts, quotas, and Pro billing */
 .account-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.85rem; margin-bottom: 8px; }
