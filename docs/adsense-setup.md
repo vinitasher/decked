@@ -27,8 +27,9 @@ service worker.
 
 Ads remain disabled when configuration is missing or invalid. The example IDs
 are illustrative; never deploy them as real account configuration. Keep ads
-disabled in previews and development. Add an `ads.txt` file to the published
-root if AdSense requests it, using the exact line supplied by your account.
+disabled in previews and development. The repository's `ads.txt` is published
+at the site root by `build.sh` and authorizes the default publisher ID. If you
+override `ADSENSE_CLIENT_ID`, update `ads.txt` to match.
 
 ## Verify
 
