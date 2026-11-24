@@ -2,7 +2,12 @@
 
 Source issue: Direct user request (no tracked issue)
 Implementation plan: [gamified-learning-loop-plan.md](gamified-learning-loop-plan.md)
-Status: Proposed
+Status: Complete
+
+Implementation notes: fresh AI generation requires Pro under the current
+entitlement model, so Add a concept is free only for concepts already in the
+server library. The separate Topic Map screen remains available from the More
+menu instead of being merged into the world map.
 
 ## Goal
 
