@@ -959,3 +959,18 @@ footer { padding-top: 34px; color: var(--muted); }
   .game-hud-actions { width: 100%; }
   .game-hud-actions .btn { flex: 1 1 0; }
 }
+
+/* Add a concept */
+.concept-add { margin: 0 0 16px; padding: 14px 16px; border: 1px dashed var(--card-border); border-radius: 14px; }
+.concept-add-label { display: block; margin-bottom: 8px; color: var(--heading); font-weight: 800; }
+.concept-add-row { display: flex; gap: 10px; }
+.concept-add-input { flex: 1 1 auto; min-width: 0; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); color: var(--fg); font: inherit; }
+.concept-add-note { margin: 8px 0 0; color: var(--muted-text); font-size: 0.8rem; line-height: 1.5; }
+.concept-add-status { margin: 6px 0 0; font-size: 0.86rem; }
+.concept-add-status:empty { display: none; }
+.concept-add-status.is-error { color: var(--danger); }
+.concept-add-status.is-ready { color: var(--success); }
+.concept-added-practice { margin: 12px 0; }
+@media (max-width: 560px) {
+  .concept-add-row { flex-direction: column; }
+}
