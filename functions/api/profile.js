@@ -32,7 +32,7 @@ export function profileKey(identity) {
 
 export function isValidProfileShape(profile) {
   if (!isPlainObject(profile)) return false;
-  const objectFields = ['topicScores', 'cardHistory', 'streaks', '_topicCardSeen', 'topicAccuracy'];
+  const objectFields = ['topicScores', 'cardHistory', 'streaks', '_topicCardSeen', 'topicAccuracy', 'game'];
   if (objectFields.some(field => profile[field] !== undefined && !isPlainObject(profile[field]))) return false;
   if (typeof profile.userId !== 'undefined' && typeof profile.userId !== 'string') return false;
   if (profile.seenScenarioFingerprints !== undefined && (

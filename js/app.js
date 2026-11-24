@@ -719,6 +719,7 @@ const APP = {
   _beginSessionPreparation() {
     const token = { identity: this._profileIdentity() };
     this._sessionPreparation = token;
+    this._sessionXp = 0;
     return token;
   },
 
@@ -1649,6 +1650,10 @@ const APP = {
     } else {
       this._consecutiveCorrect = 0;
     }
+    const xpGained = this._gameRecordAnswer(card, correct, review.timesReviewed);
+    if (streakEl && xpGained) {
+      streakEl.textContent = `${streakEl.textContent ? `${streakEl.textContent} · ` : ''}+${xpGained} XP`;
+    }
     this._checkAchievements();
     this.saveProfile();
     } catch (error) {
@@ -1812,7 +1817,8 @@ const APP = {
     this._quickReview = false;
     this.showScreen('session-end');
     const stats = this._sessionStats();
-    document.getElementById('session-summary').innerHTML = `
+    if (stats.answered > 0) this._gameQuest('session');
+    document.getElementById('session-summary').innerHTML = `${this._sessionGameSummaryHtml()}
       <p>Cards reviewed: <strong>${stats.answered}</strong></p>
       <p>Lifetime correct: <strong>${this.profile.totalCorrect} / ${this.profile.totalAnswered}</strong> (${this.profile.totalAnswered ? Math.round(100 * this.profile.totalCorrect / this.profile.totalAnswered) : 0}%)</p>
       <p>Topics covered: <strong>${new Set(stats.attempts.map(attempt => attempt.card.topic)).size}</strong></p>
@@ -1822,6 +1828,8 @@ const APP = {
     this.showSessionReview();
     this._stopTimer();
     this._saveSession(stats.answered, stats.correct, stats.attempts.map(attempt => attempt.card));
+    this._sessionXp = 0;
+    this.saveProfile();
     this.renderDeckStats();
   },
 
@@ -2020,6 +2028,212 @@ const APP = {
     this.renderDeckStats();
   },
 
+  /* ——— Game loop (see PRDs/gamified-learning-loop.md) ———
+     Every helper is a no-op when js/game.js is not loaded, so tests and older
+     shells that only load app.js keep working. */
+
+  _game() {
+    if (typeof normalizeGameState !== 'function' || !this.profile) return null;
+    if (!this._gameState || this.profile.game !== this._gameState) {
+      const game = normalizeGameState(this.profile.game);
+      backfillGameState(game, this.profile);
+      this.profile.game = game;
+      this._gameState = game;
+    }
+    return this._gameState;
+  },
+
+  _gameSeed() {
+    return String(this.profile?.userId || '');
+  },
+
+  _gameToast(message) {
+    const toast = document.getElementById('achievement-toast');
+    if (!toast) return;
+    toast.innerHTML = this._escapeHtml(message);
+    toast.className = 'toast show';
+    setTimeout(() => { toast.className = 'toast'; }, 4000);
+  },
+
+  _gameAward(key, event) {
+    const game = this._game();
+    if (!game) return 0;
+    const xp = awardGameXp(game, key, xpForEvent(event));
+    if (xp) this._sessionXp = (this._sessionXp || 0) + xp;
+    return xp;
+  },
+
+  _gameQuest(eventType, amount = 1) {
+    const game = this._game();
+    if (!game) return [];
+    const completed = advanceQuests(game, eventType, amount, gameToday(), this._gameSeed());
+    for (const quest of completed) {
+      if (quest.xp) this._sessionXp = (this._sessionXp || 0) + quest.xp;
+      this._gameToast(`✅ Quest complete: ${quest.label} · +${quest.xp} XP`);
+    }
+    return completed;
+  },
+
+  _sandboxModelIdsForTopic(topic) {
+    if (typeof getSandboxModelsForWikiTopic !== 'function') return [];
+    try {
+      return getSandboxModelsForWikiTopic(topic).map(model => model.id);
+    } catch (_) {
+      return [];
+    }
+  },
+
+  /* Recompute one concept's stars from what has been recorded. A first star on
+     a concept advances the "new star" quest. Returns the stored star count. */
+  _gameRefreshStars(topic) {
+    const game = this._game();
+    if (!game || !topic) return 0;
+    const derived = deriveConceptStars({
+      read: game.readTopics.includes(topic),
+      clearedLevelSets: this._sandboxModelIdsForTopic(topic).map(id => game.clearedSituations[id] || []),
+      correctDrills: game.correctByTopic[topic] || 0
+    });
+    const { previous, stars } = updateConceptStars(game, topic, derived);
+    if (stars > previous) {
+      if (previous === 0) this._gameQuest('newStar');
+      this._gameToast(`${'★'.repeat(stars)}${'☆'.repeat(3 - stars)} ${formatPrerequisiteLabel(topic)}`);
+    }
+    return stars;
+  },
+
+  conceptStars(topic) {
+    const game = this._game();
+    return game ? game.stars[topic] || 0 : 0;
+  },
+
+  _gameMarkRead(topic) {
+    const game = this._game();
+    if (!game || !topic || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(topic)) return;
+    if (!game.readTopics.includes(topic)) game.readTopics.push(topic);
+    this._gameRefreshStars(topic);
+    this.saveProfile();
+  },
+
+  /* Called once per confidence submission, after the combo counter updates. */
+  _gameRecordAnswer(card, correct, reviewNumber) {
+    const game = this._game();
+    if (!game || !card) return 0;
+    const xp = this._gameAward(`answer:${card.id}:${reviewNumber}`, {
+      type: 'answer', correct, difficulty: card.difficulty, consecutiveCorrect: this._consecutiveCorrect
+    });
+    if (correct && xp > 0) {
+      game.correctByTopic[card.topic] = (game.correctByTopic[card.topic] || 0) + 1;
+      this._gameQuest('correct');
+      if ((this._consecutiveCorrect || 0) >= 3) this._gameQuest('combo3');
+    }
+    this._gameRefreshStars(card.topic);
+    return xp;
+  },
+
+  /* Called after each sandbox run. XP for a correct prediction is earned once
+     per situation per day; a situation's first correct clear earns level XP. */
+  _gameRecordSandboxRun(node, situationId, predictionCorrect) {
+    const game = this._game();
+    if (!game || !node || !predictionCorrect) return 0;
+    const situation = (node.situations || []).find(item => item.id === situationId);
+    const level = Number(situation?.level) || 0;
+    let xp = this._gameAward(`prediction:${node.id}:${situationId}:${gameToday()}`, {
+      type: 'prediction', correct: true, consecutiveCorrect: this.profile.sandbox?.currentStreak
+    });
+    this._gameQuest('prediction');
+    if (level >= 1 && level <= 5) {
+      const cleared = game.clearedSituations[node.id] || (game.clearedSituations[node.id] = []);
+      if (!cleared.includes(level)) {
+        cleared.push(level);
+        cleared.sort();
+        xp += this._gameAward(`situation:${node.id}:${level}`, { type: 'situation', level });
+        this._gameQuest('situation');
+      }
+    }
+    const topics = new Set(typeof getSandboxWikiTopics === 'function' ? getSandboxWikiTopics(node.id) : []);
+    if (this._activeWikiTopic && this._sandboxModelIdsForTopic(this._activeWikiTopic).includes(node.id)) {
+      topics.add(this._activeWikiTopic);
+    }
+    topics.forEach(topic => this._gameRefreshStars(topic));
+    this.saveProfile();
+    return xp;
+  },
+
+  _orderedMapTopics() {
+    return this._orderedConceptGroups(this._conceptEntries())
+      .flatMap(group => group.items.map(item => item.entry.topic));
+  },
+
+  recommendedConcept() {
+    const game = this._game();
+    if (!game) return null;
+    const prerequisites = topic => (typeof TOPIC_CATALOG !== 'undefined' && TOPIC_CATALOG[topic]?.prerequisites) || [];
+    return recommendNextConcept(this._orderedMapTopics(), game.stars, prerequisites);
+  },
+
+  /* The single home action: due reviews first, then today's first unfinished
+     quest, then the recommended concept. */
+  play() {
+    const game = this._game();
+    if (!game || this._dueReviewCount() > 0) return this.startSession();
+    const quests = ensureDailyQuests(game, gameToday(), this._gameSeed());
+    const next = quests.items.find(item => !item.done);
+    const quest = next ? questDefinition(next.id) : null;
+    if (quest?.action === 'concept') {
+      const topic = this.recommendedConcept();
+      if (topic) return this.openConcept(topic);
+    }
+    return this.startSession();
+  },
+
+  renderGameHud() {
+    const hud = document.getElementById('game-hud');
+    const game = this._game();
+    if (!hud) return;
+    if (!game) { hud.classList.add('hidden'); return; }
+    hud.classList.remove('hidden');
+    const level = this.getLearningLevel();
+    const rank = LEARNING_LEVELS[level - 1] || LEARNING_LEVELS[0];
+    const today = gameToday();
+    const quests = ensureDailyQuests(game, today, this._gameSeed());
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('game-rank', `Rank ${level} · ${rank.label}`);
+    set('game-xp-today', `${xpToday(game, today)} XP today`);
+    set('game-xp-total', `${xpThisWeek(game, today)} this week · ${game.xp.total} total`);
+    set('game-streak', `🔥 ${this.profile.streaks?.current || 0}-day streak`);
+    const questList = document.getElementById('game-quests');
+    if (questList) {
+      questList.innerHTML = quests.items.map(item => {
+        const quest = questDefinition(item.id);
+        const pct = Math.round(100 * item.progress / item.target);
+        return `<li class="game-quest${item.done ? ' is-done' : ''}">
+          <span class="game-quest-check" aria-hidden="true">${item.done ? '✓' : '○'}</span>
+          <span class="game-quest-label">${this._escapeHtml(quest.label)}</span>
+          <span class="game-quest-progress">${item.progress}/${item.target}</span>
+          <span class="game-quest-bar" aria-hidden="true"><span style="width:${pct}%"></span></span>
+        </li>`;
+      }).join('');
+    }
+    const recommended = this.recommendedConcept();
+    const nextEl = document.getElementById('game-next-concept');
+    if (nextEl) {
+      nextEl.textContent = recommended
+        ? `Next on the map: ${formatPrerequisiteLabel(recommended)}`
+        : 'Every concept on the map is mastered.';
+    }
+  },
+
+  _sessionGameSummaryHtml() {
+    const game = this._game();
+    if (!game) return '';
+    const quests = ensureDailyQuests(game, gameToday(), this._gameSeed());
+    const done = quests.items.filter(item => item.done).length;
+    return `<div class="game-session-summary">
+      <p class="game-session-xp">+${this._sessionXp || 0} XP</p>
+      <p>Quests today: <strong>${done}/${quests.items.length}</strong> · Total XP: <strong>${game.xp.total}</strong></p>
+    </div>`;
+  },
+
   /* ——— Achievements ——— */
 
   _achievementDefs: [
@@ -2151,12 +2365,20 @@ const APP = {
 
     // The onboarding intro is only relevant before a user has any study
     // history; returning users land directly on their dashboard.
-    const tools = document.getElementById('dashboard-tools');
-    if (tools && this._profileHasData()) tools.open = true;
+    // The More menu (dashboard tools) stays collapsed so the home screen leads
+    // with Play and today's quests. Returning users also skip the sample.
+    const returning = this._profileHasData();
     const introHero = document.getElementById('intro-hero');
     if (introHero) {
-      if (this._profileHasData()) introHero.classList.add('hidden');
+      if (returning) introHero.classList.add('hidden');
       else introHero.classList.remove('hidden');
+    }
+    const sample = document.getElementById('sample-challenge');
+    if (sample) sample.classList[returning ? 'add' : 'remove']('hidden');
+    const startButton = document.getElementById('start-session-btn');
+    if (startButton && startButton.classList) {
+      startButton.classList[returning ? 'remove' : 'add']('btn-primary');
+      startButton.classList[returning ? 'add' : 'remove']('btn-outline');
     }
 
     const statTotal = document.getElementById('stat-total');
@@ -2169,6 +2391,7 @@ const APP = {
     if (statStreak) statStreak.textContent = this.profile.streaks.current;
     this.renderGoal();
     this.renderChallengeLadder();
+    this.renderGameHud();
     // show resume button if session state exists
     const resumeBtn = document.getElementById('resume-btn');
     if (resumeBtn) resumeBtn.classList.toggle('hidden', !localStorage.getItem(this._resumeStorageKey()));
@@ -2756,7 +2979,7 @@ const APP = {
         <span class="sandbox-model-tag">Model v${result.modelVersion}</span>
       </div>
       <div class="sandbox-prediction-result ${matched ? 'is-correct' : 'is-incorrect'}">
-        <strong>${matched ? '✓ Your prediction matched' : '△ The model took a different path'}</strong>
+        <strong>${matched ? '✓ Your prediction matched' : '△ The model took a different path'}</strong>${result.xpGained ? ` <span class="game-xp-badge">+${Number(result.xpGained)} XP</span>` : ''}
         <p>You chose: ${this._escapeHtml(selected?.label || 'Unknown')}<br>Model expected: ${this._escapeHtml(expected?.label || 'Unknown')}</p>
       </div>
       ${state.dirty ? '<p class="sandbox-dirty-note">The controls changed after this run. Run again to evaluate the new assumptions.</p>' : ''}
@@ -2852,6 +3075,8 @@ const APP = {
     state.result = { ...result, prediction: state.prediction, predictionCorrect };
     state.dirty = false;
     this._recordSandboxRun(node.id, state.situationId, predictionCorrect, completedLab);
+    const xpGained = this._gameRecordSandboxRun(node, state.situationId, predictionCorrect);
+    if (xpGained) state.result.xpGained = xpGained;
     this.renderSandbox();
     this.renderChallengeLadder();
     return true;
@@ -2932,10 +3157,14 @@ const APP = {
     return related + prerequisites + coverage * 4;
   },
 
-  _conceptCloudItem(entry, size) {
+  _conceptCloudItem(entry, size, recommended = false) {
     const title = entry.title || formatPrerequisiteLabel(entry.topic);
     const topic = this._escapeHtml(entry.topic);
-    return `<button class="concept-cloud-item concept-cloud-size-${size}" type="button" role="listitem" data-topic="${topic}" aria-label="Open ${this._escapeHtml(title)} concept" onclick="APP.openConcept('${topic}')">${this._escapeHtml(title)}</button>`;
+    const stars = this.conceptStars(entry.topic);
+    const starMarks = `<span class="concept-stars concept-stars-${stars}" aria-hidden="true">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</span>`;
+    const state = stars >= 3 ? ' is-mastered' : stars > 0 ? ' is-started' : '';
+    const label = `Open ${title} concept, ${stars} of 3 stars${recommended ? ', recommended next' : ''}`;
+    return `<button class="concept-cloud-item concept-cloud-size-${size}${state}${recommended ? ' is-recommended' : ''}" type="button" role="listitem" data-topic="${topic}" data-stars="${stars}" aria-label="${this._escapeHtml(label)}" onclick="APP.openConcept('${topic}')">${this._escapeHtml(title)}${starMarks}</button>`;
   },
 
   /* Partition a flat, alphabetized entry list into authored categories in the
@@ -2980,12 +3209,26 @@ const APP = {
       ? 3
       : 1 + Math.round((weights[index] - minimum) / (maximum - minimum) * 4);
 
+    const recommended = this.recommendedConcept();
+    const banner = document.getElementById('concept-recommended');
+    if (banner) {
+      if (recommended) {
+        const name = this._escapeHtml(formatPrerequisiteLabel(recommended));
+        banner.innerHTML = `<span>Recommended next: <strong>${name}</strong></span><button class="btn btn-sm btn-primary" type="button" onclick="APP.openConcept('${this._escapeHtml(recommended)}')">▶ Play ${name}</button>`;
+        banner.classList.remove('hidden');
+      } else {
+        banner.innerHTML = '';
+        banner.classList.add('hidden');
+      }
+    }
     cloud.innerHTML = this._orderedConceptGroups(entries).map(({ category, items }) => {
       const label = this._escapeHtml(category);
       const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      const buttons = items.map(({ entry, index }) => this._conceptCloudItem(entry, sizeFor(index))).join('');
+      const buttons = items.map(({ entry, index }) => this._conceptCloudItem(entry, sizeFor(index), entry.topic === recommended)).join('');
+      const earned = items.reduce((sum, { entry }) => sum + this.conceptStars(entry.topic), 0);
+      const mastered = items.filter(({ entry }) => this.conceptStars(entry.topic) >= 3).length;
       return `<section class="concept-group" aria-labelledby="concept-group-${slug}">
-        <h3 class="concept-group-heading" id="concept-group-${slug}">${label} <span class="concept-group-count">${items.length}</span></h3>
+        <h3 class="concept-group-heading" id="concept-group-${slug}">${label} <span class="concept-group-count">${items.length}</span><span class="concept-group-stars" title="${mastered} mastered">★ ${earned}/${items.length * 3}</span></h3>
         <div class="concept-group-items" role="list" aria-label="${label} concepts">${buttons}</div>
       </section>`;
     }).join('');
@@ -3261,6 +3504,7 @@ const APP = {
     this._ensureWiki(topic)
       .then(entry => {
         el.innerHTML = this._wikiEntryHtml(entry);
+        this._gameMarkRead(entry?.topic || topic);
         this.renderWikiSidebar();
       })
       .catch(error => {
@@ -3278,6 +3522,7 @@ const APP = {
     try {
       const entry = await this._ensureWiki(topic);
       body.innerHTML = this._wikiEntryHtml(entry);
+      this._gameMarkRead(entry?.topic || topic);
       this.renderWikiSidebar();
     } catch (error) {
       console.error('Wiki render failed for', topic, error);
