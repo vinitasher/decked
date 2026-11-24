@@ -918,3 +918,44 @@ footer { padding-top: 34px; color: var(--muted); }
 .free-ad-unit { width: 100%; height: 100px; }
 @media (min-width: 500px) { .free-ad-unit { height: 60px; } }
 @media (min-width: 800px) { .free-ad-unit { height: 90px; } }
+
+/* Game loop: home HUD, quests, map stars, XP badges */
+.game-hud {
+  margin: 18px 0;
+  padding: 20px 22px;
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--surface-strong), #1c3155);
+  color: #eef5ff;
+  box-shadow: 0 16px 34px rgba(13, 26, 54, 0.18);
+}
+.game-hud .eyebrow { color: var(--accent); }
+.game-hud-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.game-rank { margin: 5px 0 4px; color: #fff; font-size: 1.3rem; }
+.game-hud-meta { margin: 0; color: #c2d1e7; font-size: 0.86rem; line-height: 1.5; }
+.game-hud-meta strong { color: var(--accent); }
+.game-hud-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.game-hud-actions .btn-outline { color: #eef5ff; border-color: rgba(255, 255, 255, 0.35); background: transparent; }
+.game-play-btn { min-width: 140px; font-size: 1.05rem; }
+.game-quests-title { margin: 18px 0 8px; color: #fff; font-size: 0.78rem; letter-spacing: 0.09em; text-transform: uppercase; }
+.game-quests { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.game-quest { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px; padding: 9px 12px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; font-size: 0.88rem; }
+.game-quest.is-done { border-color: var(--accent); background: rgba(91, 213, 176, 0.12); }
+.game-quest-check { color: var(--accent); font-weight: 800; }
+.game-quest-progress { color: #c2d1e7; font-variant-numeric: tabular-nums; }
+.game-quest-bar { grid-column: 2 / 4; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.15); }
+.game-quest-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.35s ease; }
+.game-next-concept { margin: 12px 0 0; color: #c2d1e7; font-size: 0.84rem; }
+.game-xp-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #09231e; font-size: 0.75rem; font-weight: 800; }
+.game-session-summary { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--card-bg); }
+.game-session-xp { margin: 0 0 4px; color: var(--primary); font-size: 1.6rem; font-weight: 850; }
+.concept-recommended { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--accent); border-radius: 12px; background: rgba(91, 213, 176, 0.12); }
+.concept-stars { margin-left: 6px; color: var(--muted); font-size: 0.7em; letter-spacing: 0.05em; }
+.concept-cloud-item.is-started .concept-stars, .concept-cloud-item.is-mastered .concept-stars { color: #e0a800; }
+.concept-cloud-item.is-recommended { border-color: var(--accent); background: rgba(91, 213, 176, 0.12); }
+.concept-group-stars { margin-left: auto; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.04em; }
+@media (max-width: 560px) {
+  .game-hud { padding: 16px; }
+  .game-hud-actions { width: 100%; }
+  .game-hud-actions .btn { flex: 1 1 0; }
+}

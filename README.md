@@ -94,6 +94,30 @@ decision-based practice with adaptive difficulty.
   navigation. Legacy `#/wiki` and `#/sandbox` links remain supported as Concept
   Lab aliases.
 
+**Game loop** ([PRD](PRDs/gamified-learning-loop.md)):
+- The home screen leads with one **Play** action, today's three quests, the
+  learner's rank, XP (today, this week, total), and day streak. Play starts
+  due reviews first, then the first unfinished quest, then the recommended
+  concept on the map. Secondary tools sit in the collapsed **More** menu.
+- XP comes only from recorded events: 10 × difficulty per correct answer
+  (×1.5 from three in a row, ×2 from five), 2 per incorrect answer, 15 per
+  correct sandbox prediction (once per situation per day), 10 × level for a
+  situation's first correct clear, and 50 per completed quest. Each award has a
+  stable event key, so reloads and re-renders never award twice.
+- Rank is the existing five-level challenge ladder; XP never unlocks harder
+  cards.
+- The Concept Lab index is the world map. Each concept earns up to three
+  stars: opening its explanation (★), clearing sandbox situations 1–3 with a
+  correct prediction (★★), and clearing all five plus two correct drill answers
+  on the topic (★★★). Stars never go down, nothing is locked, and the map
+  highlights a recommended next concept.
+- Three daily quests are chosen from the UTC date and profile identity, so
+  they match across reloads and devices; at least one takes under three
+  minutes.
+- Game state lives in the synced profile under `game` (see
+  `js/game.js`). Profiles that predate it get one star per practiced topic and
+  10 XP per past correct answer, once.
+
 **User profile:**
 - Tracked per topic across a 29-topic catalog: API design, DNS, caching,
   queues, databases, security, load balancing, storage, messaging, rate

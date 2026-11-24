@@ -45,6 +45,22 @@
       <h2 id="intro-heading">Practice system design trade-offs in short daily sessions</h2>
       <p>Preparing for a system design interview? Solve short architecture scenarios, compare the wiring, and revisit your weakest topics. Start free, without an account.</p>
       </div>
+    <section id="game-hud" class="game-hud hidden" aria-labelledby="game-rank">
+      <div class="game-hud-top">
+        <div class="game-hud-status">
+          <span class="eyebrow">Your game</span>
+          <h2 id="game-rank" class="game-rank">Rank 1 · Foundations</h2>
+          <p class="game-hud-meta"><strong id="game-xp-today">0 XP today</strong> · <span id="game-xp-total">0 this week · 0 total</span> · <span id="game-streak">🔥 0-day streak</span></p>
+        </div>
+        <div class="game-hud-actions">
+          <button id="play-btn" class="btn btn-primary game-play-btn" onclick="APP.play()">▶ Play</button>
+          <button class="btn btn-outline" onclick="APP.showConceptLab()">🗺️ World map</button>
+        </div>
+      </div>
+      <h3 class="game-quests-title">Today's quests</h3>
+      <ul id="game-quests" class="game-quests"></ul>
+      <p id="game-next-concept" class="game-next-concept"></p>
+    </section>
     <div class="welcome-actions" aria-label="Study actions">
       <button id="start-session-btn" class="btn btn-primary" onclick="APP.startSession()">Try 8 questions · allow 5–10 min</button>
       <button id="resume-btn" class="btn btn-outline hidden" onclick="APP.resumeSession()">▶ Resume Unfinished Session</button>
@@ -69,7 +85,7 @@
         <p>No account required. Progress is saved in your browser and synchronized with the server using a device identifier, or your account when signed in. Custom cards, bookmarks, and session resume state stay in this browser. Fresh card requests also go through the server. Read the full <a class="policy-link" href="/privacy">privacy policy</a>.</p>
       </details>
     </section>
-    <section class="sample-challenge" aria-labelledby="sample-heading">
+    <section id="sample-challenge" class="sample-challenge" aria-labelledby="sample-heading">
       <span class="eyebrow">Try a trade-off</span>
       <h2 id="sample-heading">An upload takes 20 seconds to process. Where should the work happen?</h2>
       <p>Your API must acknowledge accepted uploads within 300 ms. Files must survive worker restarts, and users can check processing status later.</p>
@@ -90,7 +106,7 @@
       </template>
     </section>
     <details id="dashboard-tools" class="dashboard-tools">
-      <summary>Your progress, Concept Lab &amp; tools</summary>
+      <summary>More: progress, stats &amp; tools</summary>
     <div id="achievement-toast" class="toast"></div>
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Cards</div></div>
@@ -153,9 +169,9 @@
   <div id="screen-concepts" class="screen hidden">
     <div class="concept-index-topline">
       <div>
-        <span class="eyebrow">Explore · choose · test</span>
+        <span class="eyebrow">World map · read · test · master</span>
         <h1>Concept Lab</h1>
-        <p class="screen-intro">Choose a system-design idea, grouped by area, to open its explanation and pressure test on one child page.</p>
+        <p class="screen-intro">Each area is a world. Read a concept for your first star, clear its sandbox situations for the second, and master it for the third. Nothing is locked.</p>
       </div>
       <button class="btn btn-sm btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">← Dashboard</button>
     </div>
@@ -168,6 +184,7 @@
         </div>
         <span class="concept-cloud-count" id="concept-cloud-count"></span>
       </div>
+ <div id="concept-recommended" class="concept-recommended hidden" role="status"></div>
       <p id="concept-prewarm-status" class="concept-prewarm-status" role="status" aria-live="polite">Sandbox experiments are prepared in the background.</p>
       <div id="concept-cloud" class="concept-cloud" role="region" aria-label="System design concepts"></div>
     </section>
@@ -258,7 +275,8 @@
     <h1>Session Complete</h1>
     <div id="session-summary"></div>
     <div class="actions">
-      <button class="btn btn-primary" onclick="APP.startSession()">Another Session</button>
+      <button class="btn btn-primary" onclick="APP.play()">▶ Play again</button>
+      <button class="btn btn-outline" onclick="APP.startSession()">Another Session</button>
       <button class="btn btn-outline" onclick="APP.exportSession()">📋 Export Results</button>
       <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Dashboard</button>
     </div>
@@ -470,6 +488,7 @@
 <script src="js/srs.js"></script>
 <script src="js/render.js"></script>
 <script src="js/sandbox.js"></script>
+<script src="js/game.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script src="js/ads.js"></script>
