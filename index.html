@@ -184,7 +184,16 @@
         </div>
         <span class="concept-cloud-count" id="concept-cloud-count"></span>
       </div>
- <div id="concept-recommended" class="concept-recommended hidden" role="status"></div>
+      <form id="concept-add" class="concept-add" onsubmit="event.preventDefault();APP.addConcept()">
+        <label for="concept-add-input" class="concept-add-label">Add a concept to your map</label>
+        <div class="concept-add-row">
+          <input id="concept-add-input" class="concept-add-input" type="text" maxlength="60" autocomplete="off" placeholder="e.g. bloom filters, write-ahead log">
+          <button id="concept-add-btn" class="btn btn-primary" type="submit">＋ Add concept</button>
+        </div>
+        <p class="concept-add-note">Concepts already in Decked's library are free to add. Writing a brand-new concept, its sandbox, and its starter card uses AI generation, which needs Pro. Nothing is generated until you press Add.</p>
+        <p id="concept-add-status" class="concept-add-status" role="status" aria-live="polite"></p>
+      </form>
+      <div id="concept-recommended" class="concept-recommended hidden" role="status"></div>
       <p id="concept-prewarm-status" class="concept-prewarm-status" role="status" aria-live="polite">Sandbox experiments are prepared in the background.</p>
       <div id="concept-cloud" class="concept-cloud" role="region" aria-label="System design concepts"></div>
     </section>

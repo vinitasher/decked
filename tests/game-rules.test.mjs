@@ -15,7 +15,8 @@ vm.createContext(G);
 vm.runInContext(`${gameSource}
 Object.assign(globalThis, { GAME_XP, GAME_QUESTS, emptyGameState, normalizeGameState, pruneGameState,
   comboMultiplier, xpForEvent, awardGameXp, xpToday, xpThisWeek, deriveConceptStars, updateConceptStars,
-  dailyQuestIds, ensureDailyQuests, advanceQuests, questDefinition, recommendNextConcept, backfillGameState });`, G);
+  dailyQuestIds, ensureDailyQuests, advanceQuests, questDefinition, recommendNextConcept, backfillGameState,
+  parseConceptName, isCustomConcept, addCustomConcept, MY_CONCEPTS_WORLD });`, G);
 
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -134,7 +135,7 @@ test('normalization repairs malformed game state', () => {
   assert.deepEqual(plain(game.readTopics), ['dns']);
   assert.deepEqual(plain(game.clearedSituations), { 'redis-cache': [1, 3] });
   assert.deepEqual(plain(game.quests.items), [{ id: 'correct-5', progress: 5, target: 5, done: true }]);
-  assert.deepEqual(plain(game.customConcepts), [{ topic: 'bloom-filters', addedAt: null }]);
+  assert.deepEqual(plain(game.customConcepts), [{ topic: 'bloom-filters', title: null, addedAt: null, hasStarterCard: false }]);
   assert.deepEqual(plain(G.normalizeGameState(null)), plain(G.emptyGameState()));
 });
 

@@ -114,6 +114,14 @@ decision-based practice with adaptive difficulty.
 - Three daily quests are chosen from the UTC date and profile identity, so
   they match across reloads and devices; at least one takes under three
   minutes.
+- **Add a concept:** the world map has an Add concept form. A name that
+  matches an existing concept opens it. Otherwise the app loads the concept's
+  explanation from `GET /api/wiki` (free when it is already in the server
+  library, Pro when it must be generated), saves a local copy, and places the
+  concept in a **My Concepts** world. Its sandbox is generated when the
+  concept page opens, and one difficulty-1 starter card is requested in the
+  background so the concept can be practiced. If the explanation cannot be
+  loaded, nothing is added.
 - Game state lives in the synced profile under `game` (see
   `js/game.js`). Profiles that predate it get one star per practiced topic and
   10 XP per past correct answer, once.

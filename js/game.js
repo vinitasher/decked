@@ -125,7 +125,12 @@ function normalizeGameState(value) {
     base.customConcepts = value.customConcepts
       .filter(item => _isPlainObject(item) && _TOPIC_RE.test(item.topic))
       .slice(0, 200)
-      .map(item => ({ topic: item.topic, addedAt: typeof item.addedAt === 'string' ? item.addedAt : null }));
+      .map(item => ({
+        topic: item.topic,
+        title: typeof item.title === 'string' && item.title.trim() ? item.title.trim().slice(0, 80) : null,
+        addedAt: typeof item.addedAt === 'string' ? item.addedAt : null,
+        hasStarterCard: item.hasStarterCard === true
+      }));
   }
   if (Array.isArray(value.rematches)) base.rematches = value.rematches.slice(0, 50);
   base.backfilled = value.backfilled === true;
@@ -312,4 +317,36 @@ function backfillGameState(game, profile = {}, today = gameToday()) {
   game.backfilled = true;
   pruneGameState(game, today);
   return game;
+}
+
+/* Concepts the learner added live in their own world on the map. */
+const MY_CONCEPTS_WORLD = 'My Concepts';
+
+/* Turn free text into a concept key, or explain why it cannot be one. */
+function parseConceptName(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return { error: 'Type the name of a concept, such as "bloom filters".' };
+  if (text.length > 60) return { error: 'Keep the concept name under 60 characters.' };
+  const topic = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!_TOPIC_RE.test(topic) || topic.length < 2) {
+    return { error: 'Use letters and numbers, such as "write-ahead log".' };
+  }
+  return { topic };
+}
+
+function isCustomConcept(game, topic) {
+  return Boolean(game && game.customConcepts.some(item => item.topic === topic));
+}
+
+/* Record an added concept once. Returns false when it was already added. */
+function addCustomConcept(game, topic, title, now = new Date().toISOString()) {
+  if (!_TOPIC_RE.test(topic) || isCustomConcept(game, topic)) return false;
+  game.customConcepts.push({
+    topic,
+    title: typeof title === 'string' && title.trim() ? title.trim().slice(0, 80) : null,
+    addedAt: now,
+    hasStarterCard: false
+  });
+  if (game.customConcepts.length > 200) game.customConcepts.shift();
+  return true;
 }

@@ -1196,7 +1196,7 @@ const APP = {
   async startTopicSession(topic) {
     if (!this._canPractice()) return;
     const preparation = this._beginSessionPreparation();
-    if (!TOPIC_CATALOG[topic]) return;
+    if (!TOPIC_CATALOG[topic] && !(typeof isCustomConcept === 'function' && isCustomConcept(this._game(), topic))) return;
     const candidates = await Promise.all(
       [1, 2, 3, 4, 5].slice(0, this._freeQuestionsRemaining()).map(difficulty => this.fetchCard(topic, difficulty))
     );
@@ -2234,6 +2234,79 @@ const APP = {
     </div>`;
   },
 
+  _setConceptAddStatus(html, state = '') {
+    const status = document.getElementById('concept-add-status');
+    if (!status) return;
+    status.innerHTML = html;
+    status.className = `concept-add-status${state ? ` is-${state}` : ''}`;
+  },
+
+  /* One-step Add a concept. The explanation is the anchor: the concept joins
+     the map only after its wiki entry loads, so a failure leaves nothing
+     behind. The sandbox is generated when the concept page opens, and one
+     starter card is requested in the background. */
+  async addConcept(rawName) {
+    const game = this._game();
+    if (!game || typeof parseConceptName !== 'function') return false;
+    const input = document.getElementById('concept-add-input');
+    const parsed = parseConceptName(rawName ?? input?.value);
+    if (parsed.error) {
+      this._setConceptAddStatus(this._escapeHtml(parsed.error), 'error');
+      return false;
+    }
+    const existing = matchWikiTopic(parsed.topic) || (isCustomConcept(game, parsed.topic) ? parsed.topic : null);
+    if (existing) {
+      this._setConceptAddStatus(`${this._escapeHtml(formatPrerequisiteLabel(existing))} is already on the map. Opening it.`, 'ready');
+      this.openConcept(existing);
+      return true;
+    }
+    if (this._addingConcept) return false;
+    this._addingConcept = parsed.topic;
+    const button = document.getElementById('concept-add-btn');
+    if (button) button.disabled = true;
+    this._setConceptAddStatus(`Adding ${this._escapeHtml(formatPrerequisiteLabel(parsed.topic))}…`, 'loading');
+    let entry;
+    try {
+      entry = await this._ensureWiki(parsed.topic);
+    } catch (error) {
+      const message = error?.code === 'pro_required'
+        ? 'This concept isn’t in Decked’s library yet, and writing a new one needs Pro. <button class="btn btn-sm btn-primary" type="button" onclick="APP.upgradeToPro()">Upgrade to Pro</button>'
+        : error?.code === 'quota_exceeded'
+          ? 'You’ve reached today’s generation limit. Try again after midnight UTC.'
+          : 'Couldn’t add that concept right now. Nothing was added; please try again.';
+      this._setConceptAddStatus(message, 'error');
+      return false;
+    } finally {
+      this._addingConcept = null;
+      if (button) button.disabled = false;
+    }
+    addCustomConcept(game, entry.topic, entry.title);
+    try {
+      localStorage.setItem(this._wikiStorageKey(entry.topic), JSON.stringify(entry));
+    } catch (_) { /* full or private storage — the server copy is still cached */ }
+    this.saveProfile();
+    if (input) input.value = '';
+    this._setConceptAddStatus(`Added ${this._escapeHtml(entry.title || entry.topic)} to My Concepts.`, 'ready');
+    this._requestStarterCard(entry.topic);
+    this.renderConceptCloud();
+    this.openConcept(entry.topic);
+    return true;
+  },
+
+  _requestStarterCard(topic) {
+    return Promise.resolve()
+      .then(() => this.fetchCard(topic, 1))
+      .then(card => {
+        const item = this._game()?.customConcepts.find(concept => concept.topic === topic);
+        if (card && item) {
+          item.hasStarterCard = true;
+          this.saveProfile();
+        }
+        return card;
+      })
+      .catch(() => null);
+  },
+
   /* ——— Achievements ——— */
 
   _achievementDefs: [
@@ -3132,7 +3205,11 @@ const APP = {
 
   _conceptEntries() {
     const seen = new Set();
-    return Object.entries(WIKI || {})
+    const game = this._game?.();
+    const added = (game?.customConcepts || [])
+      .filter(item => !(WIKI || {})[item.topic])
+      .map(item => [item.topic, { topic: item.topic, title: item.title || formatPrerequisiteLabel(item.topic), related_topics: [] }]);
+    return [...Object.entries(WIKI || {}), ...added]
       .map(([key, entry]) => ({
         ...entry,
         topic: typeof entry?.topic === 'string' ? entry.topic : key
@@ -3173,16 +3250,20 @@ const APP = {
   _orderedConceptGroups(entries) {
     const groups = new Map();
     entries.forEach((entry, index) => {
-      const category = typeof conceptCategory === 'function'
-        ? conceptCategory(entry.topic)
-        : 'Other';
+      const category = typeof isCustomConcept === 'function' && isCustomConcept(this._game?.(), entry.topic)
+        ? MY_CONCEPTS_WORLD
+        : typeof conceptCategory === 'function'
+          ? conceptCategory(entry.topic)
+          : 'Other';
       if (!groups.has(category)) groups.set(category, []);
       groups.get(category).push({ entry, index });
     });
     const authoredOrder = typeof CONCEPT_CATEGORY_ORDER !== 'undefined'
       ? CONCEPT_CATEGORY_ORDER
       : [];
+    const myWorld = typeof MY_CONCEPTS_WORLD !== 'undefined' ? MY_CONCEPTS_WORLD : null;
     return [...groups.keys()].sort((a, b) => {
+      if (a === myWorld || b === myWorld) return a === myWorld ? 1 : -1;
       const aIndex = authoredOrder.indexOf(a);
       const bIndex = authoredOrder.indexOf(b);
       if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
@@ -3476,14 +3557,32 @@ const APP = {
 
   /* Lazy wiki: fetch a missing entry from /api/wiki, merge it into WIKI so
      the sidebar and links pick it up, and return it. */
+  _wikiStorageKey(topic) {
+    return `sdf_wiki_${topic}`;
+  },
+
   async _ensureWiki(topic) {
     if ((WIKI || {})[topic]) return WIKI[topic];
+    try {
+      const stored = JSON.parse(localStorage.getItem(this._wikiStorageKey(topic)) || 'null');
+      if (stored && stored.topic === topic) {
+        WIKI[topic] = stored;
+        return stored;
+      }
+    } catch (_) { /* unreadable local copy — fetch below */ }
     const response = await fetch(`${SERVER_BASE}/api/wiki?topic=${encodeURIComponent(topic)}`, { headers: apiHeaders() });
-    if (response.status === 403) { this.showProNotice('wiki'); throw new Error('Fresh wiki entries require Pro'); }
+    if (response.status === 403) {
+      this.showProNotice('wiki');
+      const error = new Error('Fresh wiki entries require Pro');
+      error.code = 'pro_required';
+      throw error;
+    }
     if (response.status === 429) {
       const quotaBody = await response.json().catch(() => ({}));
       if (quotaBody.code === 'quota_exceeded') this.showQuotaNotice('wiki');
-      throw new Error(`wiki fetch failed with ${response.status}`);
+      const error = new Error(`wiki fetch failed with ${response.status}`);
+      error.code = quotaBody.code === 'quota_exceeded' ? 'quota_exceeded' : 'rate_limited';
+      throw error;
     }
     if (!response.ok) throw new Error(`wiki fetch failed with ${response.status}`);
     const entry = await response.json();
@@ -3549,6 +3648,9 @@ const APP = {
   },
 
   _wikiEntryHtml(entry) {
+    const practiceAdded = typeof isCustomConcept === 'function' && isCustomConcept(this._game?.(), entry.topic)
+      ? `<p class="concept-added-practice"><button class="btn btn-sm btn-outline" type="button" onclick="APP.startTopicSession('${this._escapeHtml(entry.topic)}')">🃏 Practice ${this._escapeHtml(entry.title || entry.topic)} cards</button></p>`
+      : '';
     const related = (entry.related_topics || [])
       .map(t => this._wikiLink(t))
       .join('');
@@ -3572,6 +3674,7 @@ const APP = {
       <h3>Common pitfalls</h3>
       <ul>${(entry.common_pitfalls || []).map(pitfall => `<li>${this._escapeHtml(pitfall)}</li>`).join('')}</ul>
       ${related ? `<h3>Related concepts</h3><div class="wiki-related">${related}</div>` : ''}
+      ${practiceAdded}
       ${sandboxCallout}`;
   },
 
