@@ -6,8 +6,9 @@ Status: Complete
 
 Implementation notes: fresh AI generation requires Pro under the current
 entitlement model, so Add a concept is free only for concepts already in the
-server library. The separate Topic Map screen remains available from the More
-menu instead of being merged into the world map.
+server library. The Topic Map has since been folded into the world map as its
+Learning path view, and each drill topic's concept page shows its know-first
+and leads-to links; `#/learning-path` redirects there.
 
 ## Goal
 
