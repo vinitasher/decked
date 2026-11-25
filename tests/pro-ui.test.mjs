@@ -112,7 +112,7 @@ test('styles exist for the account bar, plan badge, quota bar, and upgrade banne
 });
 
 test('service worker cache version is bumped for the account assets', () => {
-  assert.match(serviceWorker, /const CACHE = 'sdf-v42';/);
+  assert.match(serviceWorker, /const CACHE = 'sdf-v43';/);
 });
 
 test('modern visual system keeps dashboard and study surfaces hooked together', () => {

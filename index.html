@@ -50,7 +50,7 @@
         <div class="game-hud-status">
           <span class="eyebrow">Your game</span>
           <h2 id="game-rank" class="game-rank">Rank 1 · Foundations</h2>
-          <p class="game-hud-meta"><strong id="game-xp-today">0 XP today</strong> · <span id="game-xp-total">0 this week · 0 total</span> · <span id="game-streak">🔥 0-day streak</span></p>
+          <p class="game-hud-meta"><strong id="game-xp-today">0 XP today</strong> · <span id="game-xp-total">0 this week · 0 total</span> · <span id="game-streak">🔥 0-day streak</span> · <span id="game-strikes" title="A Strike crosses out one wrong option on a card. Earn them with five-answer combos and daily quests.">🎯 1 Strike</span></p>
         </div>
         <div class="game-hud-actions">
           <button id="play-btn" class="btn btn-primary game-play-btn" onclick="APP.play()">▶ Play</button>
@@ -244,11 +244,16 @@
         <span id="session-timer" style="color:var(--muted)"></span>
       </div>
     </div>
+    <div class="session-game-bar">
+      <div id="session-pips" class="session-pips" aria-hidden="true"></div>
+      <div id="combo-meter" class="combo-meter heat-0" aria-live="polite"></div>
+    </div>
     <div id="card-prerequisites" class="card-prerequisites"></div>
     <div class="session-layout">
       <div class="session-main">
         <div id="scenario"></div>
         <div id="options"></div>
+        <button id="strike-btn" type="button" class="btn btn-sm btn-outline strike-btn hidden" onclick="APP.useStrike()">🎯 Strike a wrong option</button>
             <button id="regenerate-btn" class="btn btn-outline hidden" onclick="APP.regenerateCard()" aria-label="Regenerate card" title="Regenerate card">🔄</button>
         <div id="feedback" aria-live="polite"></div>
         <div id="post-answer-actions" class="post-answer-actions hidden">
@@ -501,6 +506,7 @@
 <script src="js/render.js"></script>
 <script src="js/sandbox.js"></script>
 <script src="js/game.js"></script>
+<script src="js/fx.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script src="js/ads.js"></script>
