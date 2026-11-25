@@ -720,6 +720,7 @@ const APP = {
     const token = { identity: this._profileIdentity() };
     this._sessionPreparation = token;
     this._sessionXp = 0;
+    this._boss = null;
     return token;
   },
 
@@ -1420,6 +1421,8 @@ const APP = {
   /* Revisit a mistake in an existing future slot, without extending the
      promised session length. Final-slot mistakes remain in the summary. */
   _maybeScheduleRetry(card) {
+    // Boss runs have a fixed set of cards; a miss costs a heart instead.
+    if (this._boss) return;
     const slot = this.sessionCards?.findLastIndex((candidate, index) => index > this.sessionIndex && !candidate.review && !candidate.retry);
     if (card?.id && slot > this.sessionIndex && !this._retriedCardIds.has(card.id)) {
       this._retriedCardIds.add(card.id);
@@ -1651,6 +1654,7 @@ const APP = {
       this._consecutiveCorrect = 0;
     }
     const xpGained = this._gameRecordAnswer(card, correct, review.timesReviewed);
+    this._gameAfterAnswer(card, correct);
     if (streakEl && xpGained) {
       streakEl.textContent = `${streakEl.textContent ? `${streakEl.textContent} · ` : ''}+${xpGained} XP`;
     }
@@ -1788,6 +1792,7 @@ const APP = {
 
   exitSession() {
     this._sessionPreparation = null;
+    this._boss = null;
     this._saveSessionState();
     this._invalidatePrefetch();
     if (this._advanceTimer) {
@@ -1818,7 +1823,8 @@ const APP = {
     this.showScreen('session-end');
     const stats = this._sessionStats();
     if (stats.answered > 0) this._gameQuest('session');
-    document.getElementById('session-summary').innerHTML = `${this._sessionGameSummaryHtml()}
+    const bossHtml = this._bossSessionEndHtml();
+    document.getElementById('session-summary').innerHTML = `${bossHtml}${this._sessionGameSummaryHtml()}
       <p>Cards reviewed: <strong>${stats.answered}</strong></p>
       <p>Lifetime correct: <strong>${this.profile.totalCorrect} / ${this.profile.totalAnswered}</strong> (${this.profile.totalAnswered ? Math.round(100 * this.profile.totalCorrect / this.profile.totalAnswered) : 0}%)</p>
       <p>Topics covered: <strong>${new Set(stats.attempts.map(attempt => attempt.card.topic)).size}</strong></p>
@@ -2214,6 +2220,12 @@ const APP = {
         </li>`;
       }).join('');
     }
+    const rematchButton = document.getElementById('rematch-btn');
+    if (rematchButton) {
+      const count = game.rematches.length;
+      rematchButton.textContent = `🔁 Rematch (${count})`;
+      rematchButton.classList[count ? 'remove' : 'add']('hidden');
+    }
     const recommended = this.recommendedConcept();
     const nextEl = document.getElementById('game-next-concept');
     if (nextEl) {
@@ -2231,7 +2243,219 @@ const APP = {
     return `<div class="game-session-summary">
       <p class="game-session-xp">+${this._sessionXp || 0} XP</p>
       <p>Quests today: <strong>${done}/${quests.items.length}</strong> · Total XP: <strong>${game.xp.total}</strong></p>
+      ${game.rematches.length ? `<button class="btn btn-sm btn-outline" type="button" onclick="APP.startRematch()">🔁 Rematch ${game.rematches.length} missed card${game.rematches.length === 1 ? '' : 's'}</button>` : ''}
     </div>`;
+  },
+
+  /* ——— Rematches and bosses ——— */
+
+  _gameAfterAnswer(card, correct) {
+    const game = this._game();
+    if (!game || !card) return;
+    if (correct) {
+      if (resolveRematch(game, card.id)) this._gameToast('🔁 Rematch won!');
+    } else {
+      addRematch(game, card);
+    }
+    const boss = this._boss;
+    if (boss?.stage === 'cards' && !correct) {
+      boss.hearts = bossHeartsAfter(boss.hearts, false);
+      // Out of hearts: the current card becomes the last one of the run.
+      if (boss.hearts === 0) this.sessionCards = this.sessionCards.slice(0, this.sessionIndex + 1);
+    }
+    this._renderBossHearts();
+  },
+
+  _renderBossHearts() {
+    const el = document.getElementById('boss-hearts');
+    if (!el) return;
+    const boss = this._boss;
+    if (!boss || boss.stage !== 'cards') {
+      el.textContent = '';
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    el.textContent = `⚔️ ${boss.world} boss · ${'❤'.repeat(boss.hearts)}${'♡'.repeat(BOSS_HEARTS - boss.hearts)}`;
+  },
+
+  _startPreparedSession(cards) {
+    this.sessionCards = cards;
+    this.sessionIndex = 0;
+    this.sessionStart = Date.now();
+    this._nextCard = null;
+    this._retriedCardIds = new Set();
+    this._sessionResults = {};
+    this._sessionAttempts = [];
+    this._quickReview = false;
+    this.profile.totalSessions++;
+    this._startTimer();
+    this.saveProfile();
+    this.showCard();
+    this.showScreen('session');
+    this._renderBossHearts();
+  },
+
+  /* Replay up to five missed cards, exactly as they were shown. */
+  startRematch() {
+    if (!this._canPractice()) return false;
+    const game = this._game();
+    if (!game) return false;
+    this._beginSessionPreparation();
+    const resolvable = game.rematches.filter(item => this._resolveCardContent(item.cardId));
+    if (resolvable.length !== game.rematches.length) game.rematches = resolvable;
+    const cards = resolvable.slice(0, 5)
+      .map(item => ({ ...this._resolveCardContent(item.cardId), review: true, retry: true }));
+    if (!cards.length) {
+      this._gameToast('No rematches waiting. Missed cards show up here.');
+      this.renderGameHud();
+      return false;
+    }
+    this._startPreparedSession(cards);
+    return true;
+  },
+
+  _worldTopics(world) {
+    const group = this._orderedConceptGroups(this._conceptEntries()).find(item => item.category === world);
+    return group ? group.items.map(item => item.entry.topic) : [];
+  },
+
+  bossStatus(world) {
+    const game = this._game();
+    if (!game || typeof BOSS_WORLDS === 'undefined' || !BOSS_WORLDS[world]) return null;
+    const model = BOSS_WORLDS[world];
+    const node = typeof getSandboxNode === 'function' ? getSandboxNode(model) : null;
+    return {
+      ...bossProgress(this._worldTopics(world), game.stars),
+      world,
+      model,
+      modelLabel: node && node.id === model ? node.label : formatPrerequisiteLabel(model),
+      record: game.bosses[world] || null
+    };
+  },
+
+  _bossMapHtml(world) {
+    const status = this.bossStatus(world);
+    if (!status) return '';
+    const name = this._escapeHtml(status.modelLabel);
+    const worldArg = this._escapeHtml(JSON.stringify(world));
+    if (!status.available) {
+      return `<p class="concept-boss is-waiting">⚔️ Boss: ${name} appears at ${status.needed} concept${status.needed === 1 ? '' : 's'} with ★★ (${status.tested}/${status.needed})</p>`;
+    }
+    const cleared = status.record?.clearedAt;
+    const best = cleared ? ` · best ${'❤'.repeat(status.record.bestHearts)}` : '';
+    return `<p class="concept-boss is-ready${cleared ? ' is-cleared' : ''}"><span>⚔️ Boss: ${name}${cleared ? ' · cleared' : ''}${best}</span><button class="btn btn-sm ${cleared ? 'btn-outline' : 'btn-primary'}" type="button" onclick='APP.startBoss(${worldArg})'>${cleared ? 'Replay boss' : 'Fight boss'}</button></p>`;
+  },
+
+  /* A boss run: drill cards from the world's catalog topics, three hearts,
+     then one level-4 situation on the world's boss model. */
+  async startBoss(world) {
+    if (!this._canPractice()) return false;
+    const status = this.bossStatus(world);
+    if (!status || !status.available) return false;
+    const preparation = this._beginSessionPreparation();
+    const topics = this._worldTopics(world).filter(topic => typeof TOPIC_CATALOG !== 'undefined' && TOPIC_CATALOG[topic]);
+    const plan = [];
+    for (const difficulty of [3, 4, 2]) {
+      for (const topic of topics) if (plan.length < 4) plan.push([topic, difficulty]);
+    }
+    const fetched = await Promise.all(plan.map(([topic, difficulty]) =>
+      Promise.resolve().then(() => this.fetchCard(topic, difficulty)).catch(() => null)));
+    if (!this._preparationIsCurrent(preparation)) return false;
+    const cards = fetched.filter((card, index) => card && !this._isDuplicateScenario(card.scenario, fetched.slice(0, index)));
+    if (!cards.length) {
+      this._gameToast('No boss cards are available right now. Try again when you are online.');
+      return false;
+    }
+    this._boss = { world, model: status.model, hearts: BOSS_HEARTS, stage: 'cards' };
+    this._startPreparedSession(cards);
+    return true;
+  },
+
+  _bossSessionEndHtml() {
+    const boss = this._boss;
+    if (!boss || boss.stage !== 'cards') return '';
+    const world = this._escapeHtml(boss.world);
+    if (boss.hearts > 0) {
+      boss.stage = 'finale';
+      return `<div class="boss-summary is-ready"><p><strong>⚔️ ${world} boss: cards cleared with ${'❤'.repeat(boss.hearts)}</strong></p><p>One level-4 situation stands between you and the clear. Predict how the system behaves, then run the model.</p><button class="btn btn-primary" type="button" onclick="APP.startBossFinale()">Start the final situation →</button></div>`;
+    }
+    const game = this._game();
+    if (game) recordBossResult(game, boss.world, 0, false);
+    this._boss = null;
+    this.saveProfile();
+    const worldArg = this._escapeHtml(JSON.stringify(boss.world));
+    return `<div class="boss-summary is-lost"><p><strong>💔 Out of hearts on the ${world} boss.</strong></p><p>Your missed cards are waiting as rematches. The boss can be retried any time.</p><button class="btn btn-outline" type="button" onclick='APP.startBoss(${worldArg})'>Try the boss again</button></div>`;
+  },
+
+  startBossFinale() {
+    const boss = this._boss;
+    if (!boss || boss.stage !== 'finale' || typeof getSandboxNode !== 'function') return false;
+    boss.stage = 'sandbox';
+    this.showSandbox(boss.model);
+    const node = getSandboxNode(boss.model);
+    const state = this._ensureSandboxState();
+    let index = node.situations.findIndex(situation => Number(situation.level) === 4);
+    if (index < 0) index = node.situations.length - 1;
+    const situation = node.situations[index];
+    state.situationIndex = index;
+    state.situationId = situation.id;
+    state.input = node.normalize(situation.values);
+    state.prediction = null;
+    state.result = null;
+    state.dirty = false;
+    this.renderSandbox();
+    this._renderBossBanner();
+    return true;
+  },
+
+  _bossAfterSandboxRun(node, situationId, correct) {
+    const boss = this._boss;
+    if (!boss || boss.stage !== 'sandbox' || !node || node.id !== boss.model) return;
+    const situation = (node.situations || []).find(item => item.id === situationId);
+    if (Number(situation?.level) < 4) return;
+    const game = this._game();
+    if (correct) {
+      const xp = game ? recordBossResult(game, boss.world, boss.hearts, true) : 0;
+      if (xp) this._sessionXp = (this._sessionXp || 0) + xp;
+      boss.stage = 'won';
+      boss.xp = xp;
+      this._gameToast(`🏆 ${boss.world} boss cleared${xp ? ` · +${xp} XP` : ''}`);
+    } else {
+      boss.hearts = bossHeartsAfter(boss.hearts, false);
+      if (boss.hearts === 0) {
+        if (game) recordBossResult(game, boss.world, 0, false);
+        boss.stage = 'lost';
+      }
+    }
+    this.saveProfile();
+    this._renderBossBanner();
+  },
+
+  _renderBossBanner() {
+    const el = document.getElementById('boss-status');
+    if (!el) return;
+    const boss = this._boss;
+    if (!boss || !['sandbox', 'won', 'lost'].includes(boss.stage)) {
+      el.innerHTML = '';
+      el.classList.add('hidden');
+      return;
+    }
+    const world = this._escapeHtml(boss.world);
+    const hearts = `${'❤'.repeat(boss.hearts)}${'♡'.repeat(BOSS_HEARTS - boss.hearts)}`;
+    const mapButton = '<button class="btn btn-sm btn-outline" type="button" onclick="APP.showConceptLab()">Back to the world map</button>';
+    let html;
+    if (boss.stage === 'sandbox') {
+      html = `<strong>⚔️ ${world} boss finale · ${hearts}</strong><span>Predict the outcome of this level-4 situation, then run the model. A wrong prediction costs a heart.</span>`;
+    } else if (boss.stage === 'won') {
+      html = `<strong>🏆 ${world} boss cleared with ${hearts}${boss.xp ? ` · +${boss.xp} XP` : ''}</strong>${mapButton}`;
+      this._boss = null;
+    } else {
+      html = `<strong>💔 Out of hearts on the ${world} boss.</strong><span>Read the explanation, then retry from the world map.</span>${mapButton}`;
+      this._boss = null;
+    }
+    el.innerHTML = html;
+    el.className = `boss-status is-${boss.stage}`;
   },
 
   _setConceptAddStatus(html, state = '') {
@@ -3052,7 +3276,7 @@ const APP = {
         <span class="sandbox-model-tag">Model v${result.modelVersion}</span>
       </div>
       <div class="sandbox-prediction-result ${matched ? 'is-correct' : 'is-incorrect'}">
-        <strong>${matched ? '✓ Your prediction matched' : '△ The model took a different path'}</strong>${result.xpGained ? ` <span class="game-xp-badge">+${Number(result.xpGained)} XP</span>` : ''}
+        <strong>${matched ? '✓ Your prediction matched' : '△ The model took a different path'}</strong>${result.xpGained ? ` <span class="game-xp-badge">+${Number(result.xpGained)} XP</span>` : ''}${result.combo ? ` <span class="game-xp-badge game-combo-badge">🔥 combo ×${Number(result.combo)}</span>` : ''}
         <p>You chose: ${this._escapeHtml(selected?.label || 'Unknown')}<br>Model expected: ${this._escapeHtml(expected?.label || 'Unknown')}</p>
       </div>
       ${state.dirty ? '<p class="sandbox-dirty-note">The controls changed after this run. Run again to evaluate the new assumptions.</p>' : ''}
@@ -3150,6 +3374,8 @@ const APP = {
     this._recordSandboxRun(node.id, state.situationId, predictionCorrect, completedLab);
     const xpGained = this._gameRecordSandboxRun(node, state.situationId, predictionCorrect);
     if (xpGained) state.result.xpGained = xpGained;
+    if (predictionCorrect && (this.profile.sandbox?.currentStreak || 0) >= 3) state.result.combo = this.profile.sandbox.currentStreak;
+    this._bossAfterSandboxRun(node, state.situationId, predictionCorrect);
     this.renderSandbox();
     this.renderChallengeLadder();
     return true;
@@ -3310,6 +3536,7 @@ const APP = {
       const mastered = items.filter(({ entry }) => this.conceptStars(entry.topic) >= 3).length;
       return `<section class="concept-group" aria-labelledby="concept-group-${slug}">
         <h3 class="concept-group-heading" id="concept-group-${slug}">${label} <span class="concept-group-count">${items.length}</span><span class="concept-group-stars" title="${mastered} mastered">★ ${earned}/${items.length * 3}</span></h3>
+        ${this._bossMapHtml(category)}
         <div class="concept-group-items" role="list" aria-label="${label} concepts">${buttons}</div>
       </section>`;
     }).join('');
@@ -3456,6 +3683,7 @@ const APP = {
   },
 
   showConceptLab({ navigate = true } = {}) {
+    if (this._boss && ['won', 'lost'].includes(this._boss.stage)) this._boss = null;
     if (navigate) this._navigate('concepts');
     this.showScreen('concepts');
     this.renderConceptCloud();
@@ -3483,6 +3711,7 @@ const APP = {
       this._ensureConceptLabNode(relatedModels.length ? selectedTopic : '');
     }
     this.showScreen('concept');
+    this._renderBossBanner();
     this.renderWikiSidebar();
     if (typeof getSandboxNode === 'function') this.renderSandbox();
     this.openWiki(selectedTopic, { navigate: false });

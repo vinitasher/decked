@@ -6,6 +6,23 @@
    See PRDs/gamified-learning-loop.md for the product contract. */
 
 const GAME_VERSION = 1;
+const GAME_MAX_REMATCHES = 30;
+const BOSS_HEARTS = 3;
+
+/* Each world's boss is a run of drill cards on the world's topics followed by
+   one level-4 situation on a reviewed sandbox model that fits the world. */
+const BOSS_WORLDS = Object.freeze({
+  'API Basics': 'rate-limiter',
+  'Networking': 'cdn',
+  'Databases': 'url-shortener',
+  'Caching': 'social-feed',
+  'Messaging & Queues': 'notification-fanout',
+  'Data Processing': 'video-pipeline',
+  'Distributed Systems': 'distributed-kv',
+  'Reliability & Scaling': 'load-balancer',
+  'Storage': 'object-storage',
+  'Security & Observability': 'api-gateway'
+});
 const GAME_RETENTION_DAYS = 14;
 
 const GAME_XP = Object.freeze({
@@ -120,7 +137,16 @@ function normalizeGameState(value) {
         })
     };
   }
-  if (_isPlainObject(value.bosses)) base.bosses = JSON.parse(JSON.stringify(value.bosses));
+  if (_isPlainObject(value.bosses)) {
+    for (const [world, record] of Object.entries(value.bosses)) {
+      if (!Object.prototype.hasOwnProperty.call(BOSS_WORLDS, world) || !_isPlainObject(record)) continue;
+      base.bosses[world] = {
+        bestHearts: Math.min(BOSS_HEARTS, Math.floor(_nonNegative(record.bestHearts))),
+        clearedAt: _DATE_RE.test(record.clearedAt) ? record.clearedAt : null,
+        attempts: Math.floor(_nonNegative(record.attempts))
+      };
+    }
+  }
   if (Array.isArray(value.customConcepts)) {
     base.customConcepts = value.customConcepts
       .filter(item => _isPlainObject(item) && _TOPIC_RE.test(item.topic))
@@ -132,7 +158,18 @@ function normalizeGameState(value) {
         hasStarterCard: item.hasStarterCard === true
       }));
   }
-  if (Array.isArray(value.rematches)) base.rematches = value.rematches.slice(0, 50);
+  if (Array.isArray(value.rematches)) {
+    const seen = new Set();
+    base.rematches = value.rematches
+      .filter(item => _isPlainObject(item) && typeof item.cardId === 'string' && item.cardId
+        && item.cardId.length <= 200 && !seen.has(item.cardId) && seen.add(item.cardId))
+      .slice(-GAME_MAX_REMATCHES)
+      .map(item => ({
+        cardId: item.cardId,
+        topic: typeof item.topic === 'string' && _TOPIC_RE.test(item.topic) ? item.topic : null,
+        addedAt: _DATE_RE.test(item.addedAt) ? item.addedAt : null
+      }));
+  }
   base.backfilled = value.backfilled === true;
   return base;
 }
@@ -349,4 +386,56 @@ function addCustomConcept(game, topic, title, now = new Date().toISOString()) {
   });
   if (game.customConcepts.length > 200) game.customConcepts.shift();
   return true;
+}
+
+/* ——— Rematches ——— */
+
+/* A missed card becomes a rematch until it is answered correctly. */
+function addRematch(game, card, today = gameToday()) {
+  if (!card || typeof card.id !== 'string' || !card.id) return false;
+  if (game.rematches.some(item => item.cardId === card.id)) return false;
+  game.rematches.push({ cardId: card.id, topic: _TOPIC_RE.test(card.topic) ? card.topic : null, addedAt: today });
+  if (game.rematches.length > GAME_MAX_REMATCHES) game.rematches.shift();
+  return true;
+}
+
+function resolveRematch(game, cardId) {
+  const before = game.rematches.length;
+  game.rematches = game.rematches.filter(item => item.cardId !== cardId);
+  return game.rematches.length < before;
+}
+
+/* ——— Bosses ——— */
+
+/* A world's boss appears once at least half its concepts have two stars. */
+function bossProgress(worldTopics = [], stars = {}) {
+  const total = worldTopics.length;
+  const tested = worldTopics.filter(topic => (stars[topic] || 0) >= 2).length;
+  const needed = Math.max(1, Math.ceil(total / 2));
+  return { tested, needed, total, available: total > 0 && tested >= needed };
+}
+
+/* Hearts left after an answer in a boss run. */
+function bossHeartsAfter(hearts, correct) {
+  return correct ? hearts : Math.max(0, hearts - 1);
+}
+
+/* Record a finished boss attempt. The first clear awards boss XP once; the
+   best remaining hearts are kept across retries. */
+function recordBossResult(game, world, hearts, cleared, today = gameToday()) {
+  if (!Object.prototype.hasOwnProperty.call(BOSS_WORLDS, world)) return 0;
+  const record = game.bosses[world] || { bestHearts: 0, clearedAt: null, attempts: 0 };
+  record.attempts += 1;
+  let xp = 0;
+  if (cleared) {
+    record.bestHearts = Math.max(record.bestHearts, Math.min(BOSS_HEARTS, Math.max(0, hearts | 0)));
+    if (!record.clearedAt) {
+      record.clearedAt = today;
+      game.xp.total += GAME_XP.boss;
+      game.xp.byDay[today] = (game.xp.byDay[today] || 0) + GAME_XP.boss;
+      xp = GAME_XP.boss;
+    }
+  }
+  game.bosses[world] = record;
+  return xp;
 }

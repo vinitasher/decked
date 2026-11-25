@@ -55,6 +55,7 @@
         <div class="game-hud-actions">
           <button id="play-btn" class="btn btn-primary game-play-btn" onclick="APP.play()">▶ Play</button>
           <button class="btn btn-outline" onclick="APP.showConceptLab()">🗺️ World map</button>
+          <button id="rematch-btn" class="btn btn-outline hidden" onclick="APP.startRematch()">🔁 Rematch (0)</button>
         </div>
       </div>
       <h3 class="game-quests-title">Today's quests</h3>
@@ -239,6 +240,7 @@
         <span id="challenge-stage">Level 1 · Foundations</span>
         <span id="card-requirements" class="card-requirements"></span>
         <span id="consecutive-correct" style="color:var(--success);font-weight:600;"></span>
+        <span id="boss-hearts" class="boss-hearts hidden" aria-live="polite"></span>
         <span id="session-timer" style="color:var(--muted)"></span>
       </div>
     </div>
@@ -368,6 +370,7 @@
           </div>
         </div>
         <p id="sandbox-generation-status" class="sandbox-generation-status" role="status" aria-live="polite"></p>
+        <div id="boss-status" class="boss-status hidden" role="status" aria-live="polite"></div>
         <div id="sandbox-learner-problems" class="sandbox-learner-problems" aria-label="Questions this sandbox helps answer"></div>
         <div class="sandbox-layout">
           <section class="sandbox-controls-panel" aria-labelledby="sandbox-situation-heading">

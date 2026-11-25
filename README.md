@@ -122,6 +122,15 @@ decision-based practice with adaptive difficulty.
   concept page opens, and one difficulty-1 starter card is requested in the
   background so the concept can be practiced. If the explanation cannot be
   loaded, nothing is added.
+- **Rematches:** a missed card becomes a rematch until it is answered
+  correctly. The home screen's Rematch button and the session summary replay
+  up to five missed cards exactly as they were shown, and they earn normal XP.
+- **Boss challenges:** each world has a boss built on a reviewed sandbox model
+  (for example, Social feed for Caching and URL shortener for Databases). It
+  appears on the world map once half the world's concepts have ★★. A boss run
+  is up to four drill cards from the world's topics with three hearts, then a
+  level-4 sandbox situation. Each miss costs a heart. The first clear earns
+  250 XP, and the best hearts are kept across unlimited retries.
 - Game state lives in the synced profile under `game` (see
   `js/game.js`). Profiles that predate it get one star per practiced topic and
   10 XP per past correct answer, once.
