@@ -8,6 +8,9 @@
 const GAME_VERSION = 1;
 const GAME_MAX_REMATCHES = 30;
 const BOSS_HEARTS = 3;
+const GAME_MAX_LIFELINES = 3;
+/* A combo of this length (and each multiple of it) earns one Strike. */
+const LIFELINE_COMBO = 5;
 
 /* Each world's boss is a run of drill cards on the world's topics followed by
    one level-4 situation on a reviewed sandbox model that fits the world. */
@@ -80,6 +83,7 @@ function emptyGameState() {
     bosses: {},
     customConcepts: [],
     rematches: [],
+    lifelines: 1,
     backfilled: false
   };
 }
@@ -170,6 +174,9 @@ function normalizeGameState(value) {
         addedAt: _DATE_RE.test(item.addedAt) ? item.addedAt : null
       }));
   }
+  if (value.lifelines !== undefined) {
+    base.lifelines = Math.min(GAME_MAX_LIFELINES, Math.floor(_nonNegative(value.lifelines)));
+  }
   base.backfilled = value.backfilled === true;
   return base;
 }
@@ -194,13 +201,32 @@ function comboMultiplier(consecutiveCorrect) {
   return 1;
 }
 
+/* Where a streak sits on the combo meter: the current multiplier, the next
+   tier's multiplier, and how many more correct answers reach it. */
+function comboTier(consecutiveCorrect) {
+  const streak = Math.max(0, Math.floor(Number(consecutiveCorrect) || 0));
+  const multiplier = comboMultiplier(streak);
+  if (streak >= 5) return { streak, multiplier, next: null, toNext: 0, progress: 1 };
+  const nextAt = streak >= 3 ? 5 : 3;
+  const floor = streak >= 3 ? 3 : 0;
+  return {
+    streak,
+    multiplier,
+    next: comboMultiplier(nextAt),
+    toNext: nextAt - streak,
+    progress: (streak - floor) / (nextAt - floor)
+  };
+}
+
 /* XP for one recorded event, before any once-per-event check. */
 function xpForEvent(event = {}) {
   switch (event.type) {
     case 'answer': {
       if (!event.correct) return GAME_XP.incorrectAnswer;
       const difficulty = Math.min(5, Math.max(1, Math.round(Number(event.difficulty) || 1)));
-      return Math.round(GAME_XP.correctAnswerPerDifficulty * difficulty * comboMultiplier(event.consecutiveCorrect));
+      const xp = GAME_XP.correctAnswerPerDifficulty * difficulty * comboMultiplier(event.consecutiveCorrect);
+      // A Strike removed a wrong option first, so the answer earns half.
+      return Math.round(event.assisted ? xp / 2 : xp);
     }
     case 'prediction':
       return event.correct ? Math.round(GAME_XP.correctPrediction * comboMultiplier(event.consecutiveCorrect)) : 0;
@@ -316,7 +342,7 @@ function advanceQuests(game, eventType, amount = 1, today = gameToday(), seed = 
     if (item.progress >= item.target) {
       item.done = true;
       const xp = awardGameXp(game, `quest:${today}:${item.id}`, xpForEvent({ type: 'quest' }), today);
-      completed.push({ ...quest, xp });
+      completed.push({ ...quest, xp, lifeline: grantLifeline(game) });
     }
   }
   return completed;
@@ -438,4 +464,71 @@ function recordBossResult(game, world, hearts, cleared, today = gameToday()) {
   }
   game.bosses[world] = record;
   return xp;
+}
+
+/* ——— Strikes (lifelines) ———
+   A Strike removes one wrong option from the current card. The learner holds
+   up to three; a new profile starts with one, every five-answer combo earns
+   one, and every completed daily quest earns one. */
+
+function grantLifeline(game) {
+  if (!game || game.lifelines >= GAME_MAX_LIFELINES) return false;
+  game.lifelines += 1;
+  return true;
+}
+
+function spendLifeline(game) {
+  if (!game || game.lifelines <= 0) return false;
+  game.lifelines -= 1;
+  return true;
+}
+
+/* True when this streak length should earn a Strike. */
+function comboEarnsLifeline(consecutiveCorrect) {
+  const streak = Math.floor(Number(consecutiveCorrect) || 0);
+  return streak > 0 && streak % LIFELINE_COMBO === 0;
+}
+
+/* Pick which still-visible wrong option a Strike removes. At least one wrong
+   option always stays, so the card is never reduced to a giveaway. */
+function pickStrikeOption(options = [], correctId, struck = [], random = Math.random) {
+  const wrong = options
+    .map(option => option && option.id)
+    .filter(id => id != null && id !== correctId && !struck.includes(id));
+  if (wrong.length <= 1) return null;
+  const index = Math.min(wrong.length - 1, Math.floor(Math.max(0, Number(random()) || 0) * wrong.length));
+  return wrong[index];
+}
+
+/* ——— Session results ——— */
+
+const SESSION_GRADES = Object.freeze([
+  { grade: 'S', label: 'Flawless run', min: 100 },
+  { grade: 'A', label: 'Sharp', min: 85 },
+  { grade: 'B', label: 'Solid', min: 70 },
+  { grade: 'C', label: 'Warming up', min: 50 },
+  { grade: 'D', label: 'Learning run', min: 0 }
+]);
+
+/* A letter grade for a finished run. S needs a perfect run of at least five
+   cards so a single lucky answer does not read as flawless. */
+function sessionGrade(answered, correct) {
+  const total = Math.max(0, Math.floor(Number(answered) || 0));
+  if (!total) return null;
+  const right = Math.min(total, Math.max(0, Math.floor(Number(correct) || 0)));
+  const percent = Math.round(100 * right / total);
+  const eligible = SESSION_GRADES.filter(item => item.grade !== 'S' || total >= 5);
+  const match = eligible.find(item => percent >= item.min) || SESSION_GRADES[SESSION_GRADES.length - 1];
+  return { ...match, percent };
+}
+
+/* Longest run of correct answers in a list of attempts. */
+function bestComboOf(attempts = []) {
+  let best = 0;
+  let run = 0;
+  for (const attempt of attempts) {
+    run = attempt && attempt.correct ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  return best;
 }

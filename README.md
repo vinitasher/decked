@@ -131,6 +131,21 @@ decision-based practice with adaptive difficulty.
   is up to four drill cards from the world's topics with three hearts, then a
   level-4 sandbox situation. Each miss costs a heart. The first clear earns
   250 XP, and the best hearts are kept across unlimited retries.
+- **Combo meter and run pips:** during a session a meter fills toward the next
+  multiplier (×1.5 at three in a row, ×2 at five), and one pip per card turns
+  green or red as the run goes.
+- **Strikes:** a Strike crosses out one wrong option on the current card (at
+  least one wrong option always stays). That card then earns half XP. A new
+  profile holds one Strike; every five-answer combo and every completed daily
+  quest earns another, up to three.
+- **Results:** the session summary opens with a grade (S for a perfect run of
+  five or more, then A at 85%, B at 70%, C at 50%), the XP counting up, the
+  best combo, and the run's pips.
+- **Game feel** (`js/fx.js`): XP pops from the tapped option, combo and quest
+  banners, confetti for combo milestones, ★★★ concepts, boss clears and S/A
+  runs, a shake on wrong answers and lost hearts, and short vibrations on
+  phones that support them. Effects are decorative, never block input, and
+  are skipped when the device asks for reduced motion.
 - Game state lives in the synced profile under `game` (see
   `js/game.js`). Profiles that predate it get one star per practiced topic and
   10 XP per past correct answer, once.

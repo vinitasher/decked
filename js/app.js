@@ -720,6 +720,7 @@ const APP = {
     const token = { identity: this._profileIdentity() };
     this._sessionPreparation = token;
     this._sessionXp = 0;
+    this._sessionBestCombo = 0;
     this._boss = null;
     return token;
   },
@@ -1460,6 +1461,8 @@ const APP = {
     this._recordDisplayedScenario(card);
     this._confidenceSubmitted = false;
     this._selectedId = null;
+    this._struckOptions = [];
+    this._assisted = false;
 
     document.getElementById('card-counter').textContent =
       `${this.sessionIndex + 1} / ${this.sessionCards.length}${card.retry ? ' · retry' : ''}`;
@@ -1499,8 +1502,10 @@ const APP = {
     const optionsEl = document.getElementById('options');
     optionsEl.innerHTML = '';
     this._displayedOptions = shuffledOptions(card.options, this._optionRng);
+    this._optionButtons = [];
     this._displayedOptions.forEach((opt, idx) => {
       const btn = document.createElement('button');
+      this._optionButtons.push(btn);
       btn.className = 'option-btn';
       const keyNum = idx + 1;
       const optionPrerequisites = opt.prerequisiteTopics
@@ -1528,6 +1533,10 @@ const APP = {
     document.getElementById('next-btn').classList.add('hidden');
     document.getElementById('regenerate-btn').classList[currentPlan === 'pro' ? 'remove' : 'add']('hidden');
     document.getElementById('quality-rating').classList.add('hidden');
+    this._renderSessionPips();
+    this._renderComboMeter();
+    this._renderStrikeButton();
+    this._fx('bump', document.getElementById('scenario'), 'fx-card-in', 500);
   },
 
   answer(selectedId) {
@@ -1550,6 +1559,17 @@ const APP = {
     // is intentionally before confidence submission so the diagram explains
     // the result while the decision is still fresh.
     Render.diagram(card, 'diagram-container', { reveal: true, compare: true });
+    this._renderStrikeButton();
+    const chosenButton = (this._optionButtons || [])[this._displayedOptions.findIndex(opt => opt.id === selectedId)];
+    const correctButton = (this._optionButtons || [])[this._displayedOptions.findIndex(opt => opt.id === card.correct)];
+    if (this._cardCorrect) {
+      this._fx('bump', correctButton, 'fx-pop');
+      this._fx('haptic', 15);
+    } else {
+      this._fx('bump', chosenButton, 'fx-shake');
+      this._fx('bump', correctButton, 'fx-reveal', 900);
+      this._fx('haptic', [30, 40, 30]);
+    }
 
     // show feedback with correct answer, then let user rate confidence
     const feedbackEl = document.getElementById('feedback');
@@ -1644,20 +1664,22 @@ const APP = {
     this.profile.streaks.best = Math.max(this.profile.streaks.best, this.profile.streaks.current);
     localStorage.setItem('sdf_last_study_date', today);
     // show consecutive correct streak
+    // The combo meter shows the streak; this badge shows the XP just earned.
     const streakEl = document.getElementById('consecutive-correct');
-    if (streakEl) streakEl.textContent = this._consecutiveCorrect > 1 ? `🔥×${this._consecutiveCorrect}` : '';
+    if (streakEl) streakEl.textContent = '';
 
     // track consecutive correct for achievements
+    const comboBefore = this._consecutiveCorrect || 0;
     if (correct) {
       this._consecutiveCorrect = (this._consecutiveCorrect || 0) + 1;
     } else {
       this._consecutiveCorrect = 0;
     }
+    this._sessionBestCombo = Math.max(this._sessionBestCombo || 0, this._consecutiveCorrect);
     const xpGained = this._gameRecordAnswer(card, correct, review.timesReviewed);
     this._gameAfterAnswer(card, correct);
-    if (streakEl && xpGained) {
-      streakEl.textContent = `${streakEl.textContent ? `${streakEl.textContent} · ` : ''}+${xpGained} XP`;
-    }
+    if (streakEl && xpGained) streakEl.textContent = `+${xpGained} XP`;
+    this._gameAnswerFx(correct, xpGained, comboBefore);
     this._checkAchievements();
     this.saveProfile();
     } catch (error) {
@@ -1736,9 +1758,9 @@ const APP = {
       // 1-4 for option selection
       const sessionVisible = !document.getElementById('screen-session').classList.contains('hidden');
       if (sessionVisible && ['1','2','3','4'].includes(key)) {
-        const btns = document.querySelectorAll('.option-btn:not(:disabled)');
+        const btns = document.querySelectorAll('.option-btn');
         const idx = parseInt(key) - 1;
-        if (btns[idx]) btns[idx].click();
+        if (btns[idx] && !btns[idx].disabled) btns[idx].click();
       }
       // N for next card
       if (key.toLowerCase() === 'n' && !document.getElementById('next-btn').classList.contains('hidden')) {
@@ -1824,17 +1846,21 @@ const APP = {
     const stats = this._sessionStats();
     if (stats.answered > 0) this._gameQuest('session');
     const bossHtml = this._bossSessionEndHtml();
-    document.getElementById('session-summary').innerHTML = `${bossHtml}${this._sessionGameSummaryHtml()}
+    // The game results lead, then the card-by-card review. Both are written in
+    // one pass so the review cannot overwrite the boss finale button.
+    const summaryHtml = `${bossHtml}${this._sessionGameSummaryHtml()}
       <p>Cards reviewed: <strong>${stats.answered}</strong></p>
       <p>Lifetime correct: <strong>${this.profile.totalCorrect} / ${this.profile.totalAnswered}</strong> (${this.profile.totalAnswered ? Math.round(100 * this.profile.totalCorrect / this.profile.totalAnswered) : 0}%)</p>
       <p>Topics covered: <strong>${new Set(stats.attempts.map(attempt => attempt.card.topic)).size}</strong></p>
       <p>Current streak: <strong>${this.profile.streaks.current} days</strong> (best: ${this.profile.streaks.best})</p>
       <p>Average difficulty of session: <strong>${stats.answered ? (stats.attempts.reduce((sum, attempt) => sum + attempt.card.difficulty, 0) / stats.answered).toFixed(1) : '—'} / 5</strong> — ${stats.answered > 5 ? 'desirable difficulty in effect' : 'more data after a few sessions'}</p>
     `;
-    this.showSessionReview();
+    this.showSessionReview(summaryHtml);
     this._stopTimer();
     this._saveSession(stats.answered, stats.correct, stats.attempts.map(attempt => attempt.card));
+    this._sessionResultsFx(stats);
     this._sessionXp = 0;
+    this._sessionBestCombo = 0;
     this.saveProfile();
     this.renderDeckStats();
   },
@@ -2075,7 +2101,10 @@ const APP = {
     const completed = advanceQuests(game, eventType, amount, gameToday(), this._gameSeed());
     for (const quest of completed) {
       if (quest.xp) this._sessionXp = (this._sessionXp || 0) + quest.xp;
-      this._gameToast(`✅ Quest complete: ${quest.label} · +${quest.xp} XP`);
+      this._gameToast(`✅ Quest complete: ${quest.label} · +${quest.xp} XP${quest.lifeline ? ' · +1 🎯 Strike' : ''}`);
+      this._fx('banner', '✅ Quest complete', 'quest');
+      this._fx('confetti', { count: 30 });
+      this._fx('haptic', [20, 30, 20]);
     }
     return completed;
   },
@@ -2103,6 +2132,8 @@ const APP = {
     if (stars > previous) {
       if (previous === 0) this._gameQuest('newStar');
       this._gameToast(`${'★'.repeat(stars)}${'☆'.repeat(3 - stars)} ${formatPrerequisiteLabel(topic)}`);
+      this._fx('banner', `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`, 'stars');
+      if (stars === 3) this._fx('confetti', { count: 44 });
     }
     return stars;
   },
@@ -2125,7 +2156,8 @@ const APP = {
     const game = this._game();
     if (!game || !card) return 0;
     const xp = this._gameAward(`answer:${card.id}:${reviewNumber}`, {
-      type: 'answer', correct, difficulty: card.difficulty, consecutiveCorrect: this._consecutiveCorrect
+      type: 'answer', correct, difficulty: card.difficulty, consecutiveCorrect: this._consecutiveCorrect,
+      assisted: this._assisted === true
     });
     if (correct && xp > 0) {
       game.correctByTopic[card.topic] = (game.correctByTopic[card.topic] || 0) + 1;
@@ -2207,6 +2239,7 @@ const APP = {
     set('game-xp-today', `${xpToday(game, today)} XP today`);
     set('game-xp-total', `${xpThisWeek(game, today)} this week · ${game.xp.total} total`);
     set('game-streak', `🔥 ${this.profile.streaks?.current || 0}-day streak`);
+    set('game-strikes', `🎯 ${game.lifelines} Strike${game.lifelines === 1 ? '' : 's'}`);
     const questList = document.getElementById('game-quests');
     if (questList) {
       questList.innerHTML = quests.items.map(item => {
@@ -2235,13 +2268,167 @@ const APP = {
     }
   },
 
+  /* ——— Game feel (js/fx.js) ———
+     Effects are decoration only: each call is skipped when fx.js is not
+     loaded, and FX itself never throws. */
+
+  _fx(name, ...args) {
+    if (typeof FX === 'undefined' || typeof FX[name] !== 'function') return;
+    FX[name](...args);
+  },
+
+  _selectedOptionButton() {
+    const index = (this._displayedOptions || []).findIndex(opt => opt.id === this._selectedId);
+    return (this._optionButtons || [])[index] || document.getElementById('next-btn');
+  },
+
+  _gameAnswerFx(correct, xpGained, comboBefore) {
+    const anchor = this._selectedOptionButton();
+    if (xpGained) this._fx('floatText', anchor, `+${xpGained} XP`, correct ? 'xp' : 'xp-small');
+    const combo = this._consecutiveCorrect || 0;
+    if (correct && (combo === 3 || combo === 5 || (combo > 5 && combo % 5 === 0))) {
+      this._fx('banner', `🔥 ${combo} in a row · ×${comboMultiplier(combo)}`, 'combo');
+      if (combo >= 5) this._fx('burstFrom', anchor, 28);
+      this._fx('haptic', [15, 30, 15]);
+    } else if (!correct && comboBefore >= 3) {
+      this._fx('floatText', document.getElementById('combo-meter') || anchor, `Combo of ${comboBefore} ended`, 'lost');
+    }
+    const game = this._game();
+    if (game && correct && typeof comboEarnsLifeline === 'function' && comboEarnsLifeline(combo) && grantLifeline(game)) {
+      this._gameToast(`🎯 ${combo} in a row earned a Strike. Use it to cross out a wrong option.`);
+    }
+    this._renderComboMeter(correct && combo > comboBefore);
+    this._renderSessionPips();
+  },
+
+  _bossHeartLostFx() {
+    const hearts = document.getElementById('boss-hearts');
+    this._fx('bump', hearts, 'fx-shake');
+    this._fx('floatText', hearts || document.getElementById('boss-status'), '−❤', 'lost');
+    this._fx('haptic', [60]);
+  },
+
+  _sandboxRunFx(correct, xpGained, combo) {
+    const results = document.getElementById('sandbox-results');
+    const anchor = document.getElementById('sandbox-run-btn') || results;
+    if (correct) {
+      if (xpGained) this._fx('floatText', anchor, `+${xpGained} XP`, 'xp');
+      this._fx('bump', results, 'fx-pop');
+      this._fx('haptic', 15);
+      if (combo >= 3) {
+        this._fx('banner', `🔥 ${combo} predictions in a row`, 'combo');
+        this._fx('burstFrom', anchor, 24);
+      }
+    } else {
+      this._fx('bump', results, 'fx-shake');
+      this._fx('haptic', [30, 40, 30]);
+    }
+  },
+
+  _sessionResultsFx(stats) {
+    const xpEl = document.getElementById('game-session-xp');
+    if (xpEl) this._fx('countUp', xpEl, Number(xpEl.dataset?.xp ?? this._sessionXp) || 0, { prefix: '+', suffix: ' XP' });
+    const grade = typeof sessionGrade === 'function' ? sessionGrade(stats.answered, stats.correct) : null;
+    if (grade && (grade.grade === 'S' || grade.grade === 'A')) {
+      this._fx('confetti', { count: grade.grade === 'S' ? 70 : 40 });
+      this._fx('haptic', [20, 40, 20]);
+    }
+  },
+
+  /* The combo meter fills toward the next multiplier tier (×1.5 at three in a
+     row, ×2 at five). */
+  _renderComboMeter(bumped = false) {
+    const el = document.getElementById('combo-meter');
+    if (!el || typeof comboTier !== 'function') return;
+    const tier = comboTier(this._consecutiveCorrect || 0);
+    const heat = tier.multiplier >= 2 ? 3 : tier.multiplier > 1 ? 2 : tier.streak > 0 ? 1 : 0;
+    const next = tier.next ? `${tier.toNext} more for ×${tier.next}` : 'Max combo';
+    el.className = `combo-meter heat-${heat}`;
+    el.innerHTML = `<span class="combo-meter-label">🔥 ${tier.streak} · ×${tier.multiplier}</span>
+      <span class="combo-meter-track"><span class="combo-meter-fill" style="width:${Math.round(tier.progress * 100)}%"></span></span>
+      <span class="combo-meter-next">${next}</span>`;
+    if (bumped) this._fx('bump', el, 'fx-pop');
+  },
+
+  /* One pip per card in the run: green for right, red for wrong, outlined for
+     the current card. */
+  _renderSessionPips() {
+    const el = document.getElementById('session-pips');
+    if (!el) return;
+    const cards = this.sessionCards || [];
+    const attempts = this._sessionAttempts || [];
+    if (!cards.length) { el.innerHTML = ''; return; }
+    el.innerHTML = cards.slice(0, 30).map((card, index) => {
+      const attempt = attempts[index];
+      const state = attempt ? (attempt.correct ? 'is-correct' : 'is-wrong')
+        : index === this.sessionIndex ? 'is-current' : '';
+      return `<span class="session-pip ${state}${card?.retry ? ' is-retry' : ''}"></span>`;
+    }).join('');
+  },
+
+  _renderStrikeButton() {
+    const button = document.getElementById('strike-btn');
+    const game = this._game();
+    if (!button) return;
+    const remaining = (this._displayedOptions || [])
+      .filter(opt => opt.id !== this.currentCard?.correct && !(this._struckOptions || []).includes(opt.id)).length;
+    const usable = game && this._selectedId == null && this.currentCard && remaining > 1;
+    if (!game || this._selectedId != null || !this.currentCard) {
+      button.classList.add('hidden');
+      return;
+    }
+    button.classList.remove('hidden');
+    button.disabled = !usable || game.lifelines <= 0;
+    button.textContent = `🎯 Strike a wrong option · ${game.lifelines} left`;
+    button.title = 'Cross out one wrong option. This card then earns half XP.';
+  },
+
+  /* Spend a Strike to cross out one wrong option on the current card. */
+  useStrike() {
+    const game = this._game();
+    const card = this.currentCard;
+    if (!game || !card || this._selectedId != null || typeof pickStrikeOption !== 'function') return false;
+    this._struckOptions = this._struckOptions || [];
+    const optionId = pickStrikeOption(this._displayedOptions || [], card.correct, this._struckOptions);
+    if (!optionId || !spendLifeline(game)) {
+      this._renderStrikeButton();
+      return false;
+    }
+    this._struckOptions.push(optionId);
+    this._assisted = true;
+    const index = this._displayedOptions.findIndex(opt => opt.id === optionId);
+    const button = (this._optionButtons || [])[index];
+    if (button) {
+      button.disabled = true;
+      button.classList?.add('is-struck');
+      button.setAttribute?.('aria-label', `Option ${optionId}: crossed out by a Strike`);
+      this._fx('bump', button, 'fx-shake');
+    }
+    this._fx('haptic', 20);
+    this.saveProfile();
+    this._renderStrikeButton();
+    return true;
+  },
+
   _sessionGameSummaryHtml() {
     const game = this._game();
     if (!game) return '';
     const quests = ensureDailyQuests(game, gameToday(), this._gameSeed());
     const done = quests.items.filter(item => item.done).length;
-    return `<div class="game-session-summary">
-      <p class="game-session-xp">+${this._sessionXp || 0} XP</p>
+    const stats = this._sessionStats();
+    const grade = typeof sessionGrade === 'function' ? sessionGrade(stats.answered, stats.correct) : null;
+    const bestCombo = typeof bestComboOf === 'function' ? bestComboOf(stats.attempts) : 0;
+    const pips = stats.attempts.map(attempt => `<span class="session-pip ${attempt.correct ? 'is-correct' : 'is-wrong'}"></span>`).join('');
+    return `<div class="game-session-summary${grade ? ` grade-${grade.grade.toLowerCase()}` : ''}">
+      ${grade ? `<div class="game-results-hero">
+        <span class="game-grade" aria-label="Grade ${grade.grade}">${grade.grade}</span>
+        <div class="game-results-main">
+          <p class="game-grade-label">${grade.label} · ${stats.correct}/${stats.answered} right</p>
+          <p class="game-session-xp" id="game-session-xp" data-xp="${this._sessionXp || 0}">+${this._sessionXp || 0} XP</p>
+          <p class="game-results-combo">Best combo 🔥 ${bestCombo} · 🎯 ${game.lifelines} Strike${game.lifelines === 1 ? '' : 's'} held</p>
+        </div>
+      </div>
+      <div class="session-pips session-pips-summary" aria-hidden="true">${pips}</div>` : `<p class="game-session-xp">+${this._sessionXp || 0} XP</p>`}
       <p>Quests today: <strong>${done}/${quests.items.length}</strong> · Total XP: <strong>${game.xp.total}</strong></p>
       ${game.rematches.length ? `<button class="btn btn-sm btn-outline" type="button" onclick="APP.startRematch()">🔁 Rematch ${game.rematches.length} missed card${game.rematches.length === 1 ? '' : 's'}</button>` : ''}
     </div>`;
@@ -2260,6 +2447,7 @@ const APP = {
     const boss = this._boss;
     if (boss?.stage === 'cards' && !correct) {
       boss.hearts = bossHeartsAfter(boss.hearts, false);
+      this._bossHeartLostFx();
       // Out of hearts: the current card becomes the last one of the run.
       if (boss.hearts === 0) this.sessionCards = this.sessionCards.slice(0, this.sessionIndex + 1);
     }
@@ -2421,8 +2609,12 @@ const APP = {
       boss.stage = 'won';
       boss.xp = xp;
       this._gameToast(`🏆 ${boss.world} boss cleared${xp ? ` · +${xp} XP` : ''}`);
+      this._fx('banner', '🏆 Boss cleared!', 'boss');
+      this._fx('confetti', { count: 70 });
+      this._fx('haptic', [40, 40, 80]);
     } else {
       boss.hearts = bossHeartsAfter(boss.hearts, false);
+      this._bossHeartLostFx();
       if (boss.hearts === 0) {
         if (game) recordBossResult(game, boss.world, 0, false);
         boss.stage = 'lost';
@@ -2849,7 +3041,7 @@ const APP = {
       </details>`).join('');
   },
 
-  showSessionReview() {
+  showSessionReview(leadHtml = '') {
     const el = document.getElementById('session-summary');
     const stats = this._sessionStats();
     let html = `<p>Session complete — <strong>${stats.answered}</strong> cards answered, <strong>${stats.percent}%</strong> correct</p><div class="review-list">`;
@@ -2865,7 +3057,7 @@ const APP = {
     }
     html += '</div>';
     html += this._mistakesHtml();
-    el.innerHTML = html;
+    el.innerHTML = `${leadHtml}${html}`;
   },
 
   /* ——— Learning Path ——— */
@@ -3378,6 +3570,7 @@ const APP = {
     this._bossAfterSandboxRun(node, state.situationId, predictionCorrect);
     this.renderSandbox();
     this.renderChallengeLadder();
+    this._sandboxRunFx(predictionCorrect, xpGained, state.result.combo);
     return true;
   },
 
