@@ -86,8 +86,11 @@ decision-based practice with adaptive difficulty.
   references remain accurate
 - Each option lists the topics needed to evaluate that approach; the card's
   Know First list aggregates the prerequisites from every option
-- A navigable topic map shows prerequisites, dependent topics, mastery, and
-  focused practice actions without locking advanced content
+- The world map has a Learning path view (the former Topic Map) that orders
+  the drill topics by prerequisite depth and shows stars, card mastery, what to
+  know first, what each topic leads to, and focused practice actions without
+  locking advanced content. Each drill topic's concept page shows the same
+  path links. Old `#/learning-path` links open this view
 - Every screen is URL-addressable via hash routes (`#/search`, `#/concepts`,
   `#/concept/<concept>`, `#/design-decisions`, `#/stats`, ...), so any page can
   be bookmarked, shared, or deep-linked and survives refresh and back/forward

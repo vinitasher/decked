@@ -151,7 +151,6 @@
         <button class="btn btn-outline" onclick="APP.showCreateCard()">✏️ Create Your Own Card</button>
         <button class="btn btn-outline" onclick="APP.showStats()">📊 View Statistics</button>
         <button class="btn btn-outline" onclick="APP.showHistory()">📜 Session History</button>
-        <button class="btn btn-outline" onclick="APP.showLearningPath()">🧭 Topic Map</button>
         <button class="btn btn-outline" onclick="APP.showConceptLab()">📚 Explore Concept Lab</button>
         <button class="btn btn-outline" onclick="APP.showDesignDecisions()">⚖️ Design Decisions</button>
         <button class="btn btn-outline" onclick="APP.showScreen('search');APP.filterCards()">🔍 Search Cards</button>
@@ -181,9 +180,13 @@
         <div>
           <span class="concept-lab-pane-kicker">The map of ideas, by area</span>
           <h2 id="concept-cloud-title">What do you want to understand?</h2>
-          <p>Concepts are grouped by area. Larger words reflect connections and study coverage as a discovery hint, not a ranking or a gate.</p>
+          <p id="concept-cloud-intro">Concepts are grouped by area. Larger words reflect connections and study coverage as a discovery hint, not a ranking or a gate.</p>
         </div>
         <span class="concept-cloud-count" id="concept-cloud-count"></span>
+      </div>
+      <div class="map-view-toggle" role="group" aria-label="World map layout">
+        <button id="map-view-area" class="map-view-btn" type="button" aria-pressed="true" onclick="APP.setMapView('area')">🗺️ By area</button>
+        <button id="map-view-path" class="map-view-btn" type="button" aria-pressed="false" onclick="APP.setMapView('path')">🧭 Learning path</button>
       </div>
       <form id="concept-add" class="concept-add" onsubmit="event.preventDefault();APP.addConcept()">
         <label for="concept-add-input" class="concept-add-label">Add a concept to your map</label>
@@ -325,14 +328,6 @@
     <h1>Bookmarked Cards</h1>
     <div id="bookmark-list" style="margin:12px 0;"></div>
     <button class="btn btn-outline" onclick="APP.showScreen('welcome')">Dashboard</button>
-  </div>
-
-  <!-- Topic Map -->
-  <div id="screen-learning-path" class="screen hidden">
-    <h1>Topic Map</h1>
-    <p class="screen-intro">Choose any topic to practice. Prerequisites show the expected background, not locked content.</p>
-    <div id="topic-hierarchy"></div>
-    <button class="btn btn-outline" onclick="APP.showScreen('welcome');APP.renderDeckStats()">Dashboard</button>
   </div>
 
   <!-- Concept Lab: Wiki + Sandbox -->

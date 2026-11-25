@@ -2797,6 +2797,8 @@ const APP = {
 
   _handleHashChange() {
     let route = this._currentRoute() || 'welcome';
+    // The old Topic Map route now opens the world map's Learning path view.
+    if (route === 'learning-path') return this.showLearningPath();
     if ((route === 'session' || route === 'session-end') && this.sessionCards.length === 0) {
       route = 'welcome';
     }
@@ -2815,8 +2817,6 @@ const APP = {
       this.filterCards();
     } else if (route === 'bookmarks') {
       this.renderBookmarks();
-    } else if (route === 'learning-path') {
-      this.showLearningPath();
     } else if (route === 'sandbox') {
       this.showSandbox();
     } else if (route === 'stats') {
@@ -3060,48 +3060,96 @@ const APP = {
     el.innerHTML = `${leadHtml}${html}`;
   },
 
-  /* ——— Learning Path ——— */
+  /* ——— Learning Path ———
+     The old Topic Map now lives inside the world map as its "Learning path"
+     view. The drill topic catalog is grouped by prerequisite depth; every
+     topic stays playable (prerequisites are advisory, never locks). */
 
   showLearningPath() {
+    return this.showConceptLab({ view: 'path' });
+  },
+
+  _learningPathLevels() {
+    const catalog = typeof TOPIC_CATALOG !== 'undefined' ? TOPIC_CATALOG : {};
     const depthCache = {};
     const depthOf = (topic, visiting = new Set()) => {
       if (depthCache[topic] !== undefined) return depthCache[topic];
       if (visiting.has(topic)) return 0;
-      const prerequisites = TOPIC_CATALOG[topic].prerequisites;
+      const prerequisites = (catalog[topic]?.prerequisites || []).filter(item => catalog[item]);
       if (!prerequisites.length) return (depthCache[topic] = 0);
       const nextVisiting = new Set(visiting).add(topic);
       return (depthCache[topic] = 1 + Math.max(...prerequisites.map(item => depthOf(item, nextVisiting))));
     };
-    const dependents = {};
-    for (const topic of Object.keys(TOPIC_CATALOG)) dependents[topic] = [];
-    for (const [topic, details] of Object.entries(TOPIC_CATALOG)) {
-      for (const prerequisite of details.prerequisites) dependents[prerequisite].push(topic);
-    }
-    const levels = {};
-    for (const topic of Object.keys(TOPIC_CATALOG)) {
+    const levels = new Map();
+    for (const topic of Object.keys(catalog)) {
       const depth = depthOf(topic);
-      (levels[depth] ||= []).push(topic);
+      if (!levels.has(depth)) levels.set(depth, []);
+      levels.get(depth).push(topic);
     }
-    const el = document.getElementById('topic-hierarchy');
-    el.innerHTML = Object.entries(levels).map(([depth, topics]) => `
-      <section class="topic-level">
-        <h2>${Number(depth) === 0 ? 'Foundations' : `Level ${Number(depth) + 1}`}</h2>
-        <div class="topic-grid">${topics.map(topic => {
-          const details = TOPIC_CATALOG[topic];
-          const prerequisites = details.prerequisites.map(item => TOPIC_CATALOG[item].label);
-          const unlocks = dependents[topic].map(item => TOPIC_CATALOG[item].label);
-          const mastery = Math.round(this.getTopicScore(topic) * 100);
-          return `<article class="topic-node">
-            <div class="topic-node-heading"><strong>${details.label}</strong><span>${mastery}%</span></div>
-            <div class="topic-node-progress"><span style="width:${mastery}%"></span></div>
-            <p>${prerequisites.length ? `Know first: ${prerequisites.join(', ')}` : 'Start here'}</p>
-            <p>${unlocks.length ? `Leads to: ${unlocks.join(', ')}` : 'Advanced endpoint'}</p>
-            <button class="btn btn-sm btn-outline" onclick="APP.startTopicSession('${topic}')">Practice ${details.label}</button>
-          </article>`;
-        }).join('')}</div>
-      </section>
-    `).join('');
-    this.showScreen('learning-path');
+    return [...levels.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([depth, topics]) => ({ depth, label: depth === 0 ? 'Foundations' : `Level ${depth + 1}`, topics }));
+  },
+
+  /* Prerequisites and dependents of one drill topic, as catalog keys. */
+  _topicPathLinks(topic) {
+    const catalog = typeof TOPIC_CATALOG !== 'undefined' ? TOPIC_CATALOG : {};
+    if (!catalog[topic]) return null;
+    return {
+      knowFirst: (catalog[topic].prerequisites || []).filter(item => catalog[item]),
+      leadsTo: Object.keys(catalog).filter(item => (catalog[item].prerequisites || []).includes(topic))
+    };
+  },
+
+  /* Card mastery for a drill topic, or null before any card was answered. */
+  _topicCardMastery(topic) {
+    const score = this.profile?.topicScores?.[topic];
+    if (!score) return null;
+    return Math.round(Math.max(0, Math.min(1, Number(score.raw) || 0)) * 100);
+  },
+
+  _learningPathHtml() {
+    const catalog = typeof TOPIC_CATALOG !== 'undefined' ? TOPIC_CATALOG : {};
+    const recommended = this.recommendedConcept?.() || null;
+    const label = topic => this._escapeHtml(catalog[topic]?.label || formatPrerequisiteLabel(topic));
+    return this._learningPathLevels().map(({ depth, label: levelLabel, topics }) => {
+      const earned = topics.reduce((sum, topic) => sum + this.conceptStars(topic), 0);
+      const nodes = topics.map(topic => {
+        const links = this._topicPathLinks(topic);
+        const mastery = this._topicCardMastery(topic);
+        const entry = { topic, title: catalog[topic].label };
+        const knowFirst = links.knowFirst.length ? `Know first: ${links.knowFirst.map(label).join(', ')}` : 'Start here';
+        const leadsTo = links.leadsTo.length ? `Leads to: ${links.leadsTo.map(label).join(', ')}` : 'Advanced endpoint';
+        const masteryText = mastery === null ? 'No cards answered yet' : `Cards ${mastery}%`;
+        return `<article class="path-node" role="listitem" data-topic="${this._escapeHtml(topic)}">
+          ${this._conceptCloudItem(entry, 2, topic === recommended).replace(' role="listitem"', '')}
+          <div class="path-node-progress" role="progressbar" aria-label="${label(topic)} card mastery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${mastery ?? 0}"><span style="width:${mastery ?? 0}%"></span></div>
+          <p class="path-node-mastery">${masteryText}</p>
+          <p>${knowFirst}</p>
+          <p>${leadsTo}</p>
+          <button class="btn btn-sm btn-outline" type="button" onclick="APP.startTopicSession('${this._escapeHtml(topic)}')">🃏 Practice cards</button>
+        </article>`;
+      }).join('');
+      return `<section class="concept-group path-level" aria-labelledby="path-level-${depth}">
+        <h3 class="concept-group-heading" id="path-level-${depth}">${levelLabel} <span class="concept-group-count">${topics.length}</span><span class="concept-group-stars">★ ${earned}/${topics.length * 3}</span></h3>
+        <div class="path-level-items" role="list" aria-label="${levelLabel} topics">${nodes}</div>
+      </section>`;
+    }).join('');
+  },
+
+  setMapView(view) {
+    this._mapView = view === 'path' ? 'path' : 'area';
+    try { localStorage.setItem('decked.mapView', this._mapView); } catch (_) {}
+    this.renderConceptCloud();
+  },
+
+  _currentMapView() {
+    if (!this._mapView) {
+      let stored = null;
+      try { stored = localStorage.getItem('decked.mapView'); } catch (_) {}
+      this._mapView = stored === 'path' ? 'path' : 'area';
+    }
+    return this._mapView;
   },
 
   /* ——— Concept Sandbox ——— */
@@ -3721,6 +3769,21 @@ const APP = {
         banner.classList.add('hidden');
       }
     }
+    const view = this._currentMapView();
+    for (const [id, value] of [['map-view-area', 'area'], ['map-view-path', 'path']]) {
+      const button = document.getElementById(id);
+      if (button?.setAttribute) button.setAttribute('aria-pressed', String(view === value));
+    }
+    const intro = document.getElementById('concept-cloud-intro');
+    if (intro) {
+      intro.textContent = view === 'path'
+        ? 'The drill topics in prerequisite order, from foundations up. Each shows your stars, card mastery, what to know first, and what it leads to. Nothing is locked.'
+        : 'Concepts are grouped by area. Larger words reflect connections and study coverage as a discovery hint, not a ranking or a gate.';
+    }
+    if (view === 'path') {
+      cloud.innerHTML = this._learningPathHtml();
+      return;
+    }
     cloud.innerHTML = this._orderedConceptGroups(entries).map(({ category, items }) => {
       const label = this._escapeHtml(category);
       const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -3875,7 +3938,11 @@ const APP = {
     </article>`;
   },
 
-  showConceptLab({ navigate = true } = {}) {
+  showConceptLab({ navigate = true, view } = {}) {
+    if (view) {
+      this._mapView = view === 'path' ? 'path' : 'area';
+      try { localStorage.setItem('decked.mapView', this._mapView); } catch (_) {}
+    }
     if (this._boss && ['won', 'lost'].includes(this._boss.stage)) this._boss = null;
     if (navigate) this._navigate('concepts');
     this.showScreen('concepts');
@@ -4069,8 +4136,29 @@ const APP = {
     return `<span class="wiki-link${entry ? '' : ' wiki-link-pending'}" role="link" tabindex="0" data-topic="${this._escapeHtml(canonical)}" onclick="${open}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${open}}">${label}</span>`;
   },
 
+  /* Where a drill topic sits on the learning path: what to know first, what
+     it leads to, and card mastery, with a practice action. */
+  _conceptPathHtml(topic) {
+    const links = this._topicPathLinks(topic);
+    if (!links) return '';
+    const mastery = this._topicCardMastery(topic);
+    const list = topics => topics.map(item => this._wikiLink(item)).join('');
+    const title = this._escapeHtml(TOPIC_CATALOG[topic].label);
+    return `<aside class="concept-path" aria-label="${title} on the learning path">
+      <span class="wiki-lab-kicker">On the learning path</span>
+      <p class="concept-path-mastery">${mastery === null ? 'No cards answered yet' : `Card mastery ${mastery}%`}</p>
+      <p class="concept-path-row"><span>Know first</span>${links.knowFirst.length ? `<span class="wiki-related">${list(links.knowFirst)}</span>` : '<em>Start here</em>'}</p>
+      <p class="concept-path-row"><span>Leads to</span>${links.leadsTo.length ? `<span class="wiki-related">${list(links.leadsTo)}</span>` : '<em>Advanced endpoint</em>'}</p>
+      <div class="concept-path-actions">
+        <button class="btn btn-sm btn-outline" type="button" onclick="APP.startTopicSession('${this._escapeHtml(topic)}')">🃏 Practice ${title} cards</button>
+        <button class="btn btn-sm btn-outline" type="button" onclick="APP.showLearningPath()">🧭 See the learning path</button>
+      </div>
+    </aside>`;
+  },
+
   _wikiEntryHtml(entry) {
-    const practiceAdded = typeof isCustomConcept === 'function' && isCustomConcept(this._game?.(), entry.topic)
+    const pathBlock = this._conceptPathHtml(entry.topic);
+    const practiceAdded = !pathBlock && typeof isCustomConcept === 'function' && isCustomConcept(this._game?.(), entry.topic)
       ? `<p class="concept-added-practice"><button class="btn btn-sm btn-outline" type="button" onclick="APP.startTopicSession('${this._escapeHtml(entry.topic)}')">🃏 Practice ${this._escapeHtml(entry.title || entry.topic)} cards</button></p>`
       : '';
     const related = (entry.related_topics || [])
@@ -4096,6 +4184,7 @@ const APP = {
       <h3>Common pitfalls</h3>
       <ul>${(entry.common_pitfalls || []).map(pitfall => `<li>${this._escapeHtml(pitfall)}</li>`).join('')}</ul>
       ${related ? `<h3>Related concepts</h3><div class="wiki-related">${related}</div>` : ''}
+      ${pathBlock}
       ${practiceAdded}
       ${sandboxCallout}`;
   },
